@@ -1,0 +1,7 @@
+#!/bin/bash
+REFLEX_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+export ISAACLAB_PY=${ISAACLAB_PY:-python}
+export REFLEX_DATA_DIR=${REFLEX_DATA_DIR:-$REFLEX_ROOT/data}
+export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y PRIVACY_CONSENT=Y
+export OMP_NUM_THREADS=1
+cd "$REFLEX_ROOT"

@@ -72,6 +72,7 @@ parser.add_argument("--persist_frames", type=int, default=30)
 parser.add_argument("--ball_radius", type=float, default=None,
                     help="Pin ball radius; if None, env randomization runs.")
 parser.add_argument("--out", required=True)
+parser.add_argument("--video_path", default=None, help="Optional MP4 spectator recording")
 # Visual encoder in the loop: frames from a torso-mounted TiledCamera -> visual encoder ("detector") -> z -> latent decoder
 parser.add_argument("--detector", default=None, help="Stage 3 visual encoder checkpoint (reflex.vision.train_seqdet); replaces the privileged encoder E_phi with the image-based encoder")
 parser.add_argument("--det_width", type=int, default=192)
@@ -93,7 +94,7 @@ parser.add_argument("--spawn_radius", type=float, default=None,
                          "honest multi-size physics tests.")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = bool(args.detector)   # cameras only for the visual-encoder (detector-in-loop) path
+args.enable_cameras = bool(args.detector or args.video_path)   # Enable cameras for visual inference or optional spectator recording.
 if args.detector:
     import faulthandler, sys as _fh_sys
     faulthandler.dump_traceback_later(240, repeat=True, file=_fh_sys.stderr)   # debug aid: periodic stack dump if the camera path stalls
@@ -292,12 +293,23 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
     if int(args.push_robot) == 0 and hasattr(env_cfg.events, "push_robot"):
         env_cfg.events.push_robot = None
         print("[protocol] push_robot event REMOVED (no random base kicks during eval)", flush=True)
-    return gym.make(env_id, cfg=env_cfg), env_cfg
+    if args.video_path:
+        env_cfg.viewer.resolution = (1280, 720)
+        env_cfg.viewer.eye = (5.0, -5.0, 3.0)
+        env_cfg.viewer.lookat = (1.0, 0.0, 1.0)
+    return gym.make(env_id, cfg=env_cfg, render_mode="rgb_array" if args.video_path else None), env_cfg
 
 
 def main():
     env, env_cfg = make_env(args.env_id, args.motion_file, args.num_envs,
                              args.ball_radius, args.seed, args.spawn_radius)
+    video_writer = None
+    if args.video_path:
+        import imageio.v2 as imageio
+        import atexit
+        os.makedirs(os.path.dirname(os.path.abspath(args.video_path)), exist_ok=True)
+        video_writer = imageio.get_writer(args.video_path, fps=round(1.0 / env.unwrapped.step_dt), codec="libx264", quality=7)
+        atexit.register(video_writer.close)
     if args.motion_phase:
         _lo, _hi = [int(x) for x in args.motion_phase.split(",")]
         _mterm = env.unwrapped.command_manager.get_term("motion")
@@ -853,6 +865,11 @@ def main():
                 if len(_act_buf) > _ACT_DELAY:
                     action = _act_buf.pop(0)   # apply the N-tick-old target
             obs_dict, _, _, _, _ = env.step(action)
+            if video_writer is not None:
+                frame = env.render()
+                if frame is None:
+                    raise RuntimeError("Video render returned no frame")
+                video_writer.append_data(frame)
             obs = obs_dict["policy"]
 
             if step < args.eval_start_step:
@@ -1651,6 +1668,9 @@ def main():
     print(f"[strict] False positives (loose pass but strict fail): {result['false_positive']}/{B}", flush=True)
     if args.detector and args.save_frames_dir:
         _dp_save[0]["flush"](); print(f"[latent] DAgger data saved: {_dp_save[0]['chunk']} chunks", flush=True)
+    if video_writer is not None:
+        video_writer.close()
+        print(f"[VIDEO] saved {args.video_path}", flush=True)
     env.close()
 
 

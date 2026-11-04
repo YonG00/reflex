@@ -7,3 +7,9 @@ source/whole_body_tracking/whole_body_tracking/assets/unitree_description/
 /outputs/
 __pycache__/
 *.egg-info/
+
+# Local environments and authentication
+/.venv/
+/.hf-cache/
+/.env
+/.env.*
