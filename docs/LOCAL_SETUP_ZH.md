@@ -10,6 +10,8 @@
 
 ## 资源准备（不需要 GPU）
 
+已有备份时优先按 [最小数据恢复说明](DATA_BACKUP_ZH.md) 恢复六个必要文件，无需重新拉取整个 G1 压缩包。
+
 依照上游 README 安装项目，并下载官方 checkpoint、机器人描述和所需动作。数据、权重、日志及视频分别位于被忽略的 `data/`、`logs/`、`outputs/`，不上传 Git。
 
 BONES-SEED 需要使用本人账号接受条款。当前上游只提供 `g1.tar.gz` 压缩包，Reflex 仅使用其中 `g1/csv/210707/walk_forward_grab_normal_003__A006_M.csv`。不要重新分发此数据或生成的参考动作。AMP 还需要 assets/motions/README.md 中指定的 AMASS B10 动作。

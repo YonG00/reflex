@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "purpose": "Internal backup for the licensed user; not for public redistribution",
+  "files": [
+    {
+      "path": "bones_seed/g1/csv/210707/walk_forward_grab_normal_003__A006_M.csv",
+      "bytes": 735170,
+      "sha256": "7979e92da40a2241341d02609a37381b92fe00af3f755b20453a65dc3339a8af"
+    },
+    {
+      "path": "amass_g1/g1/ACCAD/Male2Walking_c3d/B10 -  Walk turn left 45_poses_120_jpos.npy",
+      "bytes": 206912,
+      "sha256": "f7be749b1f59500c48a4c1421c00f6fefa36052b154b97dcdb70658ce031404f"
+    },
+    {
+      "path": "motions/walk_then_catch_v17_30s.npz",
+      "bytes": 2689794,
+      "sha256": "10aeef1894b46d4f01d8a3ad1d1e077b8c463a2ce3652ec93bda8bf745014655"
+    },
+    {
+      "path": "motions/male2_walk_v2.npz",
+      "bytes": 537602,
+      "sha256": "fcffd5cccf3ef222f04efe145709806a3514a23cc1fa9ba731ac2f577d72d606"
+    },
+    {
+      "path": "motions/male2_walk_turn_left_45.npz",
+      "bytes": 537602,
+      "sha256": "efab7529c6c0286318ff50755e9be6f926e644a643d3484369120e6df70074b3"
+    },
+    {
+      "path": "amp/amp_dataset.pt",
+      "bytes": 4382789,
+      "sha256": "4db94680833df13d0cc7f6ed0983cc7387f5bc0ca75bc6caa1c6c50def4c61b9"
+    }
+  ]
+}
