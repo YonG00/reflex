@@ -3,5 +3,8 @@ REFLEX_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export ISAACLAB_PY=${ISAACLAB_PY:-python}
 export REFLEX_DATA_DIR=${REFLEX_DATA_DIR:-$REFLEX_ROOT/data}
 export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y PRIVACY_CONSENT=Y
+# Isaac Sim uses dlopen for CUDA linalg; its loader needs PyTorch's lib directory.
+TORCH_LIB_DIR=$("$ISAACLAB_PY" -c 'import sysconfig; print(sysconfig.get_path("purelib") + "/torch/lib")')
+export LD_LIBRARY_PATH="$TORCH_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export OMP_NUM_THREADS=1
 cd "$REFLEX_ROOT"

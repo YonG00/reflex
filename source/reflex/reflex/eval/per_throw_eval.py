@@ -295,7 +295,9 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
         print("[protocol] push_robot event REMOVED (no random base kicks during eval)", flush=True)
     if args.video_path:
         env_cfg.viewer.resolution = (1280, 720)
-        env_cfg.viewer.eye = (5.0, -5.0, 3.0)
+        env_cfg.commands.motion.debug_vis = False
+        env_cfg.scene.contact_forces.debug_vis = False
+        env_cfg.viewer.eye = (3.0, -3.8, 2.2)
         env_cfg.viewer.lookat = (1.0, 0.0, 1.0)
     return gym.make(env_id, cfg=env_cfg, render_mode="rgb_array" if args.video_path else None), env_cfg
 

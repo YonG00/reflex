@@ -43,3 +43,17 @@ bash scripts/local/play.sh true_z --ckpt /path/to/model_599.pt
 PPO 明确从本次 BC 的 `data/stage2/bc_init.pt` 初始化，避免误用上游脚本默认的已发布 BC 权重。运行前先做短程 train→save→load→play 验证，完整训练时长与效果以实际日志为准。
 
 所有新增入口均需人工启动；资源下载完成不会自动启动 GPU 训练。
+
+## 当前实验范围：Stage 1（2026-11-05）
+
+当前只检查官方 Stage 1 checkpoint，以及公开配置从随机初始化训练的 Stage 1 checkpoint。Stage 2 的两轮功能检查不属于本实验，后续 Stage 2 工作已停止。
+
+```bash
+# 从零训练：不加载预训练权重，不恢复旧训练
+bash scripts/local/train.sh stage1_scratch --num_envs 4096 --max_iterations 600 --seed 42 --run_name stage1_scratch_20261105
+# 从官方教师续训必须明确选 stage1_continue
+```
+
+公开配置是教师训练序列最后一轮配置，从零运行不等于完整重放论文教师的训练过程。本次结果将与官方教师在 regular 条件、seed 8/9、每 seed 320 环境下比较，使用上游 sustained_hold 指标。
+
+数据准备已完成：BONES CSV 与 AMASS B10 的 checksum 均通过；参考动作 1500 帧、50 fps；AMP 数据为 `(6576, 2, 83)`，有限数值检查通过。官方教师录像已生成，从零训练结果尚待完成。
