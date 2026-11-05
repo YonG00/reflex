@@ -1,0 +1,17 @@
+{
+  "capacity_steps": 1024,
+  "collect_steps": 24,
+  "model_steps": 64,
+  "model_window": 4,
+  "batch": 256,
+  "horizon": 32,
+  "actor_steps": 4,
+  "warmup_iterations": 24,
+  "gamma": 0.99,
+  "lam": 0.95,
+  "lr": 0.0003,
+  "exploration": 0.15,
+  "hidden": 256,
+  "max_state_rmse": 1.0,
+  "max_reward_rmse": 1.0
+}

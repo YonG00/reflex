@@ -111,6 +111,9 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 # Import extensions to set up environment tasks
 import whole_body_tracking.tasks  # noqa: F401
 import reflex.envs.register  # noqa: F401  (registers Reflex-Teacher-G1-v0)
+if os.environ.get("REFLEX_ORACLE", "0") == "1":
+    from reflex.world_model.oracle_env import register as _register_oracle
+    _register_oracle()
 from whole_body_tracking.utils.my_on_policy_runner import MotionOnPolicyRunner as OnPolicyRunner
 
 # ---- AMP: inject AmpPPO into the namespace where the base runner

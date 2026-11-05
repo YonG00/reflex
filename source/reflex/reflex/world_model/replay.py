@@ -1,0 +1,92 @@
+"""Time-major ring of vectorized transitions, with explicit external-event edges."""
+
+import torch
+
+
+class Replay:
+    def __init__(self, capacity_steps, device="cpu"):
+        self.capacity, self.device = capacity_steps, device
+        self.data, self.count, self.pointer = {}, 0, 0
+
+    def add(self, transition):
+        if not self.data:
+            self.data = {
+                k: torch.empty(
+                    (self.capacity, *v.shape), dtype=v.dtype, device=self.device
+                )
+                for k, v in transition.items()
+            }
+        if transition.keys() != self.data.keys():
+            raise ValueError("Replay transition schema changed")
+        for k, v in transition.items():
+            self.data[k][self.pointer].copy_(v.detach())
+        self.pointer = (self.pointer + 1) % self.capacity
+        self.count = min(self.count + 1, self.capacity)
+
+    def ordered(self, key):
+        t = self.data[key]
+        if self.count < self.capacity:
+            return t[: self.count]
+        return torch.cat((t[self.pointer :], t[: self.pointer]))
+
+    def indices(self, horizon, starts=False):
+        if self.count < horizon:
+            return torch.empty((0, 2), dtype=torch.long, device=self.device)
+        valid = self.ordered("valid").clone()
+        for offset in range(horizon):
+            shifted = torch.roll(self.ordered("valid"), -offset, 0)
+            valid &= shifted
+            if offset < horizon - 1:
+                valid &= ~torch.roll(
+                    self.ordered("boundary")
+                    | self.ordered("terminated")
+                    | self.ordered("timeout"),
+                    -offset,
+                    0,
+                )
+        if horizon > 1:
+            valid[-horizon + 1 :] = False
+        if starts:
+            valid &= self.ordered("launched").bool()
+            valid &= self.ordered("phase") + horizon < self.ordered("reference_length")
+        return valid.nonzero()
+
+    def sample(self, n, horizon=1, starts=False, validation=False):
+        choices = self.indices(horizon, starts)
+        # Entire environment IDs are held out. Never split adjacent frames from
+        # the same physical episode between fit and validation.
+        choices = choices[(choices[:, 1] % 5 == 0) == validation]
+        if len(choices) == 0:
+            raise ValueError("No valid replay windows: gather more post-launch data")
+        chosen = choices[torch.randint(len(choices), (n,), device=self.device)]
+        t, e = chosen.unbind(-1)
+        offsets = torch.arange(horizon, device=self.device)[:, None]
+        return {k: self.ordered(k)[t[None, :] + offsets, e[None, :]] for k in self.data}
+
+    def state_dict(self):
+        return {
+            "capacity": self.capacity,
+            "count": self.count,
+            "pointer": self.pointer,
+            "data": {
+                k: v[: self.count].cpu() if self.count < self.capacity else v.cpu()
+                for k, v in self.data.items()
+            },
+        }
+
+    def load_state_dict(self, state):
+        if state["capacity"] != self.capacity:
+            raise ValueError("Replay capacity mismatch")
+        self.count, self.pointer = state["count"], state["pointer"]
+        if (
+            not 0 <= self.count <= self.capacity
+            or not 0 <= self.pointer < self.capacity
+        ):
+            raise ValueError("Invalid replay indices")
+        self.data = {}
+        for k, v in state["data"].items():
+            dst = torch.empty(
+                (self.capacity, *v.shape[1:]), dtype=v.dtype, device=self.device
+            )
+            dst[: len(v)].copy_(v.to(self.device))
+            self.data[k] = dst

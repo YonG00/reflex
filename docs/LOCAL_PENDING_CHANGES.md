@@ -1,5 +1,15 @@
 # 待补改动
 
+## Stage 1 联合世界模型（2026-11-05，等待 GPU 验证）
+
+依据用户 V2 方案实现独立 WM/想象 Actor/Critic/真实 AMP 闭环与匹配 Oracle PPO。设计选择、启动命令与限制见 [实施说明](world_model/IMPLEMENTATION_ZH.md)。CPU 合成闭环通过不代表真实 Isaac 训练跑通；未启动 GPU 任务。
+
+- 不变量：原 noisy PPO 和原接物评测标准保留；完整 AMP checkpoint 行为维持。
+- 预期判据：真实 FK/观测/AMP/动作 parity 通过、连续窗口不跨注入/重置、真实排序和多步误差通过后才更新 Actor。
+- 出错症状：观察重建漂移、状态/默认关节顺序错位、奖励模型被利用、跨重启伪连续、恢复后判别器/优化器丢失。
+- 回滚：继续原 `scripts/train_stage1.sh`；新实验用独立日志/checkpoint，不覆盖现有 PPO 存档。
+- 验证入口：`tests/test_world_model.py`、`tests/test_amp_checkpoint.py`；开卡后先执行 `--mode preflight`。
+
 ## AMP checkpoint 保存与恢复（2026-11-05，已实现并启用）
 
 用户要求后续训练考虑完整保存 AMP 状态。当前上游 `OnPolicyRunner.save()` 仅保存 `model_state_dict`、`optimizer_state_dict`、`iter`、`infos`；本仓库 `MotionOnPolicyRunner.save()` 只扩展了导出逻辑，没有把 `AmpPPO._disc` 及 `_disc_opt` 接入保存。问题不是 `save_interval` 配置。

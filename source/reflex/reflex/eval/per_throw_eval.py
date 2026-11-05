@@ -146,6 +146,9 @@ def _build_actor(ckpt_path: str, num_obs: int, device: str):
     Fail loudly instead.
     """
     ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    if "actor" in ck and "obs_norm" in ck and "contract" in ck:
+        from reflex.world_model.inference import build_actor
+        return build_actor(ck,num_obs,device)
     state = ck["model_state_dict"]
     if any(k.startswith("e_priv_lin.") for k in state):
         # latent ckpt: rebuild the bottleneck actor-critic and
@@ -229,6 +232,9 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
     if env_id == "Reflex-Teacher-G1-v0":
         import reflex.envs.register  # noqa: F401  (gym id)
         from reflex.envs.teacher_env_cfg import G1BoxCatchStepCatchEnvCfg as Cfg
+    elif env_id == "Reflex-Teacher-Oracle-G1-v0":
+        from reflex.world_model.oracle_env import OracleEnvCfg as Cfg, register
+        register()
     elif env_id == "Reflex-Latent-G1-v0":
         import reflex.latent.register  # noqa: F401  (gym id)
         from reflex.latent.latent_env_cfg import G1BoxCatchLatentEnvCfg as Cfg
