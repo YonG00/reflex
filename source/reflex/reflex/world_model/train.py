@@ -18,6 +18,9 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument(
+    "--warm_start_actor", help="PPO Teacher engineering bootstrap; not full resume"
+)
 parser.add_argument("--output", default="logs/world_model/stage1")
 parser.add_argument(
     "--enable_actor",
@@ -30,6 +33,8 @@ parser.add_argument("--play_steps", type=int, default=1500)
 parser.add_argument("--video", action="store_true")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
+if args.checkpoint and args.warm_start_actor:
+    parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
 if args.num_envs < 6 or args.save_every < 1:
     parser.error(
         "Use at least 6 envs for separate holdout environments and save_every >= 1"
@@ -109,7 +114,10 @@ def main():
         )
         if args.checkpoint:
             trainer.load(args.checkpoint)
+        elif args.warm_start_actor:
+            trainer.warm_start_actor(args.warm_start_actor)
         manifest = adapter.manifest()
+        manifest["actor_initialization"] = trainer.initialization
         manifest.update(
             {
                 "config": dataclasses.asdict(config),

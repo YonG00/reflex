@@ -32,6 +32,8 @@ class TrainConfig:
     lr: float = 3e-4
     exploration: float = 0.15
     hidden: int = 256
+    actor_hidden_dims: list[int] | None = None
+    stage_balanced: bool = False
     # Normalized physical error / normalized per-term reward error. Provisional
     # acceptance limits, not literature-backed guarantees of safe imagination.
     max_state_rmse: float = 1.0
@@ -95,7 +97,7 @@ class Trainer:
             com_indices=contract.get("com_indices"),
         ).to(device)
         self.obs_norm = Standardizer(179).to(device)
-        self.actor = mlp(179, 29, c.hidden).to(device)
+        self.actor = mlp(179, 29, c.hidden, layers=c.actor_hidden_dims).to(device)
         nn.init.zeros_(self.actor[-1].weight)
         nn.init.zeros_(self.actor[-1].bias)
         self.critic = mlp(179, 1, c.hidden).to(device)
@@ -108,6 +110,52 @@ class Trainer:
         self.actor_updates = 0
         self.replay_seconds = 0.0
         self.normalized = False
+        self.initialization = {"kind": "scratch"}
+
+    def warm_start_actor(self, path):
+        """Engineering bootstrap only: preserve first166 channels, zero new cols.
+
+        The dropped blind/trust channels are fixed at zero (ideal measurements).
+        Fresh optimizers, WM, replay and AMP remain explicitly fresh.
+        """
+        import hashlib
+        from pathlib import Path
+
+        saved = torch.load(path, map_location=self.device, weights_only=False)[
+            "model_state_dict"
+        ]
+        active = [
+            k
+            for k, v in saved.items()
+            if "normalizer" in k
+            and v.numel() > 0
+            and not k.endswith("num_batches_tracked")
+        ]
+        if active:
+            raise ValueError(
+                "Warm-start PPO must use identity observation normalization"
+            )
+        weights = {
+            k.removeprefix("actor."): v.clone()
+            for k, v in saved.items()
+            if k.startswith("actor.")
+        }
+        if weights["0.weight"].shape[1] not in (167, 170):
+            raise ValueError("Expected legacy 167/170-D Teacher policy")
+        first = weights["0.weight"]
+        weights["0.weight"] = torch.zeros(
+            (first.shape[0], 179), device=self.device, dtype=first.dtype
+        )
+        weights["0.weight"][:, :166] = first[:, :166]
+        self.actor.load_state_dict(weights, strict=True)
+        self.initialization = {
+            "kind": "ppo_actor_warm_start",
+            "path": str(path),
+            "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+            "source_obs_dim": first.shape[1],
+            "dropped_reliability_channels": 0.0,
+            "optimizer_replay_amp_restored": False,
+        }
 
     def observation(self, b, s=None, previous=None, phase=None):
         return self.bridge(
@@ -175,14 +223,30 @@ class Trainer:
         start = timestamp(self.device)
         try:
             return self.replay.sample(
-                self.cfg.batch, horizon, starts, validation=validation
+                self.cfg.batch,
+                horizon,
+                starts,
+                validation=validation,
+                stage_balanced=self.cfg.stage_balanced,
             )
         finally:
             self.replay_seconds += timestamp(self.device) - start
 
     def fit_normalizers(self):
         b = {k: v[0] for k, v in self.sample().items()}
+        old_mean = self.obs_norm.mean.clone()
+        old_std = self.obs_norm.std.clone()
         self.obs_norm.fit(self.observation(b))
+        if self.initialization["kind"] == "ppo_actor_warm_start":
+            # Preserve the warm policy when introducing normalization. Equality
+            # holds in the unclipped domain; clipping is audited on real data.
+            with torch.no_grad():
+                first = self.actor[0]
+                old_weight = first.weight.clone()
+                first.weight.mul_(self.obs_norm.std / old_std)
+                first.bias.add_(
+                    old_weight @ ((self.obs_norm.mean - old_mean) / old_std)
+                )
         self.model.inputs.fit(
             self.model.features(
                 b["state"],
@@ -431,6 +495,7 @@ class Trainer:
             "real_transitions": self.real_transitions,
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
+            "initialization": self.initialization,
             "normalized": self.normalized,
             "replay": self.replay.state_dict(),
             "amp": self.prior.amp_state_dict(),
@@ -465,7 +530,7 @@ class Trainer:
         if (
             state.get("version") != 1
             or state["contract"] != self.contract
-            or state["config"] != asdict(self.cfg)
+            or asdict(TrainConfig(**state["config"])) != asdict(self.cfg)
             or state["reward_names"] != self.reward_names
         ):
             raise ValueError("Checkpoint config / physical contract mismatch")
@@ -493,6 +558,7 @@ class Trainer:
             state["real_transitions"],
         )
         self.normalized = state["normalized"]
+        self.initialization = state.get("initialization", {"kind": "scratch"})
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         random.setstate(state["python_rng"])

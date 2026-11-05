@@ -5,14 +5,14 @@ from torch import nn
 from .physics import canonical, integrate
 
 
-def mlp(inputs, outputs, hidden=256):
-    return nn.Sequential(
-        nn.Linear(inputs, hidden),
-        nn.ELU(),
-        nn.Linear(hidden, hidden),
-        nn.ELU(),
-        nn.Linear(hidden, outputs),
-    )
+def mlp(inputs, outputs, hidden=256, layers=None):
+    sizes = [inputs, *(layers or [hidden, hidden]), outputs]
+    modules = []
+    for i, (a, b) in enumerate(zip(sizes, sizes[1:])):
+        modules.append(nn.Linear(a, b))
+        if i < len(sizes) - 2:
+            modules.append(nn.ELU())
+    return nn.Sequential(*modules)
 
 
 class Standardizer(nn.Module):

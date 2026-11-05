@@ -260,6 +260,56 @@ def test_reward_features_distinguish_raw_history_and_reference(tmp_path):
     assert not torch.equal(first, features(moved, raw))
 
 
+def test_warm_actor_projection_and_normalizer_preserve_policy(tmp_path):
+    from reflex.world_model.models import mlp
+
+    t = make_trainer(tmp_path)
+    old = mlp(170, 29, 32)
+    source = tmp_path / "ppo.pt"
+    torch.save(
+        {"model_state_dict": {"actor." + k: v for k, v in old.state_dict().items()}},
+        source,
+    )
+    t.warm_start_actor(source)
+    adapter = SyntheticAdapter(t.bridge)
+    t.collect(adapter)
+    b = {k: v[0] for k, v in t.sample().items()}
+    obs = t.observation(b)
+    with torch.no_grad():
+        expected = old(torch.cat((obs[:, :166], torch.zeros(len(obs), 4)), -1))
+        torch.testing.assert_close(t.act(b), expected)
+        t.fit_normalizers()
+        torch.testing.assert_close(t.act(b), expected, atol=2e-6, rtol=1e-5)
+    assert t.initialization["kind"] == "ppo_actor_warm_start"
+    assert not t.initialization["optimizer_replay_amp_restored"]
+
+
+def test_balanced_sampler_retains_holdout_and_event_boundaries():
+    r = Replay(40)
+    for step in range(40):
+        stage = 0 if step == 10 else 3
+        r.add(
+            {
+                "valid": torch.ones(6, dtype=torch.bool),
+                "boundary": torch.full((6,), step == 20),
+                "terminated": torch.zeros(6, dtype=torch.bool),
+                "timeout": torch.zeros(6, dtype=torch.bool),
+                "launched": torch.ones(6, dtype=torch.bool),
+                "phase": torch.full((6,), step),
+                "reference_length": torch.full((6,), 100),
+                "stage": torch.full((6,), stage),
+                "environment": torch.arange(6),
+            }
+        )
+    batch = r.sample(1000, 4, stage_balanced=True)
+    assert int((batch["stage"][0] == 0).sum()) > 400
+    assert not (batch["environment"] % 5 == 0).any()
+    assert not batch["boundary"][:-1].any()
+    held = r.sample(1000, 4, validation=True, stage_balanced=True)
+    assert (held["environment"] % 5 == 0).all()
+    assert int((held["stage"][0] == 0).sum()) < 100
+
+
 class SyntheticAdapter:
     """Analytic toy transitions, never claimed to emulate real box contact."""
 
@@ -386,6 +436,12 @@ def test_full_cpu_chain_gradients_checkpoint_resume(tmp_path):
     t.replay.data["boundary"][(t.replay.pointer - 1) % t.replay.capacity].fill_(True)
     path = tmp_path / "checkpoint.pt"
     t.save(path)
+    # Existing v1 checkpoints predate optional sampler / actor shape fields.
+    legacy = torch.load(path, weights_only=False)
+    for key in ("actor_hidden_dims", "stage_balanced"):
+        legacy["config"].pop(key)
+    legacy.pop("initialization")
+    torch.save(legacy, path)
     expected_model = t.fit_model()
     expected_actor = t.update_actor()
     expected = copy.deepcopy(t.actor.state_dict())

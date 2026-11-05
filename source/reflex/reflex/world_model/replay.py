@@ -51,14 +51,32 @@ class Replay:
             valid &= self.ordered("phase") + horizon < self.ordered("reference_length")
         return valid.nonzero()
 
-    def sample(self, n, horizon=1, starts=False, validation=False):
+    def sample(
+        self, n, horizon=1, starts=False, validation=False, stage_balanced=False
+    ):
         choices = self.indices(horizon, starts)
         # Entire environment IDs are held out. Never split adjacent frames from
         # the same physical episode between fit and validation.
         choices = choices[(choices[:, 1] % 5 == 0) == validation]
         if len(choices) == 0:
             raise ValueError("No valid replay windows: gather more post-launch data")
-        chosen = choices[torch.randint(len(choices), (n,), device=self.device)]
+        if stage_balanced and not validation:
+            labels = self.ordered("stage")[choices[:, 0], choices[:, 1]]
+            pools = [choices[labels == stage] for stage in range(4)]
+            weights = torch.tensor([0.35, 0.25, 0.2, 0.2], device=self.device)
+            weights *= torch.tensor([len(p) > 0 for p in pools], device=self.device)
+            stages = torch.multinomial(weights, n, replacement=True)
+            selected = []
+            for stage, pool in enumerate(pools):
+                count = int((stages == stage).sum())
+                if count:
+                    selected.append(
+                        pool[torch.randint(len(pool), (count,), device=self.device)]
+                    )
+            chosen = torch.cat(selected)
+            chosen = chosen[torch.randperm(n, device=self.device)]
+        else:
+            chosen = choices[torch.randint(len(choices), (n,), device=self.device)]
         t, e = chosen.unbind(-1)
         offsets = torch.arange(horizon, device=self.device)[:, None]
         start = self.pointer if self.count == self.capacity else 0
