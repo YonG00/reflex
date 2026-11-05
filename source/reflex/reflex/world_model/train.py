@@ -8,7 +8,9 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--mode", choices=("preflight", "train", "play"), default="preflight"
+    "--mode",
+    choices=("preflight", "train", "play", "contact_probe"),
+    default="preflight",
 )
 parser.add_argument("--num_envs", type=int, default=64)
 parser.add_argument("--max_iterations", type=int, default=100)
@@ -170,6 +172,17 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "contact_probe":
+            from .contact_probe import check
+
+            result = check(adapter, trainer)
+            (out / "contact_probe.json").write_text(json.dumps(result, indent=2))
+            print(json.dumps(result), flush=True)
+            if not result["passed"]:
+                raise RuntimeError(
+                    "Controlled robot/ground contact filtering check failed"
+                )
+            return
         if args.mode == "play":
             if not args.checkpoint:
                 raise ValueError("play requires --checkpoint")
@@ -314,13 +327,19 @@ def main():
                         except ValueError:
                             metrics["gate/no_imagination_starts"] = 1.0
                         else:
-                            if (
-                                config.diagnostic_every
-                                and trainer.actor_updates % config.diagnostic_every == 0
-                            ):
-                                from .diagnostics import gradient_audit
+                            from .diagnostics import gradient_audit, diagnostic_due
 
+                            audit_due, audit_budget_skip = diagnostic_due(
+                                trainer, time.monotonic() - start, args.max_seconds
+                            )
+                            metrics["diagnostic/skipped_time_budget"] = float(
+                                audit_budget_skip
+                            )
+                            if audit_due:
                                 metrics.update(gradient_audit(trainer))
+                                trainer.last_diagnostic_seconds = metrics[
+                                    "time/gradient_diagnostic_seconds"
+                                ]
                                 metrics["coverage/wm8_windows"] = len(
                                     trainer.replay.indices(config.model_window)
                                 )

@@ -176,6 +176,7 @@ class Trainer:
             if self.termination is not None
             else None
         )
+        self.last_diagnostic_seconds = 0.0
         self.profile_next_actor = False
         self.profile_dir = None
         self._dynamics = (
@@ -890,6 +891,7 @@ class Trainer:
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
             "model_updates": self.model_updates,
+            "last_diagnostic_seconds": self.last_diagnostic_seconds,
             "termination_updates": self.termination_updates,
             "initialization": self.initialization,
             "experience": self.experience.state_dict(),
@@ -998,6 +1000,21 @@ class Trainer:
         )
         if "experience" in state:
             self.experience.load_state_dict(state["experience"])
+        self.last_diagnostic_seconds = state.get("last_diagnostic_seconds", 0.0)
+        if not self.last_diagnostic_seconds:
+            # Older v3 smoke checkpoints recorded diagnostic timing in JSONL.
+            from pathlib import Path
+            import json
+
+            metrics_path = Path(path).parent / "metrics.jsonl"
+            if metrics_path.exists():
+                for line in reversed(metrics_path.read_text().splitlines()):
+                    row = json.loads(line)
+                    if "time/gradient_diagnostic_seconds" in row:
+                        self.last_diagnostic_seconds = row[
+                            "time/gradient_diagnostic_seconds"
+                        ]
+                        break
         self.normalized = state["normalized"]
         self.initialization = state.get("initialization", {"kind": "scratch"})
         self.probe_transitions = state["probe_transitions"]

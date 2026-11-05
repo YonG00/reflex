@@ -166,6 +166,12 @@ class IsaacAdapter:
                 if spec.func.__name__ == "catch_success_bonus":
                     loose = spec.func(e, **spec.params).bool()
                     loose_known.fill_(True)
+            sensor = e.scene.sensors.get("wm_box_contacts")
+            pair_peak = net_peak = torch.zeros(e.num_envs, device=self.device)
+            if sensor is not None:
+                data = sensor.data
+                pair_peak = data.force_matrix_w_history.norm(dim=-1).flatten(1).amax(1)
+                net_peak = data.net_forces_w_history.norm(dim=-1).flatten(1).amax(1)
             previous_history = self.task_history()
             result = original_reward(dt)
             self.pre_reset = {
@@ -190,6 +196,8 @@ class IsaacAdapter:
                 ),
                 "loose_catch": loose,
                 "loose_catch_known": loose_known,
+                "pair_force_peak": pair_peak,
+                "net_force_peak": net_peak,
                 "box_contact": contact,
                 "contact_known": known,
                 "contact_phase": phase,

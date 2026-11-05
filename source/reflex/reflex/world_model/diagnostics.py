@@ -118,3 +118,13 @@ def gradient_audit(t):
         metrics["diagnostic/survival_only_gradient_norm"] = float(hazard.norm())
     metrics["time/gradient_diagnostic_seconds"] = time.monotonic() - started
     return metrics
+
+
+def diagnostic_due(trainer, elapsed, budget):
+    every = trainer.cfg.diagnostic_every
+    if not every or trainer.actor_updates % every:
+        return False, False
+    estimate = getattr(trainer, "last_diagnostic_seconds", 0.0)
+    if budget is not None and estimate > 0 and budget - elapsed < estimate + 5.0:
+        return False, True
+    return True, False

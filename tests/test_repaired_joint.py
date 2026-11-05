@@ -541,3 +541,14 @@ def test_cached_compiled_imagination_matches_eager_actor_gradients(tmp_path):
         torch.testing.assert_close(eager[key], compiled[key], atol=1e-6, rtol=1e-4)
     for x, y in zip(eg, cg):
         torch.testing.assert_close(x, y, atol=1e-6, rtol=1e-4)
+
+
+def test_known_expensive_diagnostic_is_skipped_near_wall_deadline():
+    from reflex.world_model.diagnostics import diagnostic_due
+
+    t = NS(cfg=NS(diagnostic_every=50), actor_updates=50, last_diagnostic_seconds=600)
+    assert diagnostic_due(t, 1750, 1800) == (False, True)
+    assert diagnostic_due(t, 100, 1800) == (True, False)
+    assert diagnostic_due(t, 1750, None) == (True, False)
+    t.actor_updates = 51
+    assert diagnostic_due(t, 1750, 1800) == (False, False)
