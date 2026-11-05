@@ -29,8 +29,24 @@ class MotionOnPolicyRunner(OnPolicyRunner):
         super().__init__(env, train_cfg, log_dir, device)
         self.registry_name = registry_name
 
+    def load(self, path, load_optimizer=True, map_location=None):
+        infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
+        if load_optimizer:
+            self.alg.learning_rate = self.alg.optimizer.param_groups[0]["lr"]
+        if load_optimizer and getattr(self.alg, "amp_ready", False):
+            state = infos.get("reflex_amp_state") if isinstance(infos, dict) else None
+            if state is None:
+                print("[AMP checkpoint] LEGACY: no AMP state; discriminator/Adam, ramp and replay "
+                      "are reinitialized. This is not a complete AMP resume.", flush=True)
+            else:
+                self.alg.load_amp_state_dict(state)
+        return infos
+
     def save(self, path: str, infos=None):
         """Save the model and training information."""
+        if getattr(self.alg, "amp_ready", False):
+            infos = dict(infos) if isinstance(infos, dict) else {"user_infos": infos}
+            infos["reflex_amp_state"] = self.alg.amp_state_dict()
         super().save(path, infos)
         if self.logger_type in ["wandb"]:
             import wandb  # only needed with --logger wandb

@@ -16,3 +16,7 @@
 | 2026-11-05 | 明确区分 stage1_scratch 与 stage1_continue | 从零训练实际命令没有 warm_start/resume 参数 | 结果待验收 |
 
 2026-11-05 后续验收：Stage 1 从零完成 600 iterations，`model_599.pt` 重新加载通过；同条件 640 次投掷接物成功率为 15.3%，官方教师为 87.7%。训练、评测结果与最终权重校验记录见 `docs/experiments/2026-11-05_stage1_scratch.md`。
+
+2026-11-05 续训：新增教师训练参数 `--resume_total_iterations`，用于明确累计目标、避免重跑最后一个已完成索引，并恢复 PPO 自适应学习率标量。旧 checkpoint 缺少 AMP 判别器状态的限制已在 `docs/experiments/2026-11-05_stage1_resume600_to2000.md` 记录；本次为 600 → 2000，结果待验证。
+
+2026-11-05 用户追加要求：完整 AMP 存档已实现；CPU 下一步更新一致性和实际 GPU 保存/恢复验证通过。旧进程已暂停，新格式从 `model_652.pt` 起包含 AMP。后续正式模型使用 4096 验证分支的 `model_656.pt`，继续至累计 2000。详见 `docs/AMP_CHECKPOINT_ZH.md` 和 `docs/LOCAL_PENDING_CHANGES.md`。

@@ -14,6 +14,10 @@ Feature layout MUST match tools/motion/build_amp_dataset.py exactly:
 from __future__ import annotations
 
 import os
+import hashlib
+import random
+
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -87,6 +91,8 @@ class AmpPPO(PPO):
                         disc_skip_below: float = 0.3):
         self._amp_env = env  # ManagerBasedRLEnv (unwrapped)
         data = torch.load(dataset_path, map_location=self.device)
+        with open(dataset_path, "rb") as f:
+            self._amp_dataset_sha256 = hashlib.file_digest(f, "sha256").hexdigest()
         self._expert = data["features"].to(self.device)          # (N,2,83)
         st = data["stats"]
         self._mu = st["mean"].to(self.device)
@@ -146,6 +152,68 @@ class AmpPPO(PPO):
         print(f"[AMP] context set: expert pairs {tuple(self._expert.shape)}, "
               f"w_style {w_style} w_task {w_task} disc_steps {disc_steps}",
               flush=True)
+
+    def amp_state_dict(self):
+        """Complete single-GPU AMP state; simulator transition pairs are reset on load."""
+        if not self.amp_ready:
+            raise RuntimeError("AMP context must be initialized before saving")
+        scalars = ("_w_style", "_w_task", "_disc_steps", "_batch", "_r1", "_logit_reg",
+                   "_style_ramp_iters", "_disc_skip_below", "_iter_count",
+                   "_last_disc_loss", "_style_ema")
+        return {
+            "version": 1,
+            "dataset_sha256": self._amp_dataset_sha256,
+            "discriminator": self._disc.state_dict(),
+            "discriminator_optimizer": self._disc_opt.state_dict(),
+            "normalizer_mean": self._mu.detach().cpu(),
+            "normalizer_std": self._sig.detach().cpu(),
+            "scalars": {name: getattr(self, name) for name in scalars},
+            "replay_capacity": self._pbuf.shape[0],
+            "replay_count": self._pbuf_n,
+            "replay_pointer": self._pbuf_ptr,
+            "policy_replay": self._pbuf[:self._pbuf_n].detach().cpu(),
+            "python_rng": random.getstate(),
+            "numpy_rng": np.random.get_state(),
+            "torch_rng": torch.get_rng_state(),
+            "cuda_rng": torch.cuda.get_rng_state(self.device) if str(self.device).startswith("cuda") else None,
+        }
+
+    def load_amp_state_dict(self, state):
+        """Restore AMP after set_amp_context; reject incompatible data/buffer layout."""
+        if not self.amp_ready:
+            raise RuntimeError("Initialize AMP context before loading its checkpoint")
+        if state.get("version") != 1:
+            raise ValueError("Unsupported AMP checkpoint version")
+        if state["dataset_sha256"] != self._amp_dataset_sha256:
+            raise ValueError("AMP expert dataset checksum differs from the checkpoint")
+        cap = self._pbuf.shape[0]
+        n, ptr = int(state["replay_count"]), int(state["replay_pointer"])
+        if state["replay_capacity"] != cap or not (0 <= n <= cap and 0 <= ptr < cap):
+            raise ValueError("AMP replay capacity or indices differ from checkpoint")
+        if tuple(state["policy_replay"].shape) != (n, 2, 83):
+            raise ValueError("Invalid AMP replay shape")
+        if not (torch.equal(self._mu.cpu(), state["normalizer_mean"].cpu())
+                and torch.equal(self._sig.cpu(), state["normalizer_std"].cpu())):
+            raise ValueError("AMP normalization differs from checkpoint")
+        self._disc.load_state_dict(state["discriminator"])
+        self._disc_opt.load_state_dict(state["discriminator_optimizer"])
+        for name in ("_w_style", "_w_task", "_disc_steps", "_batch", "_r1", "_logit_reg",
+                     "_style_ramp_iters", "_disc_skip_below", "_iter_count",
+                     "_last_disc_loss", "_style_ema"):
+            setattr(self, name, state["scalars"][name])
+        self._pbuf.zero_()
+        self._pbuf[:n].copy_(state["policy_replay"])
+        self._pbuf_n, self._pbuf_ptr = n, ptr
+        # The new simulator does not continue the old environment's last frame.
+        self._prev.zero_()
+        self._prev_valid.zero_()
+        random.setstate(state["python_rng"])
+        np.random.set_state(state["numpy_rng"])
+        torch.set_rng_state(state["torch_rng"].cpu())
+        if state["cuda_rng"] is not None and str(self.device).startswith("cuda"):
+            torch.cuda.set_rng_state(state["cuda_rng"].cpu(), self.device)
+        print(f"[AMP checkpoint] restored discriminator/Adam, iter={self._iter_count}, "
+              f"replay={n}/{cap}; simulator transition pairs reset", flush=True)
 
     @torch.no_grad()
     def _features(self) -> torch.Tensor:

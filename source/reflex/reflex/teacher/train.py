@@ -32,6 +32,8 @@ parser.add_argument("--num_envs", type=int, default=None, help="Number of enviro
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--resume_total_iterations", type=int, default=None,
+                    help="With --resume True, train to this cumulative iteration count (exclusive upper bound).")
 parser.add_argument("--registry_name", type=str, default=None, help="The name of the wandb registry.")
 parser.add_argument("--motion_file", type=str, default=None, help="Local path to motion .npz (skips wandb).")
 parser.add_argument("--warm_start_ckpt", type=str, default=None,
@@ -49,6 +51,11 @@ cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
+if args_cli.resume_total_iterations is not None:
+    if not args_cli.resume or args_cli.warm_start_ckpt is not None:
+        parser.error("--resume_total_iterations requires --resume True and forbids --warm_start_ckpt")
+    if args_cli.resume_total_iterations <= 0:
+        parser.error("--resume_total_iterations must be positive")
 
 # always enable cameras to record video
 if args_cli.video:
@@ -225,6 +232,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
         runner.load(resume_path)
+        if args_cli.resume_total_iterations is not None:
+            # RSL-RL 3.0.1 saves the last completed index, but learn() starts at
+            # current_learning_iteration. Advance once to avoid replaying it.
+            start = int(runner.current_learning_iteration) + 1
+            remaining = args_cli.resume_total_iterations - start
+            if remaining <= 0:
+                raise ValueError(f"Checkpoint already completed {start} iterations; target must be larger")
+            runner.current_learning_iteration = start
+            agent_cfg.max_iterations = remaining
+            # Adam's param groups restore the LR, but PPO's adaptive schedule
+            # also stores it in this separate scalar.
+            runner.alg.learning_rate = runner.alg.optimizer.param_groups[0]["lr"]
+            print(f"[resume_plan] start={start} remaining={remaining} "
+                  f"total={args_cli.resume_total_iterations} lr={runner.alg.learning_rate}", flush=True)
+            # MotionOnPolicyRunner reports either restored AMP state or an
+            # explicit legacy-checkpoint warning; do not assume all ckpts lack AMP.
 
     # Warm start from a checkpoint; the first layer is zero-padded when the
     # observation dimension grew.
