@@ -145,9 +145,23 @@ def evaluate(model, bridge, batches):
             memories = None
         else:
             states, memories, rewards, _ = rollout(model, bridge, seq, horizon)
+        window_sq = state_error(states, seq["next_state"][:horizon]).square()
         pred, true = states[-1], seq["next_state"][-1]
         error = state_error(pred, true)
         values = {
+            "window_state_nse": float(window_sq.mean()),
+            "window_state_nse_time_sum": float(window_sq.mean((1, 2)).sum()),
+            "window_state_squared_l2_time_mean": float(window_sq.sum(-1).mean()),
+            "window_robot_nse": float(window_sq[..., :70].mean()),
+            "window_box_nse": float(window_sq[..., 70:].mean()),
+            "per_step_state_nse": window_sq.mean((1, 2)).tolist(),
+            "endpoint_state_nse": float(window_sq[-1].mean()),
+            "window_box_position_m": float(
+                (states[..., 71:74] - seq["next_state"][:horizon, ..., 71:74])
+                .square()
+                .mean()
+                .sqrt()
+            ),
             "state_rmse": float(error.square().mean(-1).sqrt().mean()),
             "state_nse": float(error.square().mean()),
             "robot_nse": float(error[:, :70].square().mean()),

@@ -352,7 +352,7 @@ def test_fresh_wm_architectures_share_same_physical_prior():
 
 def test_state_only_wm_loss_and_short_snapshot_starts(tmp_path):
     from reflex.world_model.models import StateWorldModel
-    from reflex.world_model.offline import window_loss, predict_states
+    from reflex.world_model.offline import window_loss, predict_states, evaluate
 
     t = make_trainer(tmp_path)
     t.collect(SyntheticAdapter(t.bridge))
@@ -361,6 +361,15 @@ def test_state_only_wm_loss_and_short_snapshot_starts(tmp_path):
     pred = predict_states(model, batch, 8)
     expected = state_error(pred, batch["next_state"]).square().mean()
     torch.testing.assert_close(window_loss(model, None, batch, 8), expected)
+    metrics = evaluate(model, None, {8: batch})["8"]
+    assert metrics["window_state_nse"] == pytest.approx(float(expected.detach()))
+    assert metrics["window_state_nse_time_sum"] == pytest.approx(
+        8 * float(expected.detach())
+    )
+    assert metrics["window_state_squared_l2_time_mean"] == pytest.approx(
+        82 * float(expected.detach())
+    )
+    assert metrics["endpoint_state_nse"] == metrics["state_nse"]
     assert model.net[-1].out_features == 82
     assert not hasattr(model, "reward_norm")
     expected.backward()
