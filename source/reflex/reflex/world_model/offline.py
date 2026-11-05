@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import torch
 from torch import nn
 from .models import WorldModel
@@ -18,6 +19,7 @@ from .physics import Kinematics, state_error
 from .observation import OracleObservation
 from .replay import Replay
 from .timing import timestamp
+from reflex.paths import REPO_ROOT
 
 
 def observation(bridge, b, state):
@@ -123,6 +125,11 @@ def main():
     p.add_argument("--batch", type=int, default=128)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
+        "--fixed_minibatch",
+        action="store_true",
+        help="Overfit one fixed training batch to diagnose representational/optimization errors",
+    )
+    p.add_argument(
         "--cases", default="4:1,8:1,8:82", help="window:state_loss_weight pairs"
     )
     args = p.parse_args()
@@ -164,6 +171,11 @@ def main():
     batches = {h: replay.sample(256, h, validation=True) for h in (1, 4, 8, 16, 32)}
     result = {
         "source": args.checkpoint,
+        "source_sha256": hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest(),
+        "code_sha": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
+        ).strip(),
+        "args": vars(args),
         "source_iteration": ck["iteration"],
         "actor_called": False,
         "warm_start_actor": False,
@@ -182,9 +194,24 @@ def main():
         # Each case draws identical start states/windows. Only the prefix used
         # for loss differs, so long-window eligibility cannot change sampling.
         torch.manual_seed(args.seed + 1)
+        fixed_seq = (
+            replay.sample(args.batch, train_horizon) if args.fixed_minibatch else None
+        )
+        torch.manual_seed(args.seed + 2)
+        train_probe = (
+            fixed_seq if fixed_seq is not None else replay.sample(256, train_horizon)
+        )
+        train_before = evaluate(
+            model, bridge, {horizon: {k: v[:horizon] for k, v in train_probe.items()}}
+        )
+        torch.manual_seed(args.seed + 1)
         begin = timestamp(args.device)
         for update in range(args.updates):
-            seq = replay.sample(args.batch, train_horizon)
+            seq = (
+                fixed_seq
+                if fixed_seq is not None
+                else replay.sample(args.batch, train_horizon)
+            )
             loss = window_loss(model, bridge, seq, horizon, weight)
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -209,6 +236,12 @@ def main():
             "model_transition_evaluations": args.updates * args.batch * horizon,
             "seconds": timestamp(args.device) - begin,
             "evaluation": evaluate(model, bridge, batches),
+            "training_probe_before": train_before,
+            "training_probe_after": evaluate(
+                model,
+                bridge,
+                {horizon: {k: v[:horizon] for k, v in train_probe.items()}},
+            ),
         }
         result["cases"].append(row)
         torch.save(
@@ -218,7 +251,8 @@ def main():
                 "source": args.checkpoint,
                 "case": row,
                 "contract": c,
-                "config": conf,
+                "source_training_config": conf,
+                "offline_fit_args": vars(args),
             },
             output / f"wm_window{horizon}_weight{weight:g}.pt",
         )
