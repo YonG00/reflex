@@ -1,4 +1,4 @@
-"""Joint residual dynamics and per-term learned reward / termination / memory heads."""
+"""Pure physical residual dynamics and explicitly retained legacy multitask model."""
 
 import torch
 from torch import nn
