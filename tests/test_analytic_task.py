@@ -3,6 +3,7 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import torch
+import pytest
 from reflex.world_model.physics import Kinematics, integrate
 from reflex.world_model.task import AnalyticTask, Term, HISTORY_FIELDS
 
@@ -169,7 +170,8 @@ def test_exact_task_history_reward_gradients_and_timeout():
     assert (ending.phase == 15).all()
 
 
-def test_pure_imagination_short_replay_and_cpu_update():
+@pytest.mark.parametrize("chunk", [0, 1, 2])
+def test_pure_imagination_short_replay_and_cpu_update(chunk):
     from types import SimpleNamespace as NS
     from reflex.world_model.observation import OracleObservation
     from reflex.world_model.physics import ActionMap
@@ -207,7 +209,11 @@ def test_pure_imagination_short_replay_and_cpu_update():
         batch=2,
         horizon=4,
         actor_steps=1,
-        gradient_audit_every=1,
+        gradient_audit_every=0 if chunk else 1,
+        actor_batch=4,
+        actor_microbatch=chunk,
+        critic_epochs=2,
+        critic_minibatches=2,
     )
     t = Trainer(
         bridge,
@@ -247,7 +253,12 @@ def test_pure_imagination_short_replay_and_cpu_update():
     assert not imagined["done"].any()
     assert imagined["truncated"][1].all()
     result = t.update_actor()
-    assert t.actor_updates == 1 and result["gradient/task"] > 0
+    assert t.actor_updates == 1 and result["actor/gradient_norm"] > 0
+    if chunk:
+        assert result["imagination/start_batch"] == 4
+        assert {float(v["step"]) for v in t.actor_opt.state.values()} == {1.0}
+    else:
+        assert result["gradient/task"] > 0
     assert all(torch.isfinite(torch.tensor(v)) for v in result.values())
 
 

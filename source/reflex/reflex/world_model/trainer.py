@@ -19,6 +19,22 @@ from .timing import timestamp
 
 @dataclass
 class TrainConfig:
+    tf32: bool = False
+    schedule: str = "guarded"
+    initial_collect_steps: int = 40
+    updates_per_env_step: float = 0.4
+    actor_batch: int = 0
+    actor_microbatch: int = 0
+    actor_beta2: float = 0.999
+    actor_grad_clip_value: float = 0.0
+    actor_horizon_scale: bool = False
+    critic_epochs: int = 1
+    critic_minibatches: int = 1
+    critic_hidden_dims: list[int] | None = None
+    validation_every: int = 1
+    lr_total_steps: int = 320000
+    lr_final_ratio: float = 0.03
+    lr_decay_steps: int = 250000
     capacity_steps: int = 1024
     collect_steps: int = 24
     model_steps: int = 64
@@ -96,6 +112,8 @@ class Trainer:
             prior,
         )
         self.reward_names, self.contract = list(reward_names), contract
+        if c.tf32:
+            torch.set_float32_matmul_precision("high")
         self.task = task.to(device) if task is not None else None
         if c.wm_kind not in ("state", "multitask"):
             raise ValueError("Unknown WM kind")
@@ -118,16 +136,19 @@ class Trainer:
         self.actor = mlp(179, 29, c.hidden, layers=c.actor_hidden_dims).to(device)
         nn.init.zeros_(self.actor[-1].weight)
         nn.init.zeros_(self.actor[-1].bias)
-        self.critic = mlp(179, 1, c.hidden).to(device)
+        self.critic = mlp(179, 1, c.hidden, layers=c.critic_hidden_dims).to(device)
         self.model_opt = torch.optim.Adam(
             self.model.parameters(), lr=c.model_lr or c.lr
         )
-        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=c.lr)
+        self.actor_opt = torch.optim.Adam(
+            self.actor.parameters(), lr=c.lr, betas=(0.9, c.actor_beta2)
+        )
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=c.lr)
         self.replay = Replay(c.capacity_steps, device)
         self.iteration, self.real_transitions = 0, 0
         self.probe_transitions = 0
         self.actor_updates = 0
+        self.model_updates = 0
         self.replay_seconds = 0.0
         self.normalized = False
         self.initialization = {"kind": "scratch"}
@@ -341,6 +362,7 @@ class Trainer:
                 error_if_nonfinite=True,
             )
             self.model_opt.step()
+            self.model_updates += 1
             last = {
                 "wm/loss": float(loss.detach()),
                 "wm/state_loss": float(torch.stack(state_losses).mean().detach()),
@@ -426,7 +448,42 @@ class Trainer:
             for h in (1, 4, 8, 16)
         )
 
+    def validation_due(self):
+        rounds = self.model_updates // self.cfg.model_steps
+        return (rounds - 1) % self.cfg.validation_every == 0
+
+    def schedule_lr(self):
+        if self.cfg.schedule != "joint_reproduction":
+            return self.cfg.model_lr or self.cfg.lr
+        import math
+
+        step = min(self.iteration + 1, self.cfg.lr_decay_steps)
+        ratio = self.cfg.lr_final_ratio + (1 - self.cfg.lr_final_ratio) * 0.5 * (
+            1 + math.cos(math.pi * step / self.cfg.lr_decay_steps)
+        )
+        for opt, base in (
+            (self.model_opt, self.cfg.model_lr or self.cfg.lr),
+            (self.actor_opt, self.cfg.lr),
+            (self.critic_opt, self.cfg.lr),
+        ):
+            for group in opt.param_groups:
+                group["lr"] = base * ratio
+        return (self.cfg.model_lr or self.cfg.lr) * ratio
+
+    def updates_due(self):
+        if self.cfg.schedule != "joint_reproduction":
+            return 1
+        import math
+
+        j = self.iteration + 1 - self.cfg.initial_collect_steps
+        if j < 0:
+            return 0
+        rate = self.cfg.updates_per_env_step
+        return math.floor((j + 1) * rate + 1e-9) - math.floor(j * rate + 1e-9)
+
     def ready(self, metrics, ranking_approved=False):
+        if self.cfg.schedule == "joint_reproduction":
+            return True
         # A real-simulator action-ranking report is a separate required gate.
         return (
             ranking_approved
@@ -434,8 +491,8 @@ class Trainer:
             and self.basic_ready(metrics)
         )
 
-    def imagine(self):
-        b = self.sample(starts=True)
+    def imagine(self, start_batch=None):
+        b = self.sample(starts=True) if start_batch is None else start_batch
         if self.model.state_only and self.task is None:
             raise RuntimeError("Pure dynamics needs an AnalyticTask for imagination")
         s, m, blend = b["state"], b["memory"], b["blend"]
@@ -502,6 +559,10 @@ class Trainer:
         }
 
     def update_actor(self):
+        if self.cfg.actor_microbatch:
+            from .joint import update_actor
+
+            return update_actor(self)
         metrics = {}
         imagine_seconds = actor_seconds = critic_seconds = 0.0
         for _ in range(self.cfg.actor_steps):
@@ -624,6 +685,7 @@ class Trainer:
             "real_transitions": self.real_transitions,
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
+            "model_updates": self.model_updates,
             "initialization": self.initialization,
             "normalized": self.normalized,
             "task_spec": self.task.specification() if self.task is not None else None,
@@ -702,6 +764,7 @@ class Trainer:
         self.initialization = state.get("initialization", {"kind": "scratch"})
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
+        self.model_updates = state.get("model_updates", 0)
         random.setstate(state["python_rng"])
         np.random.set_state(state["numpy_rng"])
         torch.set_rng_state(state["torch_rng"].cpu())

@@ -25,7 +25,7 @@ parser.add_argument("--output", default="logs/world_model/stage1")
 parser.add_argument(
     "--enable_actor",
     action="store_true",
-    help="Attempt gated actor updates after WM warmup; never bypasses validation",
+    help="Enable Actor updates under the selected guarded or joint schedule",
 )
 parser.add_argument("--save_every", type=int, default=25)
 parser.add_argument("--preflight_steps", type=int, default=512)
@@ -197,14 +197,22 @@ def main():
                 collect_start = timestamp(args.device)
                 metrics = trainer.collect(adapter)
                 metrics["time/collect_seconds"] = timestamp(args.device) - collect_start
+                metrics["schedule/update_due"] = float(trainer.updates_due())
                 try:
+                    if not trainer.updates_due():
+                        raise ValueError("Not a scheduled update step")
                     trainer.sample(config.model_window)
                 except ValueError:
-                    metrics["warmup/insufficient_windows"] = 1.0
+                    metrics["warmup/insufficient_windows"] = float(
+                        bool(trainer.updates_due())
+                    )
+                    metrics["schedule/update_due"] = float(trainer.updates_due())
                 else:
+                    metrics["schedule/model_lr"] = trainer.schedule_lr()
                     metrics.update(trainer.fit_model())
                     validation_start = timestamp(args.device)
-                    metrics.update(trainer.validate())
+                    if trainer.validation_due():
+                        metrics.update(trainer.validate())
                     metrics["time/validation_seconds"] = (
                         timestamp(args.device) - validation_start
                     )
@@ -214,6 +222,7 @@ def main():
                     }
                     if (
                         args.enable_actor
+                        and config.schedule != "joint_reproduction"
                         and trainer.iteration >= config.warmup_iterations
                         and trainer.basic_ready(metrics)
                     ):
@@ -226,7 +235,9 @@ def main():
                             json.dumps(ranking, indent=2)
                         )
                     metrics["gate/ranking_passed"] = float(ranking["passed"])
-                    approved = trainer.ready(metrics, ranking["passed"])
+                    approved = args.enable_actor and trainer.ready(
+                        metrics, ranking["passed"]
+                    )
                     metrics["gate/actor_enabled"] = float(approved)
                     if approved:
                         try:
@@ -249,6 +260,7 @@ def main():
                         "progress/collect_transitions": trainer.real_transitions
                         - trainer.probe_transitions,
                         "progress/actor_updates": trainer.actor_updates,
+                        "progress/wm_gradient_updates": trainer.model_updates,
                         "time/replay_sample_seconds_inclusive": trainer.replay_seconds,
                         "progress/wall_seconds": time.monotonic() - start,
                         "progress/end_to_end_transitions_per_second": (

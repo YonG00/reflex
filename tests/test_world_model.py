@@ -564,3 +564,28 @@ def test_state_model_checkpoint_roundtrip_and_schema_rejection(tmp_path):
     assert restored.actor_updates == 0 and restored.model.state_only
     with pytest.raises(ValueError, match="schema/config/physical contract mismatch"):
         make_trainer(tmp_path).load(path)
+
+
+def test_joint_schedule_is_40_step_collection_then_point_four_utd(tmp_path):
+    t = make_trainer(tmp_path)
+    t.cfg.schedule = "joint_reproduction"
+    due = []
+    for t.iteration in range(100):
+        if t.updates_due():
+            due.append(t.iteration + 1)
+    assert due[0] == 42 and len(due) == 24
+    assert t.ready({}, ranking_approved=False)
+
+
+def test_joint_validation_uses_model_rounds_and_cosine_schedule(tmp_path):
+    t = make_trainer(tmp_path)
+    t.cfg.schedule = "joint_reproduction"
+    t.cfg.validation_every = 10
+    t.model_updates = t.cfg.model_steps
+    assert t.validation_due()
+    t.model_updates = 2 * t.cfg.model_steps
+    assert not t.validation_due()
+    t.model_updates = 11 * t.cfg.model_steps
+    assert t.validation_due()
+    t.iteration = 249999
+    assert t.schedule_lr() == pytest.approx((t.cfg.model_lr or t.cfg.lr) * 0.03)
