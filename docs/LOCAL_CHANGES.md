@@ -14,3 +14,5 @@
 | 2026-11-05 | 启动时加入当前 Python 的 torch/lib 动态库目录 | 修复 CUDA linalg 的 dlopen 错误；参考动作和 AMP 数据生成完成 | 未修改训练算法 |
 | 2026-11-05 | 录像关闭 motion/contact 调试标记并拉近视角 | 官方教师 seed 10 录像已生成 | 仅调整画面，不改变评测规则 |
 | 2026-11-05 | 明确区分 stage1_scratch 与 stage1_continue | 从零训练实际命令没有 warm_start/resume 参数 | 结果待验收 |
+
+2026-11-05 后续验收：Stage 1 从零完成 600 iterations，`model_599.pt` 重新加载通过；同条件 640 次投掷接物成功率为 15.3%，官方教师为 87.7%。训练、评测结果与最终权重校验记录见 `docs/experiments/2026-11-05_stage1_scratch.md`。

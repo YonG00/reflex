@@ -4,9 +4,9 @@
 
 ## 当前验证边界
 
-2026-11-04：本地启动脚本通过 shell 语法检查，录像修改通过 Python 编译检查；尚未完成训练、闭环评测或视频渲染验证。GPU 运行结果不得由这些语法检查推断。
+2026-11-04 完成语法检查；2026-11-05 已完成数据构建、Stage 1 从零训练 600 iterations、最终权重重新加载、同条件对比评测和实际录像。详细结果见 [Stage 1 实验记录](experiments/2026-11-05_stage1_scratch.md)。
 
-版本目标为 Isaac Sim 5.1.0、Isaac Lab v2.3.1、PyTorch 2.7.0/CUDA 12.8、rsl-rl-lib 3.0.1。新镜像的 Sim、PyTorch、rsl-rl 版本与目标匹配；Isaac Lab 扩展依赖仍需安装并验收。
+运行栈为 Isaac Sim 5.1.0、Isaac Lab v2.3.1 源码、PyTorch 2.7.0/CUDA 12.8、rsl-rl-lib 3.0.1。Isaac Lab 扩展已安装并通过本实验运行。基础镜像的 `pip check` 仍存在 NumPy、Starlette、packaging 的依赖声明冲突；本次运行通过不能视为所有镜像组件兼容。
 
 ## 资源准备（不需要 GPU）
 
@@ -58,4 +58,4 @@ bash scripts/local/train.sh stage1_scratch --num_envs 4096 --max_iterations 600 
 
 公开配置是教师训练序列最后一轮配置，从零运行不等于完整重放论文教师的训练过程。本次结果将与官方教师在 regular 条件、seed 8/9、每 seed 320 环境下比较，使用上游 sustained_hold 指标。
 
-数据准备已完成：BONES CSV 与 AMASS B10 的 checksum 均通过；参考动作 1500 帧、50 fps；AMP 数据为 `(6576, 2, 83)`，有限数值检查通过。官方教师录像已生成，从零训练结果尚待完成。
+数据准备已完成：BONES CSV 与 AMASS B10 的 checksum 均通过；参考动作 1500 帧、50 fps；AMP 数据为 `(6576, 2, 83)`，有限数值检查通过。官方教师和从零模型已完成评测：同条件 640 次投掷的 sustained_hold 成功率分别为 87.7% 和 15.3%。
