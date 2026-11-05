@@ -227,6 +227,10 @@ def evaluate(model, bridge, batches):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--checkpoint", required=True)
+    p.add_argument(
+        "--resume_fit",
+        help="Resume a saved offline WM/Adam; --updates is the target total",
+    )
     p.add_argument("--urdf", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--device", default="cuda:0")
@@ -268,6 +272,7 @@ def main():
     if any(h < 1 or w <= 0 for h, w in cases):
         p.error("Positive windows and weights required")
     ck = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    source_sha256 = hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest()
     c, conf, sd = ck["contract"], ck["config"], ck["bridge"]
     if hashlib.sha256(Path(args.urdf).read_bytes()).hexdigest() != c["urdf_sha256"]:
         raise ValueError("URDF checksum differs from data contract")
@@ -334,16 +339,56 @@ def main():
             model.reward_norm.fit(norm["reward_terms"])
     else:
         model.load_state_dict(ck["model"])
+    resumed = None
+    start_update = 0
+    if args.resume_fit:
+        if not args.fresh or args.fixed_minibatch or len(cases) != 1:
+            p.error(
+                "resume_fit requires --fresh architecture, one case and random minibatches"
+            )
+        resumed = torch.load(args.resume_fit, map_location="cpu", weights_only=False)
+        expected_sha = resumed.get("source_sha256")
+        if expected_sha is None:
+            expected_sha = json.loads(
+                (Path(args.resume_fit).parent / "comparison.json").read_text()
+            )["source_sha256"]
+        if expected_sha != source_sha256:
+            raise ValueError("Offline resume frozen replay checksum differs")
+        old_args = resumed["offline_fit_args"]
+        keys = (
+            "objective",
+            "device",
+            "hidden_dims",
+            "activation",
+            "seed",
+            "batch",
+            "lr",
+            "grad_clip",
+            "cases",
+            "fixed_minibatch",
+        )
+        if resumed["contract"] != c or any(
+            old_args.get(k) != getattr(args, k) for k in keys
+        ):
+            raise ValueError(
+                "Offline resume contract or sampling/optimization settings differ"
+            )
+        start_update = resumed["case"]["optimizer_updates"]
+        if args.updates <= start_update:
+            p.error("--updates must exceed the saved update count")
+        model.load_state_dict(resumed["model"])
     initial = copy.deepcopy(model.state_dict())
     torch.manual_seed(args.seed)
     batches = {h: replay.sample(256, h, validation=True) for h in (1, 4, 8, 16, 32)}
     result = {
         "source": args.checkpoint,
-        "source_sha256": hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest(),
+        "source_sha256": source_sha256,
         "code_sha": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
         ).strip(),
         "args": vars(args),
+        "resume_fit": args.resume_fit,
+        "starting_update": start_update,
         "source_iteration": ck["iteration"],
         "actor_called": False,
         "warm_start_actor": False,
@@ -368,6 +413,8 @@ def main():
     for horizon, weight in cases:
         model.load_state_dict(initial)
         opt = torch.optim.Adam(model.parameters(), lr=args.lr or conf["lr"])
+        if resumed is not None:
+            opt.load_state_dict(copy.deepcopy(resumed["optimizer"]))
         if not args.fresh:
             opt.load_state_dict(copy.deepcopy(ck["model_opt"]))
             if args.lr is not None:
@@ -387,12 +434,19 @@ def main():
             model, bridge, {horizon: {k: v[:horizon] for k, v in train_probe.items()}}
         )
         torch.manual_seed(args.seed + 1)
-        curve = []
+        # Old offline checkpoints did not store RNG. Training uses no dropout or
+        # other stochastic operations: replaying the seeded index draws exactly
+        # reconstructs the next minibatch, independently of model depth.
+        for _ in range(start_update):
+            replay.sample(args.batch, train_horizon)
+        curve = (
+            copy.deepcopy(resumed["case"].get("learning_curve", [])) if resumed else []
+        )
         torch.cuda.reset_peak_memory_stats() if str(args.device).startswith(
             "cuda"
         ) else None
         begin = timestamp(args.device)
-        for update in range(args.updates):
+        for update in range(start_update, args.updates):
             seq = (
                 fixed_seq
                 if fixed_seq is not None
@@ -432,7 +486,13 @@ def main():
             "window": horizon,
             "state_weight": weight,
             "optimizer_updates": args.updates,
+            "starting_update": start_update,
+            "optimizer_updates_this_run": args.updates - start_update,
             "model_transition_evaluations": args.updates * args.batch * horizon,
+            "model_transition_evaluations_this_run": (args.updates - start_update)
+            * args.batch
+            * horizon,
+            "seconds_scope": "updates_this_run_plus_periodic_evaluation",
             "seconds": timestamp(args.device) - begin,
             "evaluation": evaluate(model, bridge, batches),
             "training_probe_before": train_before,
@@ -448,6 +508,7 @@ def main():
                 "model": model.state_dict(),
                 "optimizer": opt.state_dict(),
                 "source": args.checkpoint,
+                "source_sha256": source_sha256,
                 "case": row,
                 "contract": c,
                 "source_training_config": conf,
