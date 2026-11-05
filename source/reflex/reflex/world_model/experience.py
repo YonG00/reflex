@@ -50,7 +50,8 @@ def clean2_intercept_candidate(box_pos, box_velocity, torso_pos, radius):
 
 
 class ExperienceMetrics:
-    def __init__(self):
+    def __init__(self, monitor_contacts=True):
+        self.monitor_contacts = monitor_contacts
         self.reward = self.length = self.success = self.contact_prev = None
         self.completed = self.return_sum = self.length_sum = self.launches = (
             self.contact_edges
@@ -93,15 +94,17 @@ class ExperienceMetrics:
         self.return_sum += float(self.reward[done].sum())
         self.length_sum += float(self.length[done].sum())
         self.successes += int((self.success & done).sum())
-        known = tr.get("contact_known", torch.zeros_like(done))
-        contact = tr.get("box_contact", torch.zeros_like(done)) & known
-        self.contact_known_steps += int(known.sum())
-        self.steps += len(r)
-        self.contact_steps += int(contact.sum())
-        self.contact_edges += int((contact & ~self.contact_prev).sum())
+        if self.monitor_contacts:
+            known = tr.get("contact_known", torch.zeros_like(done))
+            contact = tr.get("box_contact", torch.zeros_like(done)) & known
+            self.contact_known_steps += int(known.sum())
+            self.steps += len(r)
+            self.contact_steps += int(contact.sum())
+            self.contact_edges += int((contact & ~self.contact_prev).sum())
         launch = tr.get("launch_event", torch.zeros_like(done))
         self.launches += int(launch.sum())
-        self.throw_contact |= self.active_throw & contact
+        if self.monitor_contacts:
+            self.throw_contact |= self.active_throw & contact
         self.throw_success |= self.active_throw & success
         candidate = tr.get("intercept_candidate", torch.zeros_like(done))
         self.intercept_persist = torch.where(
@@ -114,7 +117,8 @@ class ExperienceMetrics:
         self.throw_loose_known &= ~self.active_throw | tr.get(
             "loose_catch_known", torch.zeros_like(done)
         )
-        self.throw_measured &= ~self.active_throw | known
+        if self.monitor_contacts:
+            self.throw_measured &= ~self.active_throw | known
         end = self.active_throw & (
             done | launch | ~tr.get("after_launched", torch.ones_like(done))
         )
@@ -124,10 +128,11 @@ class ExperienceMetrics:
         self.loose_throws += int(
             (end & self.throw_loose_known & self.throw_loose).sum()
         )
-        self.measured_throws += int((end & self.throw_measured).sum())
-        self.intercepted_throws += int(
-            (end & self.throw_measured & self.throw_contact).sum()
-        )
+        if self.monitor_contacts:
+            self.measured_throws += int((end & self.throw_measured).sum())
+            self.intercepted_throws += int(
+                (end & self.throw_measured & self.throw_contact).sum()
+            )
         self.held_throws += int((end & self.throw_success).sum())
         self.active_throw[end] = False
         self.throw_contact[end] = False
@@ -146,19 +151,22 @@ class ExperienceMetrics:
         self.reward[done] = 0
         self.length[done] = 0
         self.success[done] = False
-        self.contact_prev = contact & ~done
+        if self.monitor_contacts:
+            self.contact_prev = contact & ~done
 
     def metrics(self):
         result = {
             "experience/completed_episodes": self.completed,
             "experience/launches": self.launches,
-            "experience/contact_measured_fraction": self.contact_known_steps
-            / max(1, self.steps),
             "experience/completed_strict_successes": self.successes,
             "experience/completed_observed_throws": self.completed_throws,
-            "experience/contact_measured_throws": self.measured_throws,
             "experience/termination_reasons_measured": float(self.reasons is not None),
         }
+        if self.monitor_contacts:
+            result["experience/contact_measured_throws"] = self.measured_throws
+            result["experience/contact_measured_fraction"] = (
+                self.contact_known_steps / max(1, self.steps)
+            )
         if self.completed:
             result.update(
                 {
@@ -168,7 +176,7 @@ class ExperienceMetrics:
                     / self.completed,
                 }
             )
-        if self.contact_known_steps:
+        if self.monitor_contacts and self.contact_known_steps:
             result.update(
                 {
                     "experience/box_contact_edges": self.contact_edges,
@@ -182,7 +190,7 @@ class ExperienceMetrics:
             result["experience/strict_hold_per_completed_throw"] = (
                 self.held_throws / self.completed_throws
             )
-        if self.measured_throws:
+        if self.monitor_contacts and self.measured_throws:
             result["experience/box_robot_contact_per_measured_throw"] = (
                 self.intercepted_throws / self.measured_throws
             )
@@ -204,7 +212,8 @@ class ExperienceMetrics:
         return {
             k: v
             for k, v in vars(self).items()
-            if isinstance(v, (int, float)) or k == "reasons"
+            if (isinstance(v, (int, float)) or k == "reasons")
+            and k != "monitor_contacts"
         }
 
     def load_state_dict(self, state):

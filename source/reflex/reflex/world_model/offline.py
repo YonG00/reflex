@@ -213,7 +213,11 @@ def evaluate(model, bridge, batches):
         values["last_predicted_input_clip_fraction"] = float(
             (((feat - model.inputs.mean) / model.inputs.std).abs() > 20).float().mean()
         )
-        if "contact_phase" in seq and "contact_known" in seq:
+        if (
+            "contact_phase" in seq
+            and "contact_known" in seq
+            and bool(seq["contact_known"].any())
+        ):
             for label in (0, 1, 2):
                 mask = (seq["contact_phase"][0] == label) & seq["contact_known"][0]
                 values[f"contact_phase_{label}_count"] = int(mask.sum())

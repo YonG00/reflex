@@ -6,7 +6,15 @@ import torch
 @torch.no_grad()
 def _check(adapter, trainer, steps=8):
     e = adapter.env
-    result = {"replay_insertions": 0, "optimizer_updates": 0, "cases": {}}
+    sensor = e.scene.sensors["wm_box_contacts"]
+    result = {
+        "replay_insertions": 0,
+        "optimizer_updates": 0,
+        "cases": {},
+        "filters": list(sensor.cfg.filter_prim_paths_expr),
+        "matrix_shape": list(sensor.data.force_matrix_w.shape),
+        "robot_bodies": list(adapter.robot.body_names),
+    }
     for name in ("robot", "ground"):
         e.reset(seed=614)
         e._box_launched.fill_(True)

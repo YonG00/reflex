@@ -9,4 +9,4 @@ OUT=${2:?Supply a NEW output directory}
 if [[ -e "$OUT" ]]; then echo "Output already exists: $OUT" >&2; exit 1; fi
 bash scripts/train_stage1_world_model.sh --mode train --num_envs 1024 --max_iterations 320000 \
  --max_seconds 1800 --save_every 100 --enable_actor --checkpoint "$CKPT" \
- --config configs/world_model/joint_repaired_v21.json --output "$OUT"
+ --config configs/world_model/joint_repaired_v21_compiled.json --output "$OUT"

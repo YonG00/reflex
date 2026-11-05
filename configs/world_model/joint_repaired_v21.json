@@ -57,5 +57,6 @@
   "diagnostic_batch": 16,
   "compile_dynamics": false,
   "compile_fk": false,
-  "compile_backend": "inductor"
+  "compile_backend": "inductor",
+  "monitor_contacts": false
 }

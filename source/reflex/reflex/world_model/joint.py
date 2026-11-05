@@ -126,7 +126,7 @@ def _update_actor(t):
                 for i, v in enumerate(torch.bincount(starts["stage"], minlength=4))
             }
         )
-    if "start_contact_phase" in starts:
+    if t.cfg.monitor_contacts and "start_contact_phase" in starts:
         result.update(
             {
                 f"imagination/start_contact_phase_{i}": int(

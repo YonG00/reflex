@@ -19,6 +19,7 @@ from .timing import timestamp
 
 @dataclass
 class TrainConfig:
+    monitor_contacts: bool = False
     privileged_critic: bool = False
     actor_zero_output: bool = True
     learned_termination: bool = False
@@ -177,6 +178,8 @@ class Trainer:
             else None
         )
         self.last_diagnostic_seconds = 0.0
+        self.contact_filter_schema = None
+        self.contact_filter_migration = None
         self.profile_next_actor = False
         self.profile_dir = None
         self._dynamics = (
@@ -207,7 +210,7 @@ class Trainer:
         self.initialization = {"kind": "scratch"}
         from .experience import ExperienceMetrics
 
-        self.experience = ExperienceMetrics()
+        self.experience = ExperienceMetrics(monitor_contacts=self.cfg.monitor_contacts)
 
     def warm_start_actor(self, path):
         """Engineering bootstrap only: preserve first166 channels, zero new cols.
@@ -876,12 +879,35 @@ class Trainer:
             else None,
         }
 
+    def invalidate_contact_history(self, old_schema):
+        # Physics/reward/termination labels are valid; only old sensor telemetry
+        # was wrong. Keep model/optimizer/replay physics, mark contacts unknown.
+        for key, value in (
+            ("contact_known", False),
+            ("box_contact", False),
+            ("contact_phase", -1),
+            ("start_contact_phase", -1),
+        ):
+            if key in self.replay.data:
+                self.replay.data[key].fill_(value)
+        from .experience import ExperienceMetrics
+
+        self.experience = ExperienceMetrics(monitor_contacts=self.cfg.monitor_contacts)
+        self.contact_filter_migration = {
+            "from": old_schema,
+            "to": self.contact_filter_schema,
+            "invalidated_vector_steps": self.replay.count,
+            "experience_totals_reset": True,
+        }
+
     def save(self, path):
         state = {
             "version": 3
             if (self.cfg.privileged_critic or self.cfg.learned_termination)
             else 2,
             "model_kind": self.cfg.wm_kind,
+            "contact_filter_schema": self.contact_filter_schema,
+            "contact_filter_migration": self.contact_filter_migration,
             "learning_contract": self.learning_contract,
             "config": asdict(self.cfg),
             "contract": self.contract,
@@ -938,10 +964,22 @@ class Trainer:
         saved_config = dict(state["config"])
         if state.get("version") == 1:
             saved_config.setdefault("wm_kind", "multitask")
+        loaded_config = asdict(TrainConfig(**saved_config))
+        requested_config = asdict(self.cfg)
+        # Execution optimizations and optional telemetry do not change weights,
+        # optimizers or task semantics. Contact metadata is migrated separately.
+        for key in (
+            "compile_dynamics",
+            "compile_fk",
+            "compile_backend",
+            "monitor_contacts",
+        ):
+            loaded_config.pop(key, None)
+            requested_config.pop(key, None)
         if (
             state.get("version") not in (1, 2, 3)
             or state["contract"] != self.contract
-            or asdict(TrainConfig(**saved_config)) != asdict(self.cfg)
+            or loaded_config != requested_config
             or state["reward_names"] != self.reward_names
         ):
             raise ValueError(
@@ -1000,21 +1038,14 @@ class Trainer:
         )
         if "experience" in state:
             self.experience.load_state_dict(state["experience"])
-        self.last_diagnostic_seconds = state.get("last_diagnostic_seconds", 0.0)
-        if not self.last_diagnostic_seconds:
-            # Older v3 smoke checkpoints recorded diagnostic timing in JSONL.
-            from pathlib import Path
-            import json
+        from .diagnostics import saved_diagnostic_duration
 
-            metrics_path = Path(path).parent / "metrics.jsonl"
-            if metrics_path.exists():
-                for line in reversed(metrics_path.read_text().splitlines()):
-                    row = json.loads(line)
-                    if "time/gradient_diagnostic_seconds" in row:
-                        self.last_diagnostic_seconds = row[
-                            "time/gradient_diagnostic_seconds"
-                        ]
-                        break
+        self.last_diagnostic_seconds = saved_diagnostic_duration(state, path)
+        if (
+            self.contact_filter_schema is not None
+            and state.get("contact_filter_schema") != self.contact_filter_schema
+        ):
+            self.invalidate_contact_history(state.get("contact_filter_schema"))
         self.normalized = state["normalized"]
         self.initialization = state.get("initialization", {"kind": "scratch"})
         self.probe_transitions = state["probe_transitions"]

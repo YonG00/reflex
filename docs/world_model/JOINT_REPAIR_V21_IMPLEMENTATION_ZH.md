@@ -101,3 +101,13 @@ bash scripts/train_joint_v21_30min.sh \
 - Spec/Standards两项代码审查完成。已关闭：存活梯度遗漏bootstrap、critic-only可选存档自加载失败、CLEAN2拦截率缺失及起点分布不足。
 - 尚未执行：真实Isaac/GPU parity、传感器过滤与子步数据、真实终止校准、CUDA编译/性能、30分钟训练、Oracle PPO对照。
 - 本轮没有启动GPU，也没有声称接箱效果改善。开卡后先预检，再决定启用编译和运行半小时训练。
+
+### 2026-11-06 GPU 验证及当前执行策略
+
+用户要求现阶段关闭新增箱体接触监控：`monitor_contacts=false`，不创建 `wm_box_contacts`，不读取或输出其接触统计。原 Reflex `contact_forces`、接触奖励及 PhysX 真实碰撞保留；接触监控不作为联合训练门槛。旧存档的接触标签失效后，仅将这些标签标为未知，保留物理样本、奖励、权重和优化器。
+
+GPU parity 已通过（8192 条真实转换，Actor/AMP/Critic 最大误差分别约 1.75e-6/2.21e-6/2.76e-6）。冒烟完成一次 Actor、10 次 WM、10 次终止头更新并保存 v3 存档；终止头此时校准仍差，不能据此声称模型有效。Actor 首次更新 14.58 秒，额外全梯度诊断 384.69 秒；正式运行不启用 profiler，并在剩余预算不足时跳过昂贵诊断。
+
+纯 Dynamics/FK 的 CUDA 编译输出及梯度检查通过，因此新增 `joint_repaired_v21_compiled.json` 并用于正式半小时试训。独立核心耗时不能作为端到端提速结论。恢复时只允许编译选项和监控开关变化，模型、优化器、任务配置仍严格校验。
+
+正式输出目录：`outputs/world_model/20261106_v21_joint_30min`；从 `20261106_v21_gpu_r1/smoke/checkpoint_final.pt` 继续，1024 个环境，限时 1800 秒。训练完成、真实接箱效果和视频尚待核验。

@@ -93,18 +93,30 @@ def main():
     config = TrainConfig(**json.loads(Path(args.config).read_text()))
     if args.max_seconds is not None and args.max_seconds <= 0:
         raise ValueError("max_seconds must be positive")
-    if config.privileged_critic:
+    if config.monitor_contacts:
         from isaaclab.sensors import ContactSensorCfg
 
         cfg.scene.balloon.spawn.activate_contact_sensors = True
+        import xml.etree.ElementTree as ET
+
+        robot_xml = ET.parse(cfg.scene.robot.spawn.asset_path).getroot()
+        rigid_links = ["pelvis"] + [
+            j.find("child").get("link")
+            for j in robot_xml.findall("joint")
+            if j.get("type") != "fixed"
+        ]
         cfg.scene.wm_box_contacts = ContactSensorCfg(
             prim_path=cfg.scene.balloon.prim_path,
-            filter_prim_paths_expr=[cfg.scene.robot.prim_path + "/.*"],
+            filter_prim_paths_expr=[
+                cfg.scene.robot.prim_path + "/" + name for name in rigid_links
+            ],
             history_length=cfg.decimation,
             max_contact_data_count_per_prim=32,
             update_period=0.0,
             debug_vis=False,
         )
+    elif hasattr(cfg.scene, "wm_box_contacts"):
+        cfg.scene.wm_box_contacts = None
     env = gym.make(
         "Reflex-Teacher-Oracle-G1-v0",
         cfg=cfg,
@@ -123,7 +135,12 @@ def main():
         # Parse exactly the asset that the environment imported, rather than a
         # convenient local URDF that could have different link/joint frames.
         urdf = cfg.scene.robot.spawn.asset_path
-        adapter = IsaacAdapter(env, urdf)
+        adapter = IsaacAdapter(env, urdf, monitor_contacts=config.monitor_contacts)
+        if (
+            not config.monitor_contacts
+            and "wm_box_contacts" in env.unwrapped.scene.sensors
+        ):
+            raise RuntimeError("Optional box monitoring sensor was not disabled")
         task = None
         if config.wm_kind == "state":
             task = AnalyticTask.from_environment(adapter)
@@ -145,6 +162,9 @@ def main():
             config,
             task=task,
         )
+        trainer.contact_filter_schema = (
+            "explicit_urdf_rigid_links_v2" if config.monitor_contacts else "disabled"
+        )
         trainer.profile_dir = str(out / "profiles")
         trainer.profile_next_actor = args.profile_joint
         if args.checkpoint:
@@ -153,6 +173,9 @@ def main():
             trainer.warm_start_actor(args.warm_start_actor)
         manifest = adapter.manifest()
         manifest["actor_initialization"] = trainer.initialization
+        manifest["contact_monitoring_enabled"] = config.monitor_contacts
+        manifest["contact_filter_schema"] = trainer.contact_filter_schema
+        manifest["contact_filter_migration"] = trainer.contact_filter_migration
         manifest.update(
             {
                 "config": dataclasses.asdict(config),
@@ -173,6 +196,10 @@ def main():
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
         if args.mode == "contact_probe":
+            if not config.monitor_contacts:
+                raise ValueError(
+                    "contact_probe requires explicitly enabled optional contact monitoring"
+                )
             from .contact_probe import check
 
             result = check(adapter, trainer)
@@ -249,10 +276,11 @@ def main():
                 },
             }
             result["experience"] = trainer.experience.metrics()
-            if config.privileged_critic:
+            if config.monitor_contacts:
                 result["passed"] &= (
                     result["experience"]["experience/contact_measured_fraction"] == 1.0
                 )
+            if config.privileged_critic:
                 result["passed"] &= (
                     result["experience"]["experience/termination_reasons_measured"]
                     == 1.0

@@ -552,3 +552,59 @@ def test_known_expensive_diagnostic_is_skipped_near_wall_deadline():
     assert diagnostic_due(t, 1750, None) == (True, False)
     t.actor_updates = 51
     assert diagnostic_due(t, 1750, 1800) == (False, False)
+
+
+def test_optional_diagnostic_history_tolerates_partial_or_invalid_records(tmp_path):
+    from reflex.world_model.diagnostics import saved_diagnostic_duration
+
+    p = tmp_path / "metrics.jsonl"
+    p.write_text(
+        '{"time/gradient_diagnostic_seconds":12.5}\n{"time/gradient_diagnostic_seconds":NaN}\n{"iteration":'
+    )
+    assert saved_diagnostic_duration({}, tmp_path / "model.pt") == 12.5
+    assert (
+        saved_diagnostic_duration(
+            {"last_diagnostic_seconds": float("nan")}, tmp_path / "model.pt"
+        )
+        == 12.5
+    )
+    p.unlink()
+    assert saved_diagnostic_duration({}, tmp_path / "model.pt") == 0.0
+
+
+def test_sensor_filter_migration_keeps_physics_and_marks_old_contact_unknown(tmp_path):
+    t = repaired(tmp_path)
+    for key in ("contact_known", "box_contact"):
+        t.replay.data[key] = torch.ones_like(t.replay.data["valid"])
+    for key in ("contact_phase", "start_contact_phase"):
+        t.replay.data[key] = torch.ones_like(t.replay.data["stage"])
+    t.contact_filter_schema = "old_glob"
+    path = tmp_path / "old_sensor.pt"
+    t.save(path)
+    other = repaired(tmp_path, collect=False)
+    other.contact_filter_schema = "explicit_urdf_rigid_links_v2"
+    other.load(path)
+    assert not other.replay.data["contact_known"].any()
+    assert (other.replay.data["contact_phase"] == -1).all()
+    torch.testing.assert_close(t.replay.ordered("state"), other.replay.ordered("state"))
+    for k, v in t.actor.state_dict().items():
+        torch.testing.assert_close(v, other.actor.state_dict()[k])
+    assert other.contact_filter_migration["experience_totals_reset"]
+
+
+def test_disabled_contact_monitor_has_no_contact_metrics():
+    metrics = ExperienceMetrics(monitor_contacts=False)
+    done = torch.ones(2, dtype=torch.bool)
+    metrics.update(
+        {
+            "reward_terms": torch.ones(2, 1),
+            "terminated": done,
+            "timeout": ~done,
+            "strict_success": done,
+            "contact_known": done,
+            "box_contact": done,
+        }
+    )
+    result = metrics.metrics()
+    assert not any("contact" in key for key in result)
+    assert result["experience/completed_strict_successes"] == 2

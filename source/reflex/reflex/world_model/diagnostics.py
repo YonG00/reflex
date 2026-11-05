@@ -128,3 +128,42 @@ def diagnostic_due(trainer, elapsed, budget):
     if budget is not None and estimate > 0 and budget - elapsed < estimate + 5.0:
         return False, True
     return True, False
+
+
+def saved_diagnostic_duration(state, checkpoint_path):
+    import math
+    import json
+    from pathlib import Path
+
+    def valid(value):
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0
+        )
+
+    value = state.get("last_diagnostic_seconds", 0.0)
+    if valid(value):
+        return float(value)
+    try:
+        lines = (
+            (Path(checkpoint_path).parent / "metrics.jsonl")
+            .read_text(errors="replace")
+            .splitlines()
+        )
+    except OSError:
+        return 0.0
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        value = (
+            row.get("time/gradient_diagnostic_seconds")
+            if isinstance(row, dict)
+            else None
+        )
+        if valid(value):
+            return float(value)
+    return 0.0

@@ -35,7 +35,8 @@ EXPECTED_TERMS = (
 
 
 class IsaacAdapter:
-    def __init__(self, env, urdf):
+    def __init__(self, env, urdf, monitor_contacts=False):
+        self.monitor_contacts = monitor_contacts
         self.env = env.unwrapped
         e = self.env
         self.device = e.device
@@ -154,11 +155,16 @@ class IsaacAdapter:
             from .experience import pair_contact, clean2_intercept_candidate
 
             contact, known = pair_contact(
-                e.scene.sensors.get("wm_box_contacts"), e.num_envs, self.device
+                e.scene.sensors.get("wm_box_contacts")
+                if self.monitor_contacts
+                else None,
+                e.num_envs,
+                self.device,
             )
             phase = torch.where(contact, 1, torch.where(self._contact_seen, 2, 0))
             phase = torch.where(known, phase, -1)
-            self._contact_seen |= contact
+            if self.monitor_contacts:
+                self._contact_seen |= contact
             loose = torch.zeros(e.num_envs, dtype=torch.bool, device=self.device)
             loose_known = torch.zeros_like(loose)
             if "catch_success_bonus" in self.reward_names:
@@ -166,7 +172,11 @@ class IsaacAdapter:
                 if spec.func.__name__ == "catch_success_bonus":
                     loose = spec.func(e, **spec.params).bool()
                     loose_known.fill_(True)
-            sensor = e.scene.sensors.get("wm_box_contacts")
+            sensor = (
+                e.scene.sensors.get("wm_box_contacts")
+                if self.monitor_contacts
+                else None
+            )
             pair_peak = net_peak = torch.zeros(e.num_envs, device=self.device)
             if sensor is not None:
                 data = sensor.data
@@ -441,7 +451,9 @@ class IsaacAdapter:
         from .experience import pair_contact
 
         contact, known = pair_contact(
-            e.scene.sensors.get("wm_box_contacts"), n, self.device
+            e.scene.sensors.get("wm_box_contacts") if self.monitor_contacts else None,
+            n,
+            self.device,
         )
         # Pair history precedes interval teleports/reset. Do not attribute stale
         # forces to a new throw snapshot before its first physics transition.
