@@ -58,8 +58,9 @@ class OracleObservation(nn.Module):
         mass,
         default_q=None,
         default_dq=None,
+        fk_result=None,
     ):
-        positions, quats = self.fk(s)
+        positions, quats = self.fk(s) if fk_result is None else fk_result
         rq, rdq, rp, rquat = self.reference(phase, yaw)
         rq = rq.clone()
         idx = self.reference_arm_columns
@@ -92,3 +93,35 @@ class OracleObservation(nn.Module):
 
 def mul6(a, b):
     return rot6(mul(a, b))
+
+
+class PrivilegedObservation(nn.Module):
+    """Original Reflex critic: command/anchor, 14 bodies, proprioception, object (292)."""
+
+    def __init__(self, bridge, tracked_names):
+        super().__init__()
+        if len(tracked_names) != 14:
+            raise ValueError(
+                "292-D critic requires exactly the original 14 tracked bodies"
+            )
+        self.bridge = bridge
+        self.tracked_names = tuple(tracked_names)
+
+    def forward(self, *args, fk_result=None, actor_result=None):
+        state = args[0]
+        poses = self.bridge.fk(state) if fk_result is None else fk_result
+        actor = (
+            self.bridge(*args, fk_result=poses)
+            if actor_result is None
+            else actor_result
+        )
+        p, q = poses
+        anchor = self.bridge.anchor_name
+        ai = inverse(q[anchor])
+        body_p = torch.stack(
+            [apply(ai, p[n] - p[anchor]) for n in self.tracked_names], -2
+        ).flatten(-2)
+        body_q = torch.stack(
+            [rot6(mul(ai, q[n])) for n in self.tracked_names], -2
+        ).flatten(-2)
+        return torch.cat((actor[..., :67], body_p, body_q, actor[..., 67:166]), -1)

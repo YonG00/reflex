@@ -148,3 +148,16 @@ class StateWorldModel(nn.Module):
         )
 
     step = forward
+
+
+class TerminationHead(nn.Module):
+    """Independent P(physical terminal | predicted state, reference geometry)."""
+
+    def __init__(self, feature_dim, hidden=(64, 64)):
+        super().__init__()
+        self.inputs = Standardizer(feature_dim)
+        self.net = mlp(2 * feature_dim, 1, layers=hidden, activation=nn.SiLU)
+
+    def forward(self, features):
+        x = self.inputs(features)
+        return self.net(torch.cat((x, x.abs()), -1)).squeeze(-1)

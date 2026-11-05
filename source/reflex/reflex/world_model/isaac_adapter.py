@@ -44,6 +44,10 @@ class IsaacAdapter:
         self.term = e.action_manager.get_term("joint_pos")
         self.events = torch.zeros(e.num_envs, dtype=torch.bool, device=self.device)
         self.pre_reset = None
+        self.real_steps = 0
+        self._contact_seen = torch.zeros(
+            e.num_envs, dtype=torch.bool, device=self.device
+        )
         self._before = None
         self.reward_names = list(e.reward_manager.active_terms)
         self.joint_names = list(self.robot.data.joint_names)
@@ -137,6 +141,7 @@ class IsaacAdapter:
             "body_names": list(self.robot.body_names),
             "tracked_names": list(c.cfg.body_names),
             "max_episode_steps": e.max_episode_length,
+            "termination_names": list(e.termination_manager.active_terms),
         }
         self.task = None
         self.task_parity_steps = 0
@@ -146,6 +151,21 @@ class IsaacAdapter:
         original_reward = e.reward_manager.compute
 
         def reward_compute(dt):
+            from .experience import pair_contact, clean2_intercept_candidate
+
+            contact, known = pair_contact(
+                e.scene.sensors.get("wm_box_contacts"), e.num_envs, self.device
+            )
+            phase = torch.where(contact, 1, torch.where(self._contact_seen, 2, 0))
+            phase = torch.where(known, phase, -1)
+            self._contact_seen |= contact
+            loose = torch.zeros(e.num_envs, dtype=torch.bool, device=self.device)
+            loose_known = torch.zeros_like(loose)
+            if "catch_success_bonus" in self.reward_names:
+                spec = e.reward_manager.get_term_cfg("catch_success_bonus")
+                if spec.func.__name__ == "catch_success_bonus":
+                    loose = spec.func(e, **spec.params).bool()
+                    loose_known.fill_(True)
             previous_history = self.task_history()
             result = original_reward(dt)
             self.pre_reset = {
@@ -156,6 +176,43 @@ class IsaacAdapter:
                 "terminated": e.termination_manager.terminated.clone(),
                 "timeout": e.termination_manager.time_outs.clone(),
                 "task_history_after_reward": self.task_history(),
+                "intercept_candidate": clean2_intercept_candidate(
+                    self.box.data.root_pos_w,
+                    self.box.data.root_lin_vel_w,
+                    self.robot.data.body_pos_w[
+                        :, self.robot.body_names.index("torso_link")
+                    ],
+                    getattr(
+                        e,
+                        "_balloon_radius_per_env",
+                        torch.full((e.num_envs,), 0.1016, device=self.device),
+                    ),
+                ),
+                "loose_catch": loose,
+                "loose_catch_known": loose_known,
+                "box_contact": contact,
+                "contact_known": known,
+                "contact_phase": phase,
+                "termination_reasons": torch.stack(
+                    [
+                        e.termination_manager.get_term(n).clone()
+                        for n in e.termination_manager.active_terms
+                    ],
+                    -1,
+                )
+                if hasattr(e.termination_manager, "get_term")
+                else torch.zeros(
+                    e.num_envs,
+                    len(e.termination_manager.active_terms),
+                    dtype=torch.bool,
+                    device=self.device,
+                ),
+                "termination_reasons_known": torch.full(
+                    (e.num_envs,),
+                    hasattr(e.termination_manager, "get_term"),
+                    dtype=torch.bool,
+                    device=self.device,
+                ),
             }
             if not torch.allclose(
                 self.pre_reset["reward_terms"].sum(-1), result, atol=1e-5, rtol=1e-5
@@ -174,6 +231,9 @@ class IsaacAdapter:
                     b["episode_steps"],
                     b["next_external_event_seconds"],
                     0,
+                )
+                self.pre_reset["termination_features"] = (
+                    analytic.termination_features.detach()
                 )
                 err = (analytic.rewards - self.pre_reset["reward_terms"]).abs().amax(0)
                 self.task_parity_max = torch.maximum(self.task_parity_max, err.detach())
@@ -370,6 +430,19 @@ class IsaacAdapter:
         if os.environ.get("BOX_V38_TGT_CLIP", "0") == "1":
             lo, hi = self.term._v38_lim
             limits = torch.stack((lo.expand(n, 29), hi.expand(n, 29)), -1)
+        from .experience import pair_contact
+
+        contact, known = pair_contact(
+            e.scene.sensors.get("wm_box_contacts"), n, self.device
+        )
+        # Pair history precedes interval teleports/reset. Do not attribute stale
+        # forces to a new throw snapshot before its first physics transition.
+        known &= ~self.events
+        if self.real_steps == 0:
+            known.fill_(False)
+        start_contact_phase = torch.where(
+            known, torch.where(contact, 1, torch.where(self._contact_seen, 2, 0)), -1
+        )
         state = self.physical()
         dist = (state[:, 71:74] - state[:, :3]).norm(dim=-1)
         stage = torch.where(
@@ -398,6 +471,7 @@ class IsaacAdapter:
             "up": self.term._up_arm.expand(n, len(cols)).clone(),
             "limits": limits,
             "stage": stage,
+            "start_contact_phase": start_contact_phase,
             "reference_length": torch.full(
                 (n,),
                 len(self.command.motion.joint_pos),
@@ -436,7 +510,7 @@ class IsaacAdapter:
         self._before = result
         return result
 
-    def parity(self, b, atol=2e-4):
+    def parity(self, b, atol=2e-4, critic=False):
         """Compare pure Torch reconstruction with live manager observations / links."""
         reconstructed = self.bridge(
             b["state"],
@@ -455,6 +529,30 @@ class IsaacAdapter:
             "observation_max": float((reconstructed - actual).abs().max()),
             "amp_max": float((amp - self.real_amp()).abs().max()),
         }
+        if critic:
+            from .observation import PrivilegedObservation
+
+            observed = self.env.observation_manager.compute_group("critic")
+            reconstructed = PrivilegedObservation(
+                self.bridge, self.command.cfg.body_names
+            ).to(self.device)(
+                b["state"],
+                b["previous_action"],
+                b["phase"],
+                b["yaw"],
+                b["launched"],
+                b["dimensions"],
+                b["mass"],
+                b["default_q"],
+                b["default_dq"],
+            )
+            if observed.shape != reconstructed.shape or observed.shape[-1] != 292:
+                raise RuntimeError(
+                    f"Privileged critic layout mismatch: {observed.shape} vs {reconstructed.shape}"
+                )
+            errors["critic_observation_max"] = float(
+                (observed - reconstructed).abs().max()
+            )
         if max(errors.values()) > atol:
             raise RuntimeError(f"FK / observation parity failed: {errors}")
         return errors
@@ -464,6 +562,7 @@ class IsaacAdapter:
         if b is None:
             raise RuntimeError("snapshot() must precede step()")
         self.events.zero_()
+        self.real_steps += 1
         self.pre_reset = None
         getattr(self, "step_environment", self.env.step)(raw)
         p = self.pre_reset
@@ -496,6 +595,33 @@ class IsaacAdapter:
             "amp": self.real_amp_from_state_before(b),
             "next_amp": p["amp"],
         }
+        from reflex.envs.base.chest_v5_terms import STRICT_PERSIST_FRAMES
+
+        tr.update(
+            {
+                k: p[k]
+                for k in (
+                    "intercept_candidate",
+                    "loose_catch",
+                    "loose_catch_known",
+                    "box_contact",
+                    "contact_known",
+                    "contact_phase",
+                    "termination_reasons",
+                    "termination_reasons_known",
+                )
+            }
+        )
+        tr["strict_success"] = (
+            p["task_history_after_reward"][:, -1] >= STRICT_PERSIST_FRAMES
+        )
+        tr["launch_event"] = self.env._box_launched.bool() & (
+            ~b["launched"].bool() | (self.env._box_launch_step != b["launch_step"])
+        )
+        tr["after_launched"] = self.env._box_launched.bool().clone()
+        self._contact_seen &= ~(done | tr["launch_event"])
+        if "termination_features" in p:
+            tr["termination_features"] = p["termination_features"]
         return tr
 
     def real_amp_from_state_before(self, b):

@@ -5,7 +5,7 @@ from .models import Standardizer, mlp
 
 
 def build_actor(checkpoint, num_obs, device):
-    if num_obs != 179 or checkpoint.get("version") not in (1, 2):
+    if num_obs != 179 or checkpoint.get("version") not in (1, 2, 3):
         raise ValueError(
             "World-model actor requires the 179-D Oracle observation contract"
         )

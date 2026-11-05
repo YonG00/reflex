@@ -213,6 +213,17 @@ def evaluate(model, bridge, batches):
         values["last_predicted_input_clip_fraction"] = float(
             (((feat - model.inputs.mean) / model.inputs.std).abs() > 20).float().mean()
         )
+        if "contact_phase" in seq and "contact_known" in seq:
+            for label in (0, 1, 2):
+                mask = (seq["contact_phase"][0] == label) & seq["contact_known"][0]
+                values[f"contact_phase_{label}_count"] = int(mask.sum())
+                if bool(mask.any()):
+                    values[f"contact_phase_{label}_endpoint_nse"] = float(
+                        error[mask].square().mean()
+                    )
+                    values[f"contact_phase_{label}_window_nse"] = float(
+                        window_sq[:, mask].mean()
+                    )
         if rewards is not None:
             values["reward_rmse"] = float(
                 ((rewards[-1] - seq["reward_terms"][-1]) / model.reward_norm.std)

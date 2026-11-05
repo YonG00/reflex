@@ -12,6 +12,17 @@ parser.add_argument(
 )
 parser.add_argument("--num_envs", type=int, default=64)
 parser.add_argument("--max_iterations", type=int, default=100)
+parser.add_argument(
+    "--max_seconds",
+    type=float,
+    default=None,
+    help="Training wall-time budget; finish current update then save",
+)
+parser.add_argument(
+    "--profile_joint",
+    action="store_true",
+    help="Profile first Actor update without changing training config",
+)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument(
     "--config",
@@ -78,6 +89,20 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     # Save config before simulator creation, so failed preflight has evidence.
     config = TrainConfig(**json.loads(Path(args.config).read_text()))
+    if args.max_seconds is not None and args.max_seconds <= 0:
+        raise ValueError("max_seconds must be positive")
+    if config.privileged_critic:
+        from isaaclab.sensors import ContactSensorCfg
+
+        cfg.scene.balloon.spawn.activate_contact_sensors = True
+        cfg.scene.wm_box_contacts = ContactSensorCfg(
+            prim_path=cfg.scene.balloon.prim_path,
+            filter_prim_paths_expr=[cfg.scene.robot.prim_path + "/.*"],
+            history_length=cfg.decimation,
+            max_contact_data_count_per_prim=32,
+            update_period=0.0,
+            debug_vis=False,
+        )
     env = gym.make(
         "Reflex-Teacher-Oracle-G1-v0",
         cfg=cfg,
@@ -118,6 +143,8 @@ def main():
             config,
             task=task,
         )
+        trainer.profile_dir = str(out / "profiles")
+        trainer.profile_next_actor = args.profile_joint
         if args.checkpoint:
             trainer.load(args.checkpoint)
         elif args.warm_start_actor:
@@ -141,7 +168,7 @@ def main():
             json.dumps(manifest, indent=2, ensure_ascii=False)
         )
         b = adapter.snapshot()
-        parity = adapter.parity(b)
+        parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
         if args.mode == "play":
             if not args.checkpoint:
@@ -189,7 +216,7 @@ def main():
             config.collect_steps = args.preflight_steps
             trainer.collect(adapter)
             config.collect_steps = old
-            adapter.parity(adapter.snapshot())
+            adapter.parity(adapter.snapshot(), critic=config.privileged_critic)
             counts = {
                 str(h): len(trainer.replay.indices(h, starts=True))
                 for h in (1, 4, 8, 16, 32)
@@ -208,6 +235,15 @@ def main():
                     for n, v in zip(adapter.reward_names, adapter.task_parity_max)
                 },
             }
+            result["experience"] = trainer.experience.metrics()
+            if config.privileged_critic:
+                result["passed"] &= (
+                    result["experience"]["experience/contact_measured_fraction"] == 1.0
+                )
+                result["passed"] &= (
+                    result["experience"]["experience/termination_reasons_measured"]
+                    == 1.0
+                )
             (out / "preflight.json").write_text(json.dumps(result, indent=2))
             trainer.save(out / "preflight.pt")
             if not result["passed"]:
@@ -221,6 +257,11 @@ def main():
         initial_steps = trainer.real_transitions
         try:
             while trainer.iteration < args.max_iterations:
+                if (
+                    args.max_seconds is not None
+                    and time.monotonic() - start >= args.max_seconds
+                ):
+                    break
                 trainer.replay_seconds = 0.0
                 collect_start = timestamp(args.device)
                 metrics = trainer.collect(adapter)
@@ -273,6 +314,19 @@ def main():
                         except ValueError:
                             metrics["gate/no_imagination_starts"] = 1.0
                         else:
+                            if (
+                                config.diagnostic_every
+                                and trainer.actor_updates % config.diagnostic_every == 0
+                            ):
+                                from .diagnostics import gradient_audit
+
+                                metrics.update(gradient_audit(trainer))
+                                metrics["coverage/wm8_windows"] = len(
+                                    trainer.replay.indices(config.model_window)
+                                )
+                                metrics["coverage/actor_start_snapshots"] = len(
+                                    trainer.replay.start_indices()
+                                )
                             metrics.update(trainer.update_actor())
                 trainer.iteration += 1
                 if trainer.iteration % args.save_every == 0:
@@ -289,6 +343,7 @@ def main():
                         - trainer.probe_transitions,
                         "progress/actor_updates": trainer.actor_updates,
                         "progress/wm_gradient_updates": trainer.model_updates,
+                        "progress/termination_gradient_updates": trainer.termination_updates,
                         "time/replay_sample_seconds_inclusive": trainer.replay_seconds,
                         "progress/wall_seconds": time.monotonic() - start,
                         "progress/end_to_end_transitions_per_second": (

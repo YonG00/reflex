@@ -11,7 +11,7 @@ import random
 import numpy as np
 import torch
 from torch import nn
-from .models import WorldModel, StateWorldModel, Standardizer, mlp
+from .models import WorldModel, StateWorldModel, Standardizer, mlp, TerminationHead
 from .physics import amp_features, state_error
 from .replay import Replay
 from .timing import timestamp
@@ -19,6 +19,15 @@ from .timing import timestamp
 
 @dataclass
 class TrainConfig:
+    privileged_critic: bool = False
+    actor_zero_output: bool = True
+    learned_termination: bool = False
+    termination_lr: float = 2e-4
+    diagnostic_every: int = 0
+    diagnostic_batch: int = 16
+    compile_dynamics: bool = False
+    compile_fk: bool = False
+    compile_backend: str = "inductor"
     tf32: bool = False
     schedule: str = "guarded"
     initial_collect_steps: int = 40
@@ -64,7 +73,9 @@ class TrainConfig:
 
 @contextmanager
 def freeze(*modules):
-    params = [(p, p.requires_grad) for m in modules for p in m.parameters()]
+    params = [
+        (p, p.requires_grad) for m in modules if m is not None for p in m.parameters()
+    ]
     try:
         for p, _ in params:
             p.requires_grad_(False)
@@ -134,9 +145,49 @@ class Trainer:
         ).to(device)
         self.obs_norm = Standardizer(179).to(device)
         self.actor = mlp(179, 29, c.hidden, layers=c.actor_hidden_dims).to(device)
-        nn.init.zeros_(self.actor[-1].weight)
-        nn.init.zeros_(self.actor[-1].bias)
-        self.critic = mlp(179, 1, c.hidden, layers=c.critic_hidden_dims).to(device)
+        if c.actor_zero_output:
+            nn.init.zeros_(self.actor[-1].weight)
+            nn.init.zeros_(self.actor[-1].bias)
+        self.privileged_bridge = None
+        if c.privileged_critic:
+            from .observation import PrivilegedObservation
+
+            self.privileged_bridge = PrivilegedObservation(
+                self.bridge, contract["tracked_names"]
+            ).to(device)
+        self.critic_dim = 292 if c.privileged_critic else 179
+        self.critic_norm = (
+            Standardizer(292).to(device) if c.privileged_critic else self.obs_norm
+        )
+        self.critic = mlp(self.critic_dim, 1, c.hidden, layers=c.critic_hidden_dims).to(
+            device
+        )
+        if c.learned_termination and (self.task is None or not self.model.state_only):
+            raise ValueError(
+                "Learned termination requires pure dynamics and an analytic task"
+            )
+        self.termination = (
+            TerminationHead(self.task.termination_feature_dim).to(device)
+            if c.learned_termination
+            else None
+        )
+        self.termination_opt = (
+            torch.optim.Adam(self.termination.parameters(), lr=c.termination_lr)
+            if self.termination is not None
+            else None
+        )
+        self.profile_next_actor = False
+        self.profile_dir = None
+        self._dynamics = (
+            torch.compile(self.model, fullgraph=True, backend=c.compile_backend)
+            if c.compile_dynamics
+            else self.model
+        )
+        self._fk = (
+            torch.compile(self.bridge.fk, fullgraph=True, backend=c.compile_backend)
+            if c.compile_fk
+            else self.bridge.fk
+        )
         self.model_opt = torch.optim.Adam(
             self.model.parameters(), lr=c.model_lr or c.lr
         )
@@ -149,9 +200,13 @@ class Trainer:
         self.probe_transitions = 0
         self.actor_updates = 0
         self.model_updates = 0
+        self.termination_updates = 0
         self.replay_seconds = 0.0
         self.normalized = False
         self.initialization = {"kind": "scratch"}
+        from .experience import ExperienceMetrics
+
+        self.experience = ExperienceMetrics()
 
     def warm_start_actor(self, path):
         """Engineering bootstrap only: preserve first166 channels, zero new cols.
@@ -198,7 +253,7 @@ class Trainer:
             "optimizer_replay_amp_restored": False,
         }
 
-    def observation(self, b, s=None, previous=None, phase=None):
+    def observation(self, b, s=None, previous=None, phase=None, fk_result=None):
         return self.bridge(
             b["state"] if s is None else s,
             b["previous_action"] if previous is None else previous,
@@ -209,7 +264,32 @@ class Trainer:
             b["mass"],
             b.get("default_q"),
             b.get("default_dq"),
+            fk_result=fk_result,
         )
+
+    def critic_observation(
+        self, b, s=None, previous=None, phase=None, fk_result=None, actor_result=None
+    ):
+        if self.privileged_bridge is None:
+            return self.obs_norm(
+                self.observation(b, s, previous, phase, fk_result)
+                if actor_result is None
+                else actor_result
+            )
+        value = self.privileged_bridge(
+            b["state"] if s is None else s,
+            b["previous_action"] if previous is None else previous,
+            b["phase"] if phase is None else phase,
+            b["yaw"],
+            b["launched"],
+            b["dimensions"],
+            b["mass"],
+            b.get("default_q"),
+            b.get("default_dq"),
+            fk_result=fk_result,
+            actor_result=actor_result,
+        )
+        return self.critic_norm(value)
 
     def act(self, b, explore=False):
         raw = self.actor(self.obs_norm(self.observation(b)))
@@ -253,12 +333,16 @@ class Trainer:
                 ).all(0)
                 tr["valid"] &= finite
                 self.replay.add(tr)
+                self.experience.update(tr)
                 ok = tr["valid"] & ~tr["terminated"] & ~tr["timeout"]
                 if bool(ok.any()):
                     self.prior.add_real(torch.stack((tr["amp"], tr["next_amp"]), 1)[ok])
                 self.real_transitions += len(raw)
                 rewards.append(tr["reward_terms"].sum(-1).mean())
-        return {"real/task_reward": float(torch.stack(rewards).mean())}
+        return {
+            "real/task_reward": float(torch.stack(rewards).mean()),
+            **self.experience.metrics(),
+        }
 
     def sample(self, horizon=1, starts=False, validation=False, n=None):
         start = timestamp(self.device)
@@ -280,6 +364,27 @@ class Trainer:
         old_mean = self.obs_norm.mean.clone()
         old_std = self.obs_norm.std.clone()
         self.obs_norm.fit(self.observation(b))
+        if self.privileged_bridge is not None:
+            # Fit only training rows, never holdout environments.
+            self.critic_norm.fit(
+                self.privileged_bridge(
+                    b["state"],
+                    b["previous_action"],
+                    b["phase"],
+                    b["yaw"],
+                    b["launched"],
+                    b["dimensions"],
+                    b["mass"],
+                    b.get("default_q"),
+                    b.get("default_dq"),
+                )
+            )
+        if self.termination is not None:
+            if "termination_features" not in b:
+                raise ValueError(
+                    "Replay lacks v3 physical termination features; collect a new baseline"
+                )
+            self.termination.inputs.fit(b["termination_features"])
         if self.initialization["kind"] == "ppo_actor_warm_start":
             # Preserve the warm policy when introducing normalization. Equality
             # holds in the unclipped domain; clipping can break this equality.
@@ -323,7 +428,7 @@ class Trainer:
             reward_losses = []
             for t in range(self.cfg.model_window):
                 if self.model.state_only:
-                    ns = self.model(s, seq["target"][t], seq["context"][t])
+                    ns = self._dynamics(s, seq["target"][t], seq["context"][t])
                     sl = state_error(ns, seq["next_state"][t]).square().mean()
                     losses.append(sl)
                     state_losses.append(sl)
@@ -372,6 +477,21 @@ class Trainer:
                 last["wm/reward_loss"] = float(
                     torch.stack(reward_losses).mean().detach()
                 )
+        if self.termination is not None:
+            for _ in range(self.cfg.model_steps):
+                b = {k: v[0] for k, v in self.sample(1).items()}
+                logits = self.termination(b["termination_features"].detach())
+                loss = nn.functional.binary_cross_entropy_with_logits(
+                    logits, b["terminated"].float()
+                )
+                self.termination_opt.zero_grad(set_to_none=True)
+                loss.backward()
+                nn.utils.clip_grad_norm_(
+                    self.termination.parameters(), 1, error_if_nonfinite=True
+                )
+                self.termination_opt.step()
+                self.termination_updates += 1
+            last["termination/train_bce"] = float(loss.detach())
         end_model = timestamp(self.device)
         last["time/model_fit_seconds"] = end_model - start
         last["amp/discriminator_loss"] = self.prior.train_discriminator()
@@ -390,12 +510,22 @@ class Trainer:
                     batches[h] = self.sample(h, validation=True)
                 except ValueError:
                     pass
-            return {
+            metrics = {
                 f"validation/{h}/{key}": value
                 for h, row in evaluate(self.model, None, batches).items()
                 for key, value in row.items()
                 if isinstance(value, (int, float))
             }
+            if self.termination is not None:
+                from .diagnostics import calibration
+
+                b = {k: v[0] for k, v in self.sample(1, validation=True).items()}
+                metrics.update(
+                    calibration(
+                        self.termination(b["termination_features"]), b["terminated"]
+                    )
+                )
+            return metrics
         metrics = {}
         for h in (1, 4, 8, 16):
             try:
@@ -498,6 +628,7 @@ class Trainer:
         s, m, blend = b["state"], b["memory"], b["blend"]
         previous, phase = b["previous_action"], b["phase"]
         observations = []
+        critic_observations = []
         rewards = []
         dones = []
         terms = []
@@ -508,18 +639,51 @@ class Trainer:
         hist = b.get("task_history")
         episode = b.get("episode_steps")
         event = b.get("next_external_event_seconds")
+        poses = self._fk(s)
         for t in range(self.cfg.horizon):
-            raw_obs = self.observation(b, s, previous, phase)
+            with torch.profiler.record_function("imagine/observation"):
+                raw_obs = self.bridge(
+                    s,
+                    previous,
+                    phase,
+                    b["yaw"],
+                    b["launched"],
+                    b["dimensions"],
+                    b["mass"],
+                    b.get("default_q"),
+                    b.get("default_dq"),
+                    fk_result=poses,
+                )
+                critic_observations.append(
+                    self.critic_observation(b, s, previous, phase, poses, raw_obs)
+                )
             obs = self.obs_norm(raw_obs)
             observations.append(obs)
             raw = self.actor(obs)
             target, blend = self.targets(b, raw, blend)
             if self.model.state_only:
-                ns = self.model(s, target, b["context"])
-                task = self.task.evaluate_step(
-                    b, s, ns, raw, previous, phase, hist, episode, event, t
-                )
+                with torch.profiler.record_function("imagine/dynamics"):
+                    ns = self._dynamics(s, target, b["context"])
+                with torch.profiler.record_function("imagine/FK"):
+                    next_poses = self._fk(ns)
+                with torch.profiler.record_function("imagine/reward_and_termination"):
+                    task = self.task.evaluate_step(
+                        b,
+                        s,
+                        ns,
+                        raw,
+                        previous,
+                        phase,
+                        hist,
+                        episode,
+                        event,
+                        t,
+                        fk_before=poses,
+                        fk_after=next_poses,
+                    )
                 r, d, trunc = task.rewards, task.terminated.float(), task.truncated
+                if self.termination is not None:
+                    d = self.termination(task.termination_features).sigmoid()
                 hist = torch.where(valid[:, None], task.history, hist)
                 episode = torch.where(valid, task.episode_steps, episode)
                 event = torch.where(valid, task.event_seconds, event)
@@ -531,9 +695,15 @@ class Trainer:
                 d = torch.sigmoid(d)
                 trunc = phase + 1 >= b["reference_length"]
                 next_phase = (phase + 1).minimum(b["reference_length"] - 1)
-            style = self.prior.reward(
-                amp_features(s, self.bridge.fk), amp_features(ns, self.bridge.fk)
-            )
+            with torch.profiler.record_function("imagine/AMP"):
+                style = self.prior.reward(
+                    amp_features(s, self.bridge.fk, poses),
+                    amp_features(
+                        ns,
+                        self.bridge.fk,
+                        next_poses if self.model.state_only else None,
+                    ),
+                )
             rewards.append(
                 self.prior._w_task * r.sum(-1)
                 + self.prior._w_style * self.prior.ramp * style
@@ -543,13 +713,25 @@ class Trainer:
             styles.append(style)
             validity.append(valid)
             truncations.append(trunc)
+            if self.model.state_only:
+                poses = tuple(
+                    {k: torch.where(valid[:, None], pred[k], old[k]) for k in old}
+                    for old, pred in zip(poses, next_poses)
+                )
+            else:
+                poses = self._fk(torch.where(valid[:, None], ns, s))
             s = torch.where(valid[:, None], ns, s)
             previous = torch.where(valid[:, None], raw, previous)
             phase = torch.where(valid, next_phase, phase)
             valid = valid & ~trunc & ~(d.detach() >= 1)
-        observations.append(self.obs_norm(self.observation(b, s, previous, phase)))
+        final_obs = self.observation(b, s, previous, phase, poses)
+        observations.append(self.obs_norm(final_obs))
+        critic_observations.append(
+            self.critic_observation(b, s, previous, phase, poses, final_obs)
+        )
         return {
             "obs": torch.stack(observations),
+            "critic_obs": torch.stack(critic_observations),
             "reward": torch.stack(rewards),
             "done": torch.stack(dones),
             "terms": torch.stack(terms),
@@ -559,7 +741,11 @@ class Trainer:
         }
 
     def update_actor(self):
-        if self.cfg.actor_microbatch:
+        if (
+            self.cfg.actor_microbatch
+            or self.cfg.privileged_critic
+            or self.cfg.learned_termination
+        ):
             from .joint import update_actor
 
             return update_actor(self)
@@ -674,10 +860,28 @@ class Trainer:
         )
         return metrics
 
+    @property
+    def learning_contract(self):
+        return {
+            "critic_input_dim": self.critic_dim,
+            "critic_layout": "reflex_privileged292_v1"
+            if self.cfg.privileged_critic
+            else "oracle_policy179_v1",
+            "termination_geometry": "anchor_world3+gravity3+tracked_body_error_world3_signed_abs_v1"
+            if self.termination is not None
+            else None,
+            "termination_feature_dim": self.task.termination_feature_dim
+            if self.termination is not None
+            else None,
+        }
+
     def save(self, path):
         state = {
-            "version": 2,
+            "version": 3
+            if (self.cfg.privileged_critic or self.cfg.learned_termination)
+            else 2,
             "model_kind": self.cfg.wm_kind,
+            "learning_contract": self.learning_contract,
             "config": asdict(self.cfg),
             "contract": self.contract,
             "reward_names": self.reward_names,
@@ -686,10 +890,19 @@ class Trainer:
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
             "model_updates": self.model_updates,
+            "termination_updates": self.termination_updates,
             "initialization": self.initialization,
+            "experience": self.experience.state_dict(),
             "normalized": self.normalized,
             "task_spec": self.task.specification() if self.task is not None else None,
             "task_state": self.task.state_dict() if self.task is not None else None,
+            "critic_norm": self.critic_norm.state_dict(),
+            "termination": self.termination.state_dict()
+            if self.termination is not None
+            else None,
+            "termination_opt": self.termination_opt.state_dict()
+            if self.termination_opt is not None
+            else None,
             "replay": self.replay.state_dict(),
             "amp": self.prior.amp_state_dict(),
             "torch_rng": torch.get_rng_state(),
@@ -724,7 +937,7 @@ class Trainer:
         if state.get("version") == 1:
             saved_config.setdefault("wm_kind", "multitask")
         if (
-            state.get("version") not in (1, 2)
+            state.get("version") not in (1, 2, 3)
             or state["contract"] != self.contract
             or asdict(TrainConfig(**saved_config)) != asdict(self.cfg)
             or state["reward_names"] != self.reward_names
@@ -732,6 +945,20 @@ class Trainer:
             raise ValueError(
                 "Checkpoint model schema/config/physical contract mismatch; v1 multitask cannot silently resume pure dynamics"
             )
+        if (
+            state.get("version") == 3
+            and state.get("learning_contract") != self.learning_contract
+        ):
+            raise ValueError("Checkpoint learning layout mismatch")
+        if self.cfg.privileged_critic or self.cfg.learned_termination:
+            if state.get("version") != 3 or "critic_norm" not in state:
+                raise ValueError(
+                    "Checkpoint schema mismatch: repaired baseline needs v3 critic and termination states"
+                )
+        if self.cfg.learned_termination and (
+            state.get("termination") is None or state.get("termination_opt") is None
+        ):
+            raise ValueError("Checkpoint missing learned termination state/optimizer")
         task_spec = self.task.specification() if self.task is not None else None
         if state.get("task_spec") != task_spec:
             raise ValueError("Checkpoint analytic task contract mismatch")
@@ -747,6 +974,15 @@ class Trainer:
             "model_opt",
         ):
             getattr(self, name).load_state_dict(state[name])
+        if "critic_norm" in state:
+            self.critic_norm.load_state_dict(state["critic_norm"])
+        if self.termination is not None:
+            if state.get("version") != 3 or state.get("termination") is None:
+                raise ValueError(
+                    "Repair baseline requires v3 termination/critic checkpoint; old policies cannot resume"
+                )
+            self.termination.load_state_dict(state["termination"])
+            self.termination_opt.load_state_dict(state["termination_opt"])
         self.replay.load_state_dict(state["replay"])
         if self.task is not None:
             self.task.load_state_dict(state["task_state"])
@@ -760,11 +996,14 @@ class Trainer:
             state["iteration"],
             state["real_transitions"],
         )
+        if "experience" in state:
+            self.experience.load_state_dict(state["experience"])
         self.normalized = state["normalized"]
         self.initialization = state.get("initialization", {"kind": "scratch"})
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)
+        self.termination_updates = state.get("termination_updates", 0)
         random.setstate(state["python_rng"])
         np.random.set_state(state["numpy_rng"])
         torch.set_rng_state(state["torch_rng"].cpu())

@@ -101,6 +101,7 @@ class TaskResult:
     phase: torch.Tensor
     episode_steps: torch.Tensor
     event_seconds: torch.Tensor
+    termination_features: torch.Tensor
 
 
 class AnalyticTask(nn.Module):
@@ -232,10 +233,14 @@ class AnalyticTask(nn.Module):
         values = b["context"][..., self.context_slices["robot.coms"]]
         return values.reshape(*values.shape[:-1], len(self.body_names), 7)[..., :3]
 
-    def _body_data(self, state, b):
+    @property
+    def termination_feature_dim(self):
+        return 6 + 3 * len(self.tracked_names)
+
+    def _body_data(self, state, b, fk_result=None):
         com = self._com(b)
         root_i = self.body_names.index("pelvis")
-        p, q, v, w = self.fk.velocities(state, com[..., root_i, :])
+        p, q, v, w = self.fk.velocities(state, com[..., root_i, :], fk_result)
         bp = torch.stack([p[n] for n in self.body_names], -2)
         bq = torch.stack([q[n] for n in self.body_names], -2)
         bw = torch.stack([w[n] for n in self.body_names], -2)
@@ -270,12 +275,23 @@ class AnalyticTask(nn.Module):
         )
 
     def _view(
-        self, b, before, after, action, previous, phase, history, episode_steps, step
+        self,
+        b,
+        before,
+        after,
+        action,
+        previous,
+        phase,
+        history,
+        episode_steps,
+        step,
+        fk_before=None,
+        fk_after=None,
     ):
         n = len(after)
         device = after.device
-        data = self._body_data(after, b)
-        old_p, old_q = self.fk(before)
+        data = self._body_data(after, b, fk_after)
+        old_p, old_q = self.fk(before) if fk_before is None else fk_before
         robot = Asset(data, self.body_names, self.joint_names)
         box = Asset(
             NS(
@@ -388,6 +404,8 @@ class AnalyticTask(nn.Module):
         episode_steps,
         event_seconds,
         step=0,
+        fk_before=None,
+        fk_after=None,
     ):
         required = (
             "task_history",
@@ -403,7 +421,28 @@ class AnalyticTask(nn.Module):
             )
         episode_next = episode_steps + 1
         view = self._view(
-            b, before, after, action, previous, phase, history, episode_next, step
+            b,
+            before,
+            after,
+            action,
+            previous,
+            phase,
+            history,
+            episode_next,
+            step,
+            fk_before,
+            fk_after,
+        )
+        cmd = view.command_manager.get_term("motion")
+        gravity = view.scene["robot"].data.GRAVITY_VEC_W
+        term_features = torch.cat(
+            (
+                cmd.anchor_pos_w - cmd.robot_anchor_pos_w,
+                apply(inverse(cmd.anchor_quat_w), gravity)
+                - apply(inverse(cmd.robot_anchor_quat_w), gravity),
+                (cmd.body_pos_relative_w - cmd.robot_body_pos_w).flatten(-2),
+            ),
+            -1,
         )
         term = torch.zeros(len(after), dtype=torch.bool, device=after.device)
         timeout = episode_next >= self.max_steps
@@ -471,4 +510,5 @@ class AnalyticTask(nn.Module):
             phase_next.clamp_max(len(self.ref_q) - 1),
             episode_next,
             event_next,
+            term_features,
         )

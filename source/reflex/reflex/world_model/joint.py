@@ -6,7 +6,11 @@ from torch import nn
 
 
 def returns(imagined, critic, gamma):
-    reward, done, obs = imagined["reward"], imagined["done"], imagined["obs"]
+    reward, done, obs = (
+        imagined["reward"],
+        imagined["done"],
+        imagined.get("critic_obs", imagined["obs"]),
+    )
     survival = torch.ones_like(reward[0])
     result = torch.zeros_like(survival)
     for t in range(len(reward)):
@@ -21,7 +25,7 @@ def returns(imagined, critic, gamma):
 
 @torch.no_grad()
 def critic_targets(t, imagined):
-    values = t.critic(imagined["obs"].detach()).squeeze(-1)
+    values = t.critic(imagined.get("critic_obs", imagined["obs"]).detach()).squeeze(-1)
     ret = values[-1]
     targets = []
     for j in reversed(range(t.cfg.horizon)):
@@ -33,7 +37,7 @@ def critic_targets(t, imagined):
     return torch.stack(targets[::-1])
 
 
-def update_actor(t):
+def _update_actor(t):
     from .trainer import freeze
 
     c = t.cfg
@@ -44,25 +48,34 @@ def update_actor(t):
             "Chunked Actor uses aggregate gradient norm; configure gradient_audit_every=0 explicitly"
         )
     begin = time.monotonic()
+    if str(t.device).startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats()
     n = c.actor_batch or c.batch
     starts = t.sample(starts=True, n=n)
     t.actor_opt.zero_grad(set_to_none=True)
     x, y = [], []
     loss_total = 0.0
     valid_steps = 0
-    for offset in range(0, n, c.actor_microbatch):
-        b = {k: v[offset : offset + c.actor_microbatch] for k, v in starts.items()}
-        with freeze(t.model, t.prior._disc, t.critic):
+    for offset in range(0, n, c.actor_microbatch or n):
+        b = {
+            k: v[offset : offset + (c.actor_microbatch or n)] for k, v in starts.items()
+        }
+        with freeze(t.model, t.termination, t.prior._disc, t.critic):
             imagined = t.imagine(start_batch=b)
             loss = -returns(imagined, t.critic, c.gamma).mean()
             if c.actor_horizon_scale:
                 loss = loss / c.horizon
             scaled = loss * len(b["state"]) / n
-            scaled.backward()
+            with torch.profiler.record_function("actor/BPTT"):
+                scaled.backward()
             loss_total += float(scaled.detach())
             target = critic_targets(t, imagined)
             mask = imagined["valid"].reshape(-1)
-            x.append(imagined["obs"][:-1].detach().reshape(-1, 179)[mask])
+            x.append(
+                imagined.get("critic_obs", imagined["obs"])[:-1]
+                .detach()
+                .reshape(-1, t.critic_dim)[mask]
+            )
             y.append(target.reshape(-1)[mask])
             valid_steps += int(mask.sum())
         del imagined, scaled, loss, target
@@ -96,7 +109,7 @@ def update_actor(t):
             )
             t.critic_opt.step()
             losses.append(float(loss.detach()))
-    return {
+    result = {
         "actor/loss": loss_total,
         "actor/gradient_norm": float(norm),
         "critic/loss": sum(losses) / len(losses),
@@ -105,3 +118,57 @@ def update_actor(t):
         "time/actor_update_seconds": actor_seconds,
         "time/critic_update_seconds": time.monotonic() - begin - actor_seconds,
     }
+
+    if "stage" in starts:
+        result.update(
+            {
+                f"imagination/start_geometric_stage_{i}": int(v)
+                for i, v in enumerate(torch.bincount(starts["stage"], minlength=4))
+            }
+        )
+    if "start_contact_phase" in starts:
+        result.update(
+            {
+                f"imagination/start_contact_phase_{i}": int(
+                    (starts["start_contact_phase"] == i).sum()
+                )
+                for i in (-1, 0, 1, 2)
+            }
+        )
+    phase_bin = (
+        (starts["phase"].float() / starts["reference_length"] * 10).long().clamp(0, 9)
+    )
+    result.update(
+        {
+            f"imagination/start_reference_phase_bin_{i}": int(v)
+            for i, v in enumerate(torch.bincount(phase_bin, minlength=10))
+        }
+    )
+    if str(t.device).startswith("cuda"):
+        result["gpu/actor_peak_allocated_bytes"] = torch.cuda.max_memory_allocated()
+        result["gpu/actor_peak_reserved_bytes"] = torch.cuda.max_memory_reserved()
+    return result
+
+
+def update_actor(t):
+    if not t.profile_next_actor:
+        return _update_actor(t)
+    from pathlib import Path
+
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if str(t.device).startswith("cuda"):
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
+    if t.profile_dir is None:
+        raise ValueError("Profiling requires an output directory")
+    t.profile_next_actor = False
+    with torch.profiler.profile(
+        activities=activities, record_shapes=True, profile_memory=True
+    ) as profiler:
+        result = _update_actor(t)
+    path = Path(t.profile_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    profiler.export_chrome_trace(str(path / f"actor_{t.actor_updates:06d}.json"))
+    (path / f"actor_{t.actor_updates:06d}.txt").write_text(
+        profiler.key_averages().table(sort_by="self_cpu_time_total", row_limit=40)
+    )
+    return result
