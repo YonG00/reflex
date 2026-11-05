@@ -100,6 +100,41 @@ def window_loss(model, bridge, seq, horizon, state_weight=1.0):
     return state_weight * sl + rl + 0.1 * ml + dl
 
 
+def model_features(model, bridge, b, state, memory=None):
+    if model.state_only:
+        return model.features(state, b["target"], b["context"])
+    return model.features(
+        state,
+        b["target"],
+        b["context"],
+        b["memory"] if memory is None else memory,
+        b["phase"],
+        b["next_blend"],
+        observation(bridge, b, state),
+        b["action"],
+    )
+
+
+@torch.no_grad()
+def normalization_report(model, bridge, b):
+    z = (
+        (model_features(model, bridge, b, b["state"]) - model.inputs.mean)
+        / model.inputs.std
+    ).abs()
+    groups = {
+        "physical": slice(0, 86),
+        "target": slice(86, 115),
+        "context": slice(115, 115 + b["context"].shape[-1]),
+    }
+    return {
+        "fraction_clipped": float((z > 20).float().mean()),
+        "max_abs_z": float(z.max()),
+        "groups": {
+            k: float((z[:, ix] > 20).float().mean()) for k, ix in groups.items()
+        },
+    }
+
+
 @torch.no_grad()
 def evaluate(model, bridge, batches):
     result = {}
@@ -107,8 +142,9 @@ def evaluate(model, bridge, batches):
         if model.state_only:
             states = predict_states(model, seq, horizon)
             rewards = None
+            memories = None
         else:
-            states, _, rewards, _ = rollout(model, bridge, seq, horizon)
+            states, memories, rewards, _ = rollout(model, bridge, seq, horizon)
         pred, true = states[-1], seq["next_state"][-1]
         error = state_error(pred, true)
         values = {
@@ -146,6 +182,23 @@ def evaluate(model, bridge, batches):
         values["box_position_3d_rmse_m"] = float(
             (pred[:, 71:74] - true[:, 71:74]).square().sum(-1).mean().sqrt()
         )
+        start = {k: v[0] for k, v in seq.items()}
+        last = {k: v[-1] for k, v in seq.items()}
+        values["start_input_clip_fraction"] = normalization_report(
+            model, bridge, start
+        )["fraction_clipped"]
+        prior_state = seq["state"][0] if horizon == 1 else states[-2]
+        prior_memory = (
+            seq["memory"][0]
+            if horizon == 1
+            else memories[-2]
+            if memories is not None
+            else None
+        )
+        feat = model_features(model, bridge, last, prior_state, prior_memory)
+        values["last_predicted_input_clip_fraction"] = float(
+            (((feat - model.inputs.mean) / model.inputs.std).abs() > 20).float().mean()
+        )
         if rewards is not None:
             values["reward_rmse"] = float(
                 ((rewards[-1] - seq["reward_terms"][-1]) / model.reward_norm.std)
@@ -165,6 +218,7 @@ def main():
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--updates", type=int, default=64)
     p.add_argument("--batch", type=int, default=128)
+    p.add_argument("--eval_every", type=int, default=64)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--objective", choices=("multitask", "state"), default="multitask")
     p.add_argument(
@@ -283,6 +337,14 @@ def main():
         "simulator_transitions": 0,
         "model_schema": "state_v2" if model.state_only else "legacy_multitask_v1",
         "parameter_count": sum(p.numel() for p in model.parameters()),
+        "normalization_train": normalization_report(
+            model, bridge, {k: v[0] for k, v in replay.sample(2048, 1).items()}
+        ),
+        "normalization_heldout": normalization_report(
+            model,
+            bridge,
+            {k: v[0] for k, v in replay.sample(2048, 1, validation=True).items()},
+        ),
         "baseline": evaluate(model, bridge, batches),
         "cases": [],
     }
@@ -311,6 +373,10 @@ def main():
             model, bridge, {horizon: {k: v[:horizon] for k, v in train_probe.items()}}
         )
         torch.manual_seed(args.seed + 1)
+        curve = []
+        torch.cuda.reset_peak_memory_stats() if str(args.device).startswith(
+            "cuda"
+        ) else None
         begin = timestamp(args.device)
         for update in range(args.updates):
             seq = (
@@ -337,7 +403,18 @@ def main():
                     ),
                     flush=True,
                 )
+            if args.eval_every > 0 and (update + 1) % args.eval_every == 0:
+                point = {
+                    "update": update + 1,
+                    "evaluation": evaluate(model, bridge, batches),
+                }
+                curve.append(point)
+                (output / "learning_curve.json").write_text(json.dumps(curve, indent=2))
         row = {
+            "learning_curve": curve,
+            "peak_gpu_allocated_bytes": torch.cuda.max_memory_allocated()
+            if str(args.device).startswith("cuda")
+            else None,
             "window": horizon,
             "state_weight": weight,
             "optimizer_updates": args.updates,

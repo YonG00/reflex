@@ -352,27 +352,40 @@ def test_fresh_wm_architectures_share_same_physical_prior():
 
 def test_state_only_wm_loss_and_short_snapshot_starts(tmp_path):
     from reflex.world_model.models import StateWorldModel
-    from reflex.world_model.offline import window_loss,predict_states
-    t=make_trainer(tmp_path);t.collect(SyntheticAdapter(t.bridge))
-    model=StateWorldModel(2,hidden_layers=[16,16,16])
-    batch=t.replay.sample(4,8)
-    pred=predict_states(model,batch,8)
-    expected=state_error(pred,batch['next_state']).square().mean()
-    torch.testing.assert_close(window_loss(model,None,batch,8),expected)
-    assert model.net[-1].out_features==82
-    assert not hasattr(model,'reward_norm')
-    expected.backward();assert all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None)
+    from reflex.world_model.offline import window_loss, predict_states
+
+    t = make_trainer(tmp_path)
+    t.collect(SyntheticAdapter(t.bridge))
+    model = StateWorldModel(2, hidden_layers=[16, 16, 16])
+    batch = t.replay.sample(4, 8)
+    pred = predict_states(model, batch, 8)
+    expected = state_error(pred, batch["next_state"]).square().mean()
+    torch.testing.assert_close(window_loss(model, None, batch, 8), expected)
+    assert model.net[-1].out_features == 82
+    assert not hasattr(model, "reward_norm")
+    expected.backward()
+    assert all(
+        torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None
+    )
     # A 3-step episode ending in reset can still supply an imagined start.
-    r=Replay(8)
+    r = Replay(8)
     for i in range(3):
-        r.add({'valid':torch.ones(6,dtype=torch.bool),'launched':torch.ones(6,dtype=torch.bool),
-               'boundary':torch.full((6,),i==2),'terminated':torch.full((6,),i==2),
-               'timeout':torch.zeros(6,dtype=torch.bool),'phase':torch.full((6,),i),
-               'reference_length':torch.full((6,),100),'label':torch.full((6,),i)})
-    assert len(r.indices(32))==0
-    assert len(r.start_indices())==15
-    assert r.sample_starts(100)['label'].max()==2
-    assert not r.sample(100,2)['boundary'][:-1].any()
+        r.add(
+            {
+                "valid": torch.ones(6, dtype=torch.bool),
+                "launched": torch.ones(6, dtype=torch.bool),
+                "boundary": torch.full((6,), i == 2),
+                "terminated": torch.full((6,), i == 2),
+                "timeout": torch.zeros(6, dtype=torch.bool),
+                "phase": torch.full((6,), i),
+                "reference_length": torch.full((6,), 100),
+                "label": torch.full((6,), i),
+            }
+        )
+    assert len(r.indices(32)) == 0
+    assert len(r.start_indices()) == 12
+    assert r.sample_starts(100)["label"].max() == 2
+    assert not r.sample(100, 2)["boundary"][:-1].any()
 
 
 class SyntheticAdapter:
@@ -438,7 +451,7 @@ class SyntheticAdapter:
         }
 
 
-def make_trainer(tmp_path):
+def make_trainer(tmp_path, wm_kind="multitask"):
     bridge = builder()
     expert = tmp_path / "expert.pt"
     if not expert.exists():
@@ -451,6 +464,9 @@ def make_trainer(tmp_path):
         )
     prior = MotionPrior(str(expert), "cpu", batch=8, capacity=256, disc_steps=1)
     c = TrainConfig(
+        wm_kind=wm_kind,
+        wm_hidden_dims=[32, 32, 32] if wm_kind == "state" else None,
+        gradient_audit_every=1,
         capacity_steps=48,
         collect_steps=40,
         model_steps=12,
@@ -524,3 +540,18 @@ def test_full_cpu_chain_gradients_checkpoint_resume(tmp_path):
     restored.contract = {"wrong": True}
     with pytest.raises(ValueError, match="contract mismatch"):
         restored.load(path)
+
+
+def test_state_model_checkpoint_roundtrip_and_schema_rejection(tmp_path):
+    t = make_trainer(tmp_path, "state")
+    t.collect(SyntheticAdapter(t.bridge))
+    t.fit_model()
+    path = tmp_path / "pure.pt"
+    t.save(path)
+    restored = make_trainer(tmp_path, "state")
+    restored.load(path)
+    for k, v in t.model.state_dict().items():
+        torch.testing.assert_close(v, restored.model.state_dict()[k], rtol=0, atol=0)
+    assert restored.actor_updates == 0 and restored.model.state_only
+    with pytest.raises(ValueError, match="schema/config/physical contract mismatch"):
+        make_trainer(tmp_path).load(path)

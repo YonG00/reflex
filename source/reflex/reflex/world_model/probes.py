@@ -111,6 +111,10 @@ def rank_actions(
             b = adapter.snapshot()
             s, m = b["state"], b["memory"]
             previous = b["previous_action"]
+            history = b.get("task_history")
+            episode = b.get("episode_steps")
+            event = b.get("next_external_event_seconds")
+            phase = b["phase"]
             mb = b["blend"]
             rr = torch.zeros(e.num_envs, device=e.device)
             mr = rr.clone()
@@ -133,16 +137,34 @@ def rank_actions(
                     tr["valid"] & ~tr["boundary"] & ~tr["terminated"] & ~tr["timeout"]
                 )
                 mt, mb = trainer.targets(b, candidate, mb)
-                ns, m, reward, _ = trainer.model(
-                    s,
-                    mt,
-                    b["context"],
-                    m,
-                    b["phase"] + t,
-                    mb,
-                    trainer.observation(b, s, previous, b["phase"] + t),
-                    candidate,
-                )
+                if trainer.model.state_only:
+                    if trainer.task is None:
+                        raise RuntimeError(
+                            "Ranking pure dynamics requires AnalyticTask"
+                        )
+                    ns = trainer.model(s, mt, b["context"])
+                    predicted_task = trainer.task.evaluate_step(
+                        b, s, ns, candidate, previous, phase, history, episode, event, t
+                    )
+                    reward = predicted_task.rewards
+                    history, episode, event, phase = (
+                        predicted_task.history,
+                        predicted_task.episode_steps,
+                        predicted_task.event_seconds,
+                        predicted_task.phase,
+                    )
+                    valid &= ~predicted_task.terminated & ~predicted_task.truncated
+                else:
+                    ns, m, reward, _ = trainer.model(
+                        s,
+                        mt,
+                        b["context"],
+                        m,
+                        b["phase"] + t,
+                        mb,
+                        trainer.observation(b, s, previous, b["phase"] + t),
+                        candidate,
+                    )
                 ms = trainer.prior.reward(
                     amp_features(s, trainer.bridge.fk),
                     amp_features(ns, trainer.bridge.fk),

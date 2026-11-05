@@ -12,6 +12,7 @@ import torch
 from .physics import Kinematics, ActionMap, amp_features
 from .observation import OracleObservation
 from .oracle_env import box_dimensions, box_mass
+from .task import HISTORY_FIELDS
 
 
 MEMORY_FIELDS = ("_bed_hold_steps", "_tp_count", "_box_regrace", "_v38_cradle_ticks")
@@ -131,12 +132,21 @@ class IsaacAdapter:
                 for k, v in sorted(os.environ.items())
                 if k.startswith(("BOX_", "AMP_W_", "M5_"))
             },
+            "task_schema_version": 2,
+            "task_history_fields": list(HISTORY_FIELDS),
+            "body_names": list(self.robot.body_names),
+            "tracked_names": list(c.cfg.body_names),
+            "max_episode_steps": e.max_episode_length,
         }
+        self.task = None
+        self.task_parity_steps = 0
+        self.task_parity_max = torch.zeros(len(self.reward_names), device=self.device)
         # Capture exactly the post-physics state used for real rewards, before
         # Isaac automatically resets terminated environments or injects a throw.
         original_reward = e.reward_manager.compute
 
         def reward_compute(dt):
+            previous_history = self.task_history()
             result = original_reward(dt)
             self.pre_reset = {
                 "state": self.physical(),
@@ -145,11 +155,50 @@ class IsaacAdapter:
                 "reward_terms": e.reward_manager._step_reward.clone() * dt,
                 "terminated": e.termination_manager.terminated.clone(),
                 "timeout": e.termination_manager.time_outs.clone(),
+                "task_history_after_reward": self.task_history(),
             }
             if not torch.allclose(
                 self.pre_reset["reward_terms"].sum(-1), result, atol=1e-5, rtol=1e-5
             ):
                 raise RuntimeError("Isaac reward term weighting/dt contract changed")
+            if self.task is not None and self._before is not None:
+                b = self._before
+                analytic = self.task.evaluate_step(
+                    b,
+                    b["state"],
+                    self.pre_reset["state"],
+                    self.term.raw_actions,
+                    b["previous_action"],
+                    b["phase"],
+                    previous_history,
+                    b["episode_steps"],
+                    b["next_external_event_seconds"],
+                    0,
+                )
+                err = (analytic.rewards - self.pre_reset["reward_terms"]).abs().amax(0)
+                self.task_parity_max = torch.maximum(self.task_parity_max, err.detach())
+                exact = self.task_exact_mask
+                if bool((err[exact] > 2e-4).any()):
+                    report = {
+                        name: float(error)
+                        for name, error in zip(self.reward_names, err)
+                        if float(error) > 2e-4
+                    }
+                    raise RuntimeError(f"Analytic task reward parity failed: {report}")
+                if not torch.equal(analytic.terminated, self.pre_reset["terminated"]):
+                    raise RuntimeError("Analytic termination parity failed")
+                # Interval-event counters are updated later. These reward-history
+                # counters must already match the pre-reset reward snapshot.
+                cols = [
+                    HISTORY_FIELDS.index(n)
+                    for n in ("_bed_hold_steps", "_tp_count", "_chest_v5_persist")
+                ]
+                if not torch.equal(
+                    analytic.history[:, cols],
+                    self.pre_reset["task_history_after_reward"][:, cols],
+                ):
+                    raise RuntimeError("Analytic reward-history parity failed")
+                self.task_parity_steps += self.env.num_envs
             return result
 
         e.reward_manager.compute = reward_compute
@@ -183,6 +232,16 @@ class IsaacAdapter:
             return result
 
         setattr(asset, name, write)
+
+    def attach_task(self, task):
+        self.task = task
+        self.task_exact_mask = torch.tensor(
+            [
+                r["kind"] != "ground_height_proxy_no_force_or_self_contact"
+                for r in task.specification()["rewards"]
+            ],
+            device=self.device,
+        )
 
     def physical(self):
         d, b = self.robot.data, self.box.data
@@ -220,6 +279,21 @@ class IsaacAdapter:
             )
         )
         return torch.cat(vals, -1).clone()
+
+    def task_history(self):
+        zero = torch.zeros(self.env.num_envs, device=self.device)
+        return torch.stack(
+            [getattr(self.env, name, zero).float() for name in HISTORY_FIELDS], -1
+        ).clone()
+
+    def next_event_seconds(self):
+        manager = self.env.event_manager
+        result = torch.full((self.env.num_envs,), float("inf"), device=self.device)
+        configs = manager._mode_term_cfgs.get("interval", [])
+        for cfg, timer in zip(configs, manager._interval_term_time_left):
+            if cfg.interval_range_s[1] > 0:
+                result = torch.minimum(result, timer.expand_as(result))
+        return result.clone()
 
     def context(self):
         n = self.env.num_envs
@@ -331,6 +405,34 @@ class IsaacAdapter:
                 dtype=torch.long,
             ),
         }
+        limits = getattr(
+            self.robot.data, "joint_pos_limits", self.robot.data.soft_joint_pos_limits
+        )
+        result.update(
+            {
+                "task_history": self.task_history(),
+                "reference_relative_p": (
+                    self.command.body_pos_relative_w - e.scene.env_origins[:, None, :]
+                ).clone(),
+                "reference_relative_q": self.command.body_quat_relative_w.clone(),
+                "episode_steps": e.episode_length_buf.clone(),
+                "common_step": torch.full_like(
+                    e.episode_length_buf, e.common_step_counter
+                ),
+                "launch_step": e._box_launch_step.clone(),
+                "box_radius": getattr(
+                    e,
+                    "_balloon_radius_per_env",
+                    torch.full((n,), 0.1016, device=self.device),
+                ).clone(),
+                "hard_joint_limits": limits.clone(),
+                "soft_joint_limits": self.robot.data.soft_joint_pos_limits.clone(),
+                "next_external_event_seconds": self.next_event_seconds(),
+                "start_valid": e._box_launched.bool()
+                & torch.isfinite(state).all(-1)
+                & torch.isfinite(result["context"]).all(-1),
+            }
+        )
         self._before = result
         return result
 
@@ -402,7 +504,7 @@ class IsaacAdapter:
 
     def manifest(self):
         e = self.env
-        return {
+        result = {
             "contract": self.contract,
             "rewards": [
                 {
@@ -420,3 +522,14 @@ class IsaacAdapter:
             "analytic_rewards": [],
             "warning": "All task reward terms are learned surrogates. GPU gradient/ranking validation required.",
         }
+        if self.task is not None:
+            result["task"] = self.task.specification()
+            result["rewards"] = self.task.specification()["rewards"]
+            result["warning"] = (
+                "Original Torch formulas; configured force-only proxy is explicitly labeled. Neural WM learns state only."
+            )
+            result["task_parity_checked_transitions"] = self.task_parity_steps
+            result["task_parity_max"] = {
+                n: float(v) for n, v in zip(self.reward_names, self.task_parity_max)
+            }
+        return result

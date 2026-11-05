@@ -216,6 +216,26 @@ class Kinematics(nn.Module):
             quats[child] = q
         return positions, quats
 
+    def velocities(self, s, root_com=None):
+        """Link-origin velocities from URDF Jacobian recursion (world frame)."""
+        p, q = self(s)
+        w = {"pelvis": s[..., 39:42]}
+        offset = (
+            torch.zeros_like(s[..., :3])
+            if root_com is None
+            else apply(s[..., 3:7], root_com)
+        )
+        v = {"pelvis": s[..., 36:39] - torch.cross(w["pelvis"], offset, dim=-1)}
+        for i, (parent, child, jid) in enumerate(self.nodes):
+            v[child] = v[parent] + torch.cross(w[parent], p[child] - p[parent], dim=-1)
+            w[child] = w[parent]
+            if jid >= 0:
+                axis = getattr(self, f"axis_{i}").expand_as(p[child])
+                origin = getattr(self, f"quat_{i}").expand_as(q[parent])
+                axis_w = apply(mul(q[parent], origin), axis)
+                w[child] = w[parent] + axis_w * s[..., 42 + jid, None]
+        return p, q, v, w
+
 
 def amp_features(s, fk):
     positions, _ = fk(s)

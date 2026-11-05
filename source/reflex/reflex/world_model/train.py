@@ -59,6 +59,7 @@ def main():
     import whole_body_tracking.tasks  # noqa: F401 - task registration
     from .oracle_env import OracleEnvCfg, register
     from .isaac_adapter import IsaacAdapter
+    from .task import AnalyticTask
     from .prior import MotionPrior
     from .trainer import Trainer, TrainConfig
     from .probes import rank_actions
@@ -96,6 +97,10 @@ def main():
         # convenient local URDF that could have different link/joint frames.
         urdf = cfg.scene.robot.spawn.asset_path
         adapter = IsaacAdapter(env, urdf)
+        task = None
+        if config.wm_kind == "state":
+            task = AnalyticTask.from_environment(adapter)
+            adapter.attach_task(task)
         prior = MotionPrior(
             os.environ.get("AMP_DATASET", paths.AMP_DATASET),
             args.device,
@@ -111,6 +116,7 @@ def main():
             adapter.contract,
             args.device,
             config,
+            task=task,
         )
         if args.checkpoint:
             trainer.load(args.checkpoint)
@@ -161,16 +167,25 @@ def main():
                 for h in (1, 4, 8, 16, 32)
             }
             result = {
-                "passed": int(counts["32"]) > 0,
+                "passed": len(trainer.replay.indices(config.model_window)) > 0
+                and len(trainer.replay.start_indices()) > 0,
                 "parity": parity,
                 "postlaunch_windows": counts,
+                "imagined_start_snapshots": len(trainer.replay.start_indices()),
+                "supervision_window": config.model_window,
                 "real_transitions": trainer.real_transitions,
                 "actor_updated": False,
+                "task_parity_max": {
+                    n: float(v)
+                    for n, v in zip(adapter.reward_names, adapter.task_parity_max)
+                },
             }
             (out / "preflight.json").write_text(json.dumps(result, indent=2))
             trainer.save(out / "preflight.pt")
             if not result["passed"]:
-                raise RuntimeError("Preflight has no valid 32-step post-launch windows")
+                raise RuntimeError(
+                    "Preflight has no valid WM supervision windows or imagination snapshots"
+                )
             print(json.dumps(result), flush=True)
             return
         writer = SummaryWriter(str(out / "tensorboard"))
@@ -200,6 +215,7 @@ def main():
                     if (
                         args.enable_actor
                         and trainer.iteration >= config.warmup_iterations
+                        and trainer.basic_ready(metrics)
                     ):
                         ranking_start = timestamp(args.device)
                         ranking = rank_actions(adapter, trainer)
@@ -214,7 +230,7 @@ def main():
                     metrics["gate/actor_enabled"] = float(approved)
                     if approved:
                         try:
-                            trainer.sample(config.horizon, starts=True)
+                            trainer.sample(starts=True)
                         except ValueError:
                             metrics["gate/no_imagination_starts"] = 1.0
                         else:
@@ -252,10 +268,29 @@ def main():
         finally:
             writer.close()
     finally:
+        if "manifest" in locals():
+            manifest.update(adapter.manifest())
+            (out / "manifest.json").write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False)
+            )
         env.close()
 
 
+failed = False
 try:
     main()
+except BaseException:
+    failed = True
+    import traceback
+    from pathlib import Path
+
+    failure = traceback.format_exc()
+    print(failure, flush=True)
+    Path(args.output).mkdir(parents=True, exist_ok=True)
+    (Path(args.output) / "failure.txt").write_text(failure)
 finally:
-    app.close()
+    try:
+        app.close()
+    finally:
+        if failed:
+            raise SystemExit(1)

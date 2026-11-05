@@ -91,7 +91,10 @@ class Replay:
         """
         if not self.count:
             return torch.empty((0, 2), dtype=torch.long, device=self.device)
-        valid = self.ordered("valid") & self.ordered("launched").bool()
+        valid = (
+            self.ordered("start_valid" if "start_valid" in self.data else "valid")
+            & self.ordered("launched").bool()
+        )
         if "phase" in self.data:
             valid &= (self.ordered("phase") >= 0) & (
                 self.ordered("phase") < self.ordered("reference_length")

@@ -11,7 +11,7 @@ import random
 import numpy as np
 import torch
 from torch import nn
-from .models import WorldModel, Standardizer, mlp
+from .models import WorldModel, StateWorldModel, Standardizer, mlp
 from .physics import amp_features, state_error
 from .replay import Replay
 from .timing import timestamp
@@ -30,8 +30,14 @@ class TrainConfig:
     gamma: float = 0.99
     lam: float = 0.95
     lr: float = 3e-4
+    model_lr: float | None = None
+    model_grad_clip: float = 10.0
     exploration: float = 0.15
     hidden: int = 256
+    wm_kind: str = "state"
+    wm_hidden_dims: list[int] | None = None
+    gradient_audit_every: int = 20
+    normalizer_samples: int = 2048
     actor_hidden_dims: list[int] | None = None
     stage_balanced: bool = False
     # Normalized physical error / normalized per-term reward error. Provisional
@@ -80,6 +86,7 @@ class Trainer:
         contract,
         device="cpu",
         cfg=None,
+        task=None,
     ):
         self.cfg, self.device = cfg or TrainConfig(), device
         c = self.cfg
@@ -89,19 +96,32 @@ class Trainer:
             prior,
         )
         self.reward_names, self.contract = list(reward_names), contract
-        self.model = WorldModel(
-            context_dim,
-            memory_dim,
-            len(reward_names),
-            hidden=c.hidden,
-            com_indices=contract.get("com_indices"),
+        self.task = task.to(device) if task is not None else None
+        if c.wm_kind not in ("state", "multitask"):
+            raise ValueError("Unknown WM kind")
+        self.model = (
+            StateWorldModel(
+                context_dim,
+                hidden_layers=c.wm_hidden_dims or [2048] * 3,
+                com_indices=contract.get("com_indices"),
+            )
+            if c.wm_kind == "state"
+            else WorldModel(
+                context_dim,
+                memory_dim,
+                len(reward_names),
+                hidden=c.hidden,
+                com_indices=contract.get("com_indices"),
+            )
         ).to(device)
         self.obs_norm = Standardizer(179).to(device)
         self.actor = mlp(179, 29, c.hidden, layers=c.actor_hidden_dims).to(device)
         nn.init.zeros_(self.actor[-1].weight)
         nn.init.zeros_(self.actor[-1].bias)
         self.critic = mlp(179, 1, c.hidden).to(device)
-        self.model_opt = torch.optim.Adam(self.model.parameters(), lr=c.lr)
+        self.model_opt = torch.optim.Adam(
+            self.model.parameters(), lr=c.model_lr or c.lr
+        )
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=c.lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=c.lr)
         self.replay = Replay(c.capacity_steps, device)
@@ -219,11 +239,13 @@ class Trainer:
                 rewards.append(tr["reward_terms"].sum(-1).mean())
         return {"real/task_reward": float(torch.stack(rewards).mean())}
 
-    def sample(self, horizon=1, starts=False, validation=False):
+    def sample(self, horizon=1, starts=False, validation=False, n=None):
         start = timestamp(self.device)
         try:
+            if starts:
+                return self.replay.sample_starts(n or self.cfg.batch, validation)
             return self.replay.sample(
-                self.cfg.batch,
+                n or self.cfg.batch,
                 horizon,
                 starts,
                 validation=validation,
@@ -233,7 +255,7 @@ class Trainer:
             self.replay_seconds += timestamp(self.device) - start
 
     def fit_normalizers(self):
-        b = {k: v[0] for k, v in self.sample().items()}
+        b = {k: v[0] for k, v in self.sample(n=self.cfg.normalizer_samples).items()}
         old_mean = self.obs_norm.mean.clone()
         old_std = self.obs_norm.std.clone()
         self.obs_norm.fit(self.observation(b))
@@ -247,19 +269,24 @@ class Trainer:
                 first.bias.add_(
                     old_weight @ ((self.obs_norm.mean - old_mean) / old_std)
                 )
-        self.model.inputs.fit(
-            self.model.features(
-                b["state"],
-                b["target"],
-                b["context"],
-                b["memory"],
-                b["phase"],
-                b["next_blend"],
-                self.observation(b),
-                b["action"],
+        if self.model.state_only:
+            self.model.inputs.fit(
+                self.model.features(b["state"], b["target"], b["context"])
             )
-        )
-        self.model.reward_norm.fit(b["reward_terms"])
+        else:
+            self.model.inputs.fit(
+                self.model.features(
+                    b["state"],
+                    b["target"],
+                    b["context"],
+                    b["memory"],
+                    b["phase"],
+                    b["next_blend"],
+                    self.observation(b),
+                    b["action"],
+                )
+            )
+            self.model.reward_norm.fit(b["reward_terms"])
         self.normalized = True
 
     def fit_model(self):
@@ -271,7 +298,16 @@ class Trainer:
             seq = self.sample(self.cfg.model_window)
             s, m = seq["state"][0], seq["memory"][0]
             losses = []
+            state_losses = []
+            reward_losses = []
             for t in range(self.cfg.model_window):
+                if self.model.state_only:
+                    ns = self.model(s, seq["target"][t], seq["context"][t])
+                    sl = state_error(ns, seq["next_state"][t]).square().mean()
+                    losses.append(sl)
+                    state_losses.append(sl)
+                    s = ns
+                    continue
                 ns, nm, r, d = self.model(
                     s,
                     seq["target"][t],
@@ -293,19 +329,27 @@ class Trainer:
                     d, seq["terminated"][t].float()
                 )
                 losses.append(sl + rl + 0.1 * ml + dl)
+                state_losses.append(sl)
+                reward_losses.append(rl)
                 s, m = ns, nm
             loss = torch.stack(losses).mean()
             self.model_opt.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(
-                self.model.parameters(), 10, error_if_nonfinite=True
+                self.model.parameters(),
+                self.cfg.model_grad_clip,
+                error_if_nonfinite=True,
             )
             self.model_opt.step()
             last = {
                 "wm/loss": float(loss.detach()),
-                "wm/state_loss": float(sl.detach()),
-                "wm/reward_loss": float(rl.detach()),
+                "wm/state_loss": float(torch.stack(state_losses).mean().detach()),
+                "wm/last_step_state_loss": float(sl.detach()),
             }
+            if reward_losses:
+                last["wm/reward_loss"] = float(
+                    torch.stack(reward_losses).mean().detach()
+                )
         end_model = timestamp(self.device)
         last["time/model_fit_seconds"] = end_model - start
         last["amp/discriminator_loss"] = self.prior.train_discriminator()
@@ -315,6 +359,21 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self):
+        if self.model.state_only:
+            from .offline import evaluate
+
+            batches = {}
+            for h in (1, 4, 8, 16, 32):
+                try:
+                    batches[h] = self.sample(h, validation=True)
+                except ValueError:
+                    pass
+            return {
+                f"validation/{h}/{key}": value
+                for h, row in evaluate(self.model, None, batches).items()
+                for key, value in row.items()
+                if isinstance(value, (int, float))
+            }
         metrics = {}
         for h in (1, 4, 8, 16):
             try:
@@ -355,39 +414,66 @@ class Trainer:
                     metrics[f"reward_error/{name}"] = float(value)
         return metrics
 
+    def basic_ready(self, metrics):
+        if self.model.state_only:
+            value = metrics.get("validation/8/state_rmse", float("inf"))
+            return bool(np.isfinite(value) and value < self.cfg.max_state_rmse)
+        return all(
+            metrics.get(f"validation/{h}/state_rmse", float("inf"))
+            < self.cfg.max_state_rmse
+            and metrics.get(f"validation/{h}/reward_rmse", float("inf"))
+            < self.cfg.max_reward_rmse
+            for h in (1, 4, 8, 16)
+        )
+
     def ready(self, metrics, ranking_approved=False):
         # A real-simulator action-ranking report is a separate required gate.
         return (
             ranking_approved
             and self.iteration >= self.cfg.warmup_iterations
-            and all(
-                metrics.get(f"validation/{h}/state_rmse", float("inf"))
-                < self.cfg.max_state_rmse
-                and metrics.get(f"validation/{h}/reward_rmse", float("inf"))
-                < self.cfg.max_reward_rmse
-                for h in (1, 4, 8, 16)
-            )
+            and self.basic_ready(metrics)
         )
 
     def imagine(self):
-        seq = self.sample(self.cfg.horizon, starts=True)
-        b = {k: v[0] for k, v in seq.items()}
+        b = self.sample(starts=True)
+        if self.model.state_only and self.task is None:
+            raise RuntimeError("Pure dynamics needs an AnalyticTask for imagination")
         s, m, blend = b["state"], b["memory"], b["blend"]
         previous, phase = b["previous_action"], b["phase"]
-        obs_list = []
+        observations = []
         rewards = []
         dones = []
         terms = []
         styles = []
+        validity = []
+        truncations = []
+        valid = torch.ones(len(s), dtype=torch.bool, device=s.device)
+        hist = b.get("task_history")
+        episode = b.get("episode_steps")
+        event = b.get("next_external_event_seconds")
         for t in range(self.cfg.horizon):
-            raw_obs = self.observation(b, s, previous, phase + t)
+            raw_obs = self.observation(b, s, previous, phase)
             obs = self.obs_norm(raw_obs)
-            obs_list.append(obs)
+            observations.append(obs)
             raw = self.actor(obs)
             target, blend = self.targets(b, raw, blend)
-            ns, m, r, d = self.model(
-                s, target, b["context"], m, phase + t, blend, raw_obs, raw
-            )
+            if self.model.state_only:
+                ns = self.model(s, target, b["context"])
+                task = self.task.evaluate_step(
+                    b, s, ns, raw, previous, phase, hist, episode, event, t
+                )
+                r, d, trunc = task.rewards, task.terminated.float(), task.truncated
+                hist = torch.where(valid[:, None], task.history, hist)
+                episode = torch.where(valid, task.episode_steps, episode)
+                event = torch.where(valid, task.event_seconds, event)
+                next_phase = task.phase
+            else:
+                ns, m, r, d = self.model(
+                    s, target, b["context"], m, phase, blend, raw_obs, raw
+                )
+                d = torch.sigmoid(d)
+                trunc = phase + 1 >= b["reference_length"]
+                next_phase = (phase + 1).minimum(b["reference_length"] - 1)
             style = self.prior.reward(
                 amp_features(s, self.bridge.fk), amp_features(ns, self.bridge.fk)
             )
@@ -395,20 +481,25 @@ class Trainer:
                 self.prior._w_task * r.sum(-1)
                 + self.prior._w_style * self.prior.ramp * style
             )
-            dones.append(torch.sigmoid(d))
+            dones.append(d)
             terms.append(r)
             styles.append(style)
-            s, previous = ns, raw
-        obs_list.append(
-            self.obs_norm(self.observation(b, s, previous, phase + self.cfg.horizon))
-        )
-        return (
-            torch.stack(obs_list),
-            torch.stack(rewards),
-            torch.stack(dones),
-            torch.stack(terms),
-            torch.stack(styles),
-        )
+            validity.append(valid)
+            truncations.append(trunc)
+            s = torch.where(valid[:, None], ns, s)
+            previous = torch.where(valid[:, None], raw, previous)
+            phase = torch.where(valid, next_phase, phase)
+            valid = valid & ~trunc & ~(d.detach() >= 1)
+        observations.append(self.obs_norm(self.observation(b, s, previous, phase)))
+        return {
+            "obs": torch.stack(observations),
+            "reward": torch.stack(rewards),
+            "done": torch.stack(dones),
+            "terms": torch.stack(terms),
+            "style": torch.stack(styles),
+            "valid": torch.stack(validity),
+            "truncated": torch.stack(truncations),
+        }
 
     def update_actor(self):
         metrics = {}
@@ -416,14 +507,30 @@ class Trainer:
         for _ in range(self.cfg.actor_steps):
             with freeze(self.model, self.prior._disc, self.critic):
                 start = timestamp(self.device)
-                obs, reward, done, terms, styles = self.imagine()
+                imagined = self.imagine()
+                obs, reward, done, terms, styles = (
+                    imagined["obs"],
+                    imagined["reward"],
+                    imagined["done"],
+                    imagined["terms"],
+                    imagined["style"],
+                )
                 after_imagine = timestamp(self.device)
                 imagine_seconds += after_imagine - start
                 survival = torch.ones_like(reward[0])
                 objective = torch.zeros_like(survival)
+                reward_weights = []
                 for t in range(self.cfg.horizon):
-                    objective = objective + self.cfg.gamma**t * survival * reward[t]
-                    survival = survival * (1 - done[t])
+                    reward_weight = self.cfg.gamma**t * survival
+                    reward_weights.append(reward_weight)
+                    objective = objective + reward_weight * reward[t]
+                    continuation = survival * (1 - done[t])
+                    objective = objective + self.cfg.gamma ** (
+                        t + 1
+                    ) * continuation * imagined["truncated"][t] * self.critic(
+                        obs[t + 1]
+                    ).squeeze(-1)
+                    survival = continuation * (~imagined["truncated"][t])
                 objective = (
                     objective
                     + self.cfg.gamma** self.cfg.horizon
@@ -434,20 +541,34 @@ class Trainer:
                 # Audit task/style gradients on shared actor params; learned reward
                 # gradient can be misleading even with good scalar prediction loss.
                 params = list(self.actor.parameters())
+                weights = torch.stack(reward_weights)
+                contribution = lambda values: (weights * values).sum(0).mean()
                 audits = [
-                    ("task", self.prior._w_task * terms.sum(-1).mean()),
-                    ("style", self.prior._w_style * self.prior.ramp * styles.mean()),
+                    ("task", self.prior._w_task * contribution(terms.sum(-1))),
+                    (
+                        "style",
+                        self.prior._w_style * self.prior.ramp * contribution(styles),
+                    ),
                 ]
                 audits.extend(
-                    (f"reward/{name}", self.prior._w_task * terms[..., i].mean())
+                    (f"reward/{name}", self.prior._w_task * contribution(terms[..., i]))
                     for i, name in enumerate(self.reward_names)
                 )
-                for name, value in audits:
-                    grads = torch.autograd.grad(
-                        value, params, retain_graph=True, allow_unused=True
+                audit = (
+                    self.cfg.gradient_audit_every > 0
+                    and self.actor_updates % self.cfg.gradient_audit_every == 0
+                )
+                for name, value in audits if audit else []:
+                    grads = (
+                        torch.autograd.grad(
+                            value, params, retain_graph=True, allow_unused=True
+                        )
+                        if value.requires_grad
+                        else []
                     )
-                    metrics[f"gradient/{name}"] = float(
-                        torch.stack([g.norm() for g in grads if g is not None]).norm()
+                    norms = [g.norm() for g in grads if g is not None]
+                    metrics[f"gradient/{name}"] = (
+                        float(torch.stack(norms).norm()) if norms else 0.0
                     )
                 self.actor_opt.zero_grad(set_to_none=True)
                 loss.backward()
@@ -458,12 +579,19 @@ class Trainer:
             actor_seconds += after_actor - after_imagine
             with torch.no_grad():
                 values = self.critic(obs.detach()).squeeze(-1)
-                target = lambda_returns(
-                    reward.detach(), done.detach(), values, self.cfg.gamma, self.cfg.lam
-                )
-            closs = (
-                (self.critic(obs[:-1].detach()).squeeze(-1) - target).square().mean()
-            )
+                ret = values[-1]
+                targets = []
+                for t in reversed(range(self.cfg.horizon)):
+                    future = torch.where(imagined["truncated"][t], values[t + 1], ret)
+                    ret = reward[t].detach() + self.cfg.gamma * (
+                        1 - done[t].detach()
+                    ) * ((1 - self.cfg.lam) * values[t + 1] + self.cfg.lam * future)
+                    targets.append(ret)
+                target = torch.stack(targets[::-1])
+            closs = (self.critic(obs[:-1].detach()).squeeze(-1) - target).square()
+            closs = (closs * imagined["valid"]).sum() / imagined[
+                "valid"
+            ].sum().clamp_min(1)
             self.critic_opt.zero_grad(set_to_none=True)
             closs.backward()
             self.critic_opt.step()
@@ -487,7 +615,8 @@ class Trainer:
 
     def save(self, path):
         state = {
-            "version": 1,
+            "version": 2,
+            "model_kind": self.cfg.wm_kind,
             "config": asdict(self.cfg),
             "contract": self.contract,
             "reward_names": self.reward_names,
@@ -497,6 +626,8 @@ class Trainer:
             "actor_updates": self.actor_updates,
             "initialization": self.initialization,
             "normalized": self.normalized,
+            "task_spec": self.task.specification() if self.task is not None else None,
+            "task_state": self.task.state_dict() if self.task is not None else None,
             "replay": self.replay.state_dict(),
             "amp": self.prior.amp_state_dict(),
             "torch_rng": torch.get_rng_state(),
@@ -527,13 +658,21 @@ class Trainer:
 
     def load(self, path):
         state = torch.load(path, map_location=self.device, weights_only=False)
+        saved_config = dict(state["config"])
+        if state.get("version") == 1:
+            saved_config.setdefault("wm_kind", "multitask")
         if (
-            state.get("version") != 1
+            state.get("version") not in (1, 2)
             or state["contract"] != self.contract
-            or asdict(TrainConfig(**state["config"])) != asdict(self.cfg)
+            or asdict(TrainConfig(**saved_config)) != asdict(self.cfg)
             or state["reward_names"] != self.reward_names
         ):
-            raise ValueError("Checkpoint config / physical contract mismatch")
+            raise ValueError(
+                "Checkpoint model schema/config/physical contract mismatch; v1 multitask cannot silently resume pure dynamics"
+            )
+        task_spec = self.task.specification() if self.task is not None else None
+        if state.get("task_spec") != task_spec:
+            raise ValueError("Checkpoint analytic task contract mismatch")
         for name in (
             "actor",
             "critic",
@@ -547,6 +686,8 @@ class Trainer:
         ):
             getattr(self, name).load_state_dict(state[name])
         self.replay.load_state_dict(state["replay"])
+        if self.task is not None:
+            self.task.load_state_dict(state["task_state"])
         self.prior.load_amp_state_dict(state["amp"])
         # A new simulator starts on resume. Never join its first trajectory to
         # the final stored trajectory from the previous process.
