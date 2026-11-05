@@ -31,6 +31,10 @@ class Standardizer(nn.Module):
 
 
 class WorldModel(nn.Module):
+    """Legacy v1 multitask model, retained only for explicit old-data controls."""
+
+    state_only = False
+
     def __init__(
         self,
         context_dim,
@@ -98,3 +102,49 @@ class WorldModel(nn.Module):
             )
         reward = r * self.reward_norm.std + self.reward_norm.mean
         return ns, memory + dm, reward, done.squeeze(-1)
+
+
+class StateWorldModel(nn.Module):
+    """V2 physical dynamics only. No learned reward, history or termination head.
+
+    The state-conditioned wrist reflex/PD/PhysX macro plant consumes processed
+    targets. Raw action history and reference/reward history are task inputs,
+    not inputs to this autonomous post-launch physical transition.
+    """
+
+    state_only = True
+
+    def __init__(
+        self,
+        context_dim,
+        dt=0.02,
+        hidden_layers=(2048, 2048, 2048),
+        com_indices=None,
+        activation=nn.SiLU,
+    ):
+        super().__init__()
+        self.dt, self.com_indices = dt, com_indices
+        self.inputs = Standardizer(86 + 29 + context_dim)
+        self.net = mlp(
+            86 + 29 + context_dim, 82, layers=hidden_layers, activation=activation
+        )
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+
+    def features(self, state, target, context):
+        return torch.cat((canonical(state), target, context), -1)
+
+    def forward(self, state, target, context):
+        delta = self.net(self.inputs(self.features(state, target, context)))
+        if self.com_indices is None:
+            return integrate(state, delta, self.dt)
+        root, box = self.com_indices
+        return integrate(
+            state,
+            delta,
+            self.dt,
+            context[..., root : root + 3],
+            context[..., box : box + 3],
+        )
+
+    step = forward

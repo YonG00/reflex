@@ -14,7 +14,7 @@ from pathlib import Path
 import subprocess
 import torch
 from torch import nn
-from .models import WorldModel
+from .models import WorldModel, StateWorldModel
 from .physics import Kinematics, state_error
 from .observation import OracleObservation
 from .replay import Replay
@@ -37,6 +37,10 @@ def observation(bridge, b, state):
 
 
 def rollout(model, bridge, seq, horizon):
+    if model.state_only:
+        raise TypeError(
+            "State-only WM has no reward/memory/done outputs; use predict_states"
+        )
     state, memory = seq["state"][0], seq["memory"][0]
     states = []
     memories = []
@@ -66,7 +70,22 @@ def rollout(model, bridge, seq, horizon):
     )
 
 
+def predict_states(model, seq, horizon):
+    state = seq["state"][0]
+    states = []
+    for t in range(horizon):
+        state = model(state, seq["target"][t], seq["context"][t])
+        states.append(state)
+    return torch.stack(states)
+
+
 def window_loss(model, bridge, seq, horizon, state_weight=1.0):
+    if model.state_only:
+        states = predict_states(model, seq, horizon)
+        return (
+            state_weight
+            * state_error(states, seq["next_state"][:horizon]).square().mean()
+        )
     states, memories, rewards, dones = rollout(model, bridge, seq, horizon)
     sl = state_error(states, seq["next_state"][:horizon]).square().mean()
     rl = (
@@ -85,7 +104,11 @@ def window_loss(model, bridge, seq, horizon, state_weight=1.0):
 def evaluate(model, bridge, batches):
     result = {}
     for horizon, seq in batches.items():
-        states, _, rewards, _ = rollout(model, bridge, seq, horizon)
+        if model.state_only:
+            states = predict_states(model, seq, horizon)
+            rewards = None
+        else:
+            states, _, rewards, _ = rollout(model, bridge, seq, horizon)
         pred, true = states[-1], seq["next_state"][-1]
         error = state_error(pred, true)
         values = {
@@ -105,14 +128,31 @@ def evaluate(model, bridge, batches):
             "box_angular_velocity_radps": float(
                 (pred[:, 81:84] - true[:, 81:84]).square().mean().sqrt()
             ),
-            "reward_rmse": float(
+            "start_stage_counts": torch.bincount(seq["stage"][0], minlength=4).tolist(),
+        }
+        for name, sl in [
+            ("root_linear_velocity_mps", slice(36, 39)),
+            ("root_angular_velocity_radps", slice(39, 42)),
+            ("joint_velocity_radps", slice(42, 71)),
+            ("box_linear_velocity_mps", slice(78, 81)),
+        ]:
+            values[name] = float((pred[:, sl] - true[:, sl]).square().mean().sqrt())
+        for name, sl in [
+            ("root_rotation_rad", slice(3, 7)),
+            ("box_rotation_rad", slice(74, 78)),
+        ]:
+            dot = (pred[:, sl] * true[:, sl]).sum(-1).abs().clamp(0, 1)
+            values[name] = float((2 * torch.acos(dot)).square().mean().sqrt())
+        values["box_position_3d_rmse_m"] = float(
+            (pred[:, 71:74] - true[:, 71:74]).square().sum(-1).mean().sqrt()
+        )
+        if rewards is not None:
+            values["reward_rmse"] = float(
                 ((rewards[-1] - seq["reward_terms"][-1]) / model.reward_norm.std)
                 .square()
                 .mean()
                 .sqrt()
-            ),
-            "start_stage_counts": torch.bincount(seq["stage"][0], minlength=4).tolist(),
-        }
+            )
         result[str(horizon)] = values
     return result
 
@@ -126,6 +166,7 @@ def main():
     p.add_argument("--updates", type=int, default=64)
     p.add_argument("--batch", type=int, default=128)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--objective", choices=("multitask", "state"), default="multitask")
     p.add_argument(
         "--hidden_dims", help="WM hidden widths, e.g. 2048,2048,2048; requires --fresh"
     )
@@ -146,6 +187,10 @@ def main():
         "--cases", default="4:1,8:1,8:82", help="window:state_loss_weight pairs"
     )
     args = p.parse_args()
+    if args.objective == "state" and not args.fresh:
+        p.error(
+            "Pure-state WM uses a different schema; old multitask checkpoints cannot resume it. Use --fresh"
+        )
     if (args.hidden_dims or args.activation != "elu") and not args.fresh:
         p.error("Architecture/activation overrides require --fresh")
     torch.set_num_threads(1)
@@ -178,24 +223,47 @@ def main():
     hidden_layers = (
         [int(x) for x in args.hidden_dims.split(",")] if args.hidden_dims else None
     )
-    model = WorldModel(
-        c["context_dim"],
-        len(c["memory"]),
-        len(ck["reward_names"]),
-        hidden=conf["hidden"],
-        com_indices=c["com_indices"],
-        hidden_layers=hidden_layers,
-        activation=nn.SiLU if args.activation == "silu" else nn.ELU,
+    model = (
+        StateWorldModel(
+            c["context_dim"],
+            hidden_layers=hidden_layers or [2048] * 3,
+            com_indices=c["com_indices"],
+            activation=nn.SiLU if args.activation == "silu" else nn.ELU,
+        )
+        if args.objective == "state"
+        else WorldModel(
+            c["context_dim"],
+            len(c["memory"]),
+            len(ck["reward_names"]),
+            hidden=conf["hidden"],
+            com_indices=c["com_indices"],
+            hidden_layers=hidden_layers,
+            activation=nn.SiLU if args.activation == "silu" else nn.ELU,
+        )
     ).to(args.device)
     if args.fresh:
-        # Same zero residual prior for every architecture, identical input and
-        # target scales; no trained hidden representation is carried across.
-        norms = {
-            k: v
-            for k, v in ck["model"].items()
-            if k.startswith(("inputs.", "reward_norm."))
-        }
-        model.load_state_dict(norms, strict=False)
+        # The same training-only normalization pool is used across all four
+        # designs; overlapping physical features get identical scales.
+        torch.manual_seed(args.seed + 11)
+        norm = {k: v[0] for k, v in replay.sample(2048, 1).items()}
+        if model.state_only:
+            model.inputs.fit(
+                model.features(norm["state"], norm["target"], norm["context"])
+            )
+        else:
+            model.inputs.fit(
+                model.features(
+                    norm["state"],
+                    norm["target"],
+                    norm["context"],
+                    norm["memory"],
+                    norm["phase"],
+                    norm["next_blend"],
+                    observation(bridge, norm, norm["state"]),
+                    norm["action"],
+                )
+            )
+            model.reward_norm.fit(norm["reward_terms"])
     else:
         model.load_state_dict(ck["model"])
     initial = copy.deepcopy(model.state_dict())
@@ -213,6 +281,8 @@ def main():
         "warm_start_actor": False,
         "stage_balanced": False,
         "simulator_transitions": 0,
+        "model_schema": "state_v2" if model.state_only else "legacy_multitask_v1",
+        "parameter_count": sum(p.numel() for p in model.parameters()),
         "baseline": evaluate(model, bridge, batches),
         "cases": [],
     }

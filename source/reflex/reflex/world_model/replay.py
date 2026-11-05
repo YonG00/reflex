@@ -83,6 +83,31 @@ class Replay:
         physical = (t[None, :] + offsets + start) % self.capacity
         return {k: value[physical, e[None, :]] for k, value in self.data.items()}
 
+    def start_indices(self, validation=False):
+        """Only the snapshot must be valid; no real future is inspected.
+
+        Reference availability, timeouts and future event handling belong to
+        imagined rollout masks, not to the recorded future trajectory filter.
+        """
+        if not self.count:
+            return torch.empty((0, 2), dtype=torch.long, device=self.device)
+        valid = self.ordered("valid") & self.ordered("launched").bool()
+        if "phase" in self.data:
+            valid &= (self.ordered("phase") >= 0) & (
+                self.ordered("phase") < self.ordered("reference_length")
+            )
+        ix = valid.nonzero()
+        return ix[(ix[:, 1] % 5 == 0) == validation]
+
+    def sample_starts(self, n, validation=False):
+        choices = self.start_indices(validation)
+        if not len(choices):
+            raise ValueError("No valid post-launch start snapshots")
+        t, e = choices[torch.randint(len(choices), (n,), device=self.device)].unbind(-1)
+        start = self.pointer if self.count == self.capacity else 0
+        physical = (t + start) % self.capacity
+        return {k: v[physical, e] for k, v in self.data.items()}
+
     def state_dict(self):
         return {
             "capacity": self.capacity,

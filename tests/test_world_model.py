@@ -350,6 +350,31 @@ def test_fresh_wm_architectures_share_same_physical_prior():
         torch.testing.assert_close(left, right, atol=0, rtol=0)
 
 
+def test_state_only_wm_loss_and_short_snapshot_starts(tmp_path):
+    from reflex.world_model.models import StateWorldModel
+    from reflex.world_model.offline import window_loss,predict_states
+    t=make_trainer(tmp_path);t.collect(SyntheticAdapter(t.bridge))
+    model=StateWorldModel(2,hidden_layers=[16,16,16])
+    batch=t.replay.sample(4,8)
+    pred=predict_states(model,batch,8)
+    expected=state_error(pred,batch['next_state']).square().mean()
+    torch.testing.assert_close(window_loss(model,None,batch,8),expected)
+    assert model.net[-1].out_features==82
+    assert not hasattr(model,'reward_norm')
+    expected.backward();assert all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None)
+    # A 3-step episode ending in reset can still supply an imagined start.
+    r=Replay(8)
+    for i in range(3):
+        r.add({'valid':torch.ones(6,dtype=torch.bool),'launched':torch.ones(6,dtype=torch.bool),
+               'boundary':torch.full((6,),i==2),'terminated':torch.full((6,),i==2),
+               'timeout':torch.zeros(6,dtype=torch.bool),'phase':torch.full((6,),i),
+               'reference_length':torch.full((6,),100),'label':torch.full((6,),i)})
+    assert len(r.indices(32))==0
+    assert len(r.start_indices())==15
+    assert r.sample_starts(100)['label'].max()==2
+    assert not r.sample(100,2)['boundary'][:-1].any()
+
+
 class SyntheticAdapter:
     """Analytic toy transitions, never claimed to emulate real box contact."""
 
