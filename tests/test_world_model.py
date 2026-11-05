@@ -310,6 +310,27 @@ def test_balanced_sampler_retains_holdout_and_event_boundaries():
     assert int((held["stage"][0] == 0).sum()) < 100
 
 
+def test_wm_offline_uses_recorded_actions_without_actor(tmp_path):
+    from reflex.world_model.offline import rollout, window_loss
+
+    t = make_trainer(tmp_path)
+    t.collect(SyntheticAdapter(t.bridge))
+    t.fit_normalizers()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Actor called during WM-only prediction")
+
+    t.actor.forward = forbidden
+    seq = t.replay.sample(4, 8)
+    states, *_ = rollout(t.model, t.bridge, seq, 8)
+    assert states.shape == (8, 4, 84)
+    loss = window_loss(t.model, t.bridge, seq, 8)
+    t.model_opt.zero_grad(set_to_none=True)
+    loss.backward()
+    assert any(p.grad is not None for p in t.model.parameters())
+    assert all(p.grad is None for p in t.actor.parameters())
+
+
 class SyntheticAdapter:
     """Analytic toy transitions, never claimed to emulate real box contact."""
 

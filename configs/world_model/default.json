@@ -2,7 +2,7 @@
   "capacity_steps": 1024,
   "collect_steps": 24,
   "model_steps": 64,
-  "model_window": 4,
+  "model_window": 8,
   "batch": 256,
   "horizon": 32,
   "actor_steps": 4,

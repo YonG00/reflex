@@ -2,6 +2,8 @@
 
 状态：核心代码与 CPU 合成闭环已实现。**Isaac Sim 接口、真实数据学习质量、接物成功率和训练效率均尚未通过 GPU 验证。没有启动新训练。**
 
+后续进展以 [L40 实测记录](../experiments/2026-11-05_world_model_l40.md) 为准：真实接口预检已通过，首轮模型质量未放行 Actor。当前收束为固定随机数据的 WM-only 对照；默认 WM 训练窗口已对齐参考的 8 步，32 步 Actor 想象不在当前验证范围内。本文下方完整训练命令保留作为后续入口，不代表当前正在运行。
+
 设计依据：用户的《Reflex × SuperMimic：Stage 1 动态接箱 Teacher 改造方案 V2》。该方案是实验目标，不是已经证明有效的算法。参考 [SuperMimic-Reproduced](https://github.com/CuboiLeo/SuperMimic-Reproduced)，审阅版本 `ba6105349069bf040f1fdad60873d13138d505a2`。λ-return 方程及归属见同目录 `SuperMimic-Reproduced.LICENSE`；没有移植其 MuJoCo 接口。
 
 ## 实现与明确的研究选择

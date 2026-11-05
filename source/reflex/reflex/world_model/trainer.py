@@ -22,7 +22,7 @@ class TrainConfig:
     capacity_steps: int = 1024
     collect_steps: int = 24
     model_steps: int = 64
-    model_window: int = 4
+    model_window: int = 8
     batch: int = 256
     horizon: int = 32
     actor_steps: int = 4
@@ -239,7 +239,7 @@ class Trainer:
         self.obs_norm.fit(self.observation(b))
         if self.initialization["kind"] == "ppo_actor_warm_start":
             # Preserve the warm policy when introducing normalization. Equality
-            # holds in the unclipped domain; clipping is audited on real data.
+            # holds in the unclipped domain; clipping can break this equality.
             with torch.no_grad():
                 first = self.actor[0]
                 old_weight = first.weight.clone()

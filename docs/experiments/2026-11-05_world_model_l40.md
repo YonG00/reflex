@@ -27,7 +27,7 @@
 
 第 30 轮存档固定种子 held-out 审计：16 步 box position RMSE 约 0.099m，32 步约 0.244m（每坐标分量 RMSE）；箱子角速度误差也较大。原 4 步拟合不足以证明 32 步长期预测可靠。
 
-## 针对性修正：工程热启动
+## 曾准备的可选 bootstrap（未执行，当前不采用）
 
 新增 `configs/world_model/contact_bootstrap.json`：16 步 WM 拟合、阶段均衡训练/想象采样、256 个环境用于后续 GPU 检查。验证集仍按 env ID 隔离、保持原分布；无样本阶段不会被伪造。原配置保留，不改成功标准，不放宽模型或排序门限。
 
@@ -44,3 +44,21 @@ bash scripts/train_stage1_world_model.sh --mode preflight --num_envs 256 \
 ```
 
 本节新增配置在提交时仅完成 CPU 检查，GPU 结果应在实际运行后补充，不得从首轮成功预检推断本轮已通过。
+
+## 当前任务：只验证 WM，固定随机数据
+
+用户明确当前先做随机采样的 WM 预测检查。上述热启动与阶段均衡仅为可选代码，未执行，也不用于当前对照。Actor 不更新。
+
+核对 SuperMimic-Reproduced：`WMTrainerCfg.window=8`，`PolicyTrainerCfg.horizon=32`。前者是记录动作驱动的自回归训练窗口，后者是 Actor 更新的想象长度，两者不同是原算法的设计，不能据此认定错误。首轮使用 4 是本实现自选配置，不是参考默认；当前默认已改为 8。
+
+新增 `reflex.world_model.offline` 独立入口，不构造 Actor、Critic 或 AMP。读取第 40 轮固定 replay，所有对照使用相同初始 WM/Adam、同一随机起点序列和固定 held-out batch：
+
+```bash
+python -m reflex.world_model.offline \
+  --checkpoint outputs/world_model/20261105_l40_smoke/checkpoint_00040.pt \
+  --urdf source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf \
+  --updates 64 --batch 128 --cases 4:1,8:1,8:82 \
+  --output outputs/world_model/20261105_l40_wm_only
+```
+
+`state_weight=82` 对应当前 82 维归一化状态残差的维度求和，而不是求均值；参考代码也是逐状态分量求和。该对照用来检验当前状态损失相对 reward/memory/termination 辅助项的权重影响，并非已经证明的修复。不同窗口下模型计算量不同，报告单独列出优化步数、模型转移计算量和时间；不把它们视为等计算量实验。
