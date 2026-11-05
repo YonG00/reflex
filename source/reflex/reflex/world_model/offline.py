@@ -87,10 +87,12 @@ def evaluate(model, bridge, batches):
     for horizon, seq in batches.items():
         states, _, rewards, _ = rollout(model, bridge, seq, horizon)
         pred, true = states[-1], seq["next_state"][-1]
+        error = state_error(pred, true)
         values = {
-            "state_rmse": float(
-                state_error(pred, true).square().mean(-1).sqrt().mean()
-            ),
+            "state_rmse": float(error.square().mean(-1).sqrt().mean()),
+            "state_nse": float(error.square().mean()),
+            "robot_nse": float(error[:, :70].square().mean()),
+            "box_nse": float(error[:, 70:].square().mean()),
             "box_position_m": float(
                 (pred[:, 71:74] - true[:, 71:74]).square().mean().sqrt()
             ),
@@ -125,6 +127,17 @@ def main():
     p.add_argument("--batch", type=int, default=128)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
+        "--hidden_dims", help="WM hidden widths, e.g. 2048,2048,2048; requires --fresh"
+    )
+    p.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Fresh WM/Adam; reuse only frozen replay and training-only normalization",
+    )
+    p.add_argument("--lr", type=float)
+    p.add_argument("--grad_clip", type=float, default=10.0)
+    p.add_argument("--activation", choices=("elu", "silu"), default="elu")
+    p.add_argument(
         "--fixed_minibatch",
         action="store_true",
         help="Overfit one fixed training batch to diagnose representational/optimization errors",
@@ -133,6 +146,8 @@ def main():
         "--cases", default="4:1,8:1,8:82", help="window:state_loss_weight pairs"
     )
     args = p.parse_args()
+    if (args.hidden_dims or args.activation != "elu") and not args.fresh:
+        p.error("Architecture/activation overrides require --fresh")
     torch.set_num_threads(1)
     cases = [
         (int(s.split(":")[0]), float(s.split(":")[1])) for s in args.cases.split(",")
@@ -159,14 +174,31 @@ def main():
     bridge.load_state_dict(sd)
     replay = Replay(conf["capacity_steps"], args.device)
     replay.load_state_dict(ck["replay"])
+    torch.manual_seed(args.seed)
+    hidden_layers = (
+        [int(x) for x in args.hidden_dims.split(",")] if args.hidden_dims else None
+    )
     model = WorldModel(
         c["context_dim"],
         len(c["memory"]),
         len(ck["reward_names"]),
         hidden=conf["hidden"],
         com_indices=c["com_indices"],
+        hidden_layers=hidden_layers,
+        activation=nn.SiLU if args.activation == "silu" else nn.ELU,
     ).to(args.device)
-    model.load_state_dict(ck["model"])
+    if args.fresh:
+        # Same zero residual prior for every architecture, identical input and
+        # target scales; no trained hidden representation is carried across.
+        norms = {
+            k: v
+            for k, v in ck["model"].items()
+            if k.startswith(("inputs.", "reward_norm."))
+        }
+        model.load_state_dict(norms, strict=False)
+    else:
+        model.load_state_dict(ck["model"])
+    initial = copy.deepcopy(model.state_dict())
     torch.manual_seed(args.seed)
     batches = {h: replay.sample(256, h, validation=True) for h in (1, 4, 8, 16, 32)}
     result = {
@@ -188,9 +220,13 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     train_horizon = max(h for h, _ in cases)
     for horizon, weight in cases:
-        model.load_state_dict(ck["model"])
-        opt = torch.optim.Adam(model.parameters(), lr=conf["lr"])
-        opt.load_state_dict(copy.deepcopy(ck["model_opt"]))
+        model.load_state_dict(initial)
+        opt = torch.optim.Adam(model.parameters(), lr=args.lr or conf["lr"])
+        if not args.fresh:
+            opt.load_state_dict(copy.deepcopy(ck["model_opt"]))
+            if args.lr is not None:
+                for group in opt.param_groups:
+                    group["lr"] = args.lr
         # Each case draws identical start states/windows. Only the prefix used
         # for loss differs, so long-window eligibility cannot change sampling.
         torch.manual_seed(args.seed + 1)
@@ -215,7 +251,9 @@ def main():
             loss = window_loss(model, bridge, seq, horizon, weight)
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 10, error_if_nonfinite=True)
+            nn.utils.clip_grad_norm_(
+                model.parameters(), args.grad_clip, error_if_nonfinite=True
+            )
             opt.step()
             if (update + 1) % 16 == 0:
                 print(

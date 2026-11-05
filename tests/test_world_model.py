@@ -331,6 +331,25 @@ def test_wm_offline_uses_recorded_actions_without_actor(tmp_path):
     assert all(p.grad is None for p in t.actor.parameters())
 
 
+def test_fresh_wm_architectures_share_same_physical_prior():
+    from reflex.world_model.models import WorldModel
+
+    small = WorldModel(2, 6, 2, hidden=16)
+    large = WorldModel(2, 6, 2, hidden_layers=[32, 32, 32], activation=torch.nn.SiLU)
+    args = (
+        robot_state(),
+        torch.randn(6, 29),
+        torch.ones(6, 2),
+        torch.zeros(6, 6),
+        torch.zeros(6, dtype=torch.long),
+        torch.ones(6, 1),
+        torch.randn(6, 179),
+        torch.randn(6, 29),
+    )
+    for left, right in zip(small(*args), large(*args)):
+        torch.testing.assert_close(left, right, atol=0, rtol=0)
+
+
 class SyntheticAdapter:
     """Analytic toy transitions, never claimed to emulate real box contact."""
 

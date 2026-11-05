@@ -5,13 +5,13 @@ from torch import nn
 from .physics import canonical, integrate
 
 
-def mlp(inputs, outputs, hidden=256, layers=None):
+def mlp(inputs, outputs, hidden=256, layers=None, activation=nn.ELU):
     sizes = [inputs, *(layers or [hidden, hidden]), outputs]
     modules = []
     for i, (a, b) in enumerate(zip(sizes, sizes[1:])):
         modules.append(nn.Linear(a, b))
         if i < len(sizes) - 2:
-            modules.append(nn.ELU())
+            modules.append(activation())
     return nn.Sequential(*modules)
 
 
@@ -32,7 +32,15 @@ class Standardizer(nn.Module):
 
 class WorldModel(nn.Module):
     def __init__(
-        self, context_dim, memory_dim, rewards, dt=0.02, hidden=256, com_indices=None
+        self,
+        context_dim,
+        memory_dim,
+        rewards,
+        dt=0.02,
+        hidden=256,
+        com_indices=None,
+        hidden_layers=None,
+        activation=nn.ELU,
     ):
         super().__init__()
         self.dt, self.memory_dim, self.rewards = dt, memory_dim, rewards
@@ -43,7 +51,13 @@ class WorldModel(nn.Module):
         n = 86 + 29 + context_dim + memory_dim + 2 + 179 + 29
         self.inputs = Standardizer(n)
         self.reward_norm = Standardizer(rewards)
-        self.net = mlp(n, 82 + memory_dim + rewards + 1, hidden)
+        self.net = mlp(
+            n,
+            82 + memory_dim + rewards + 1,
+            hidden,
+            layers=hidden_layers,
+            activation=activation,
+        )
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
 
