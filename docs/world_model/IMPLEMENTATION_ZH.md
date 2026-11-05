@@ -14,6 +14,7 @@
 - WM 的动作是 `process_actions` 后、gimbal 前的关节目标。真实 `process_actions` 与纯 Torch 两阶段/动作尺度/腕锁/可选目标裁剪逐步比对。**每个物理子步的 wrist gimbal + PD + PhysX 合并为 WM 要学习的闭环 plant**；不是声称 gimbal 前目标就是实际最终 PD 目标。gimbal 的反馈依赖当前物理状态，没有额外影响动力学的跨步 latch。
 - ξ 读取实际生成几何、PhysX mass/inertia/COM/material，以及有效 stiffness/damping/armature/friction/effort limits。尺寸不从随机化后的质量反推；查询成本也计入端到端吞吐。参考相位、yaw、上一动作、blend、控制参数和奖励历史另存，不混成物理状态。四个奖励/扰动历史计数和 episode/launch 时间由辅助 memory head 学习，属于模型近似，必须随真实多步数据检验。
 - 第一版**所有 task reward 都使用逐项学习头**。真实监督标签直接取原 reward manager 每项加权贡献（包含 control dt），并断言逐项和等于真实总奖励。`manifest.json` 逐项登记 func、weight、代理类别，没有无声删除项。这样能完整覆盖依赖接触传感器/历史计时/离散判定的奖励，但 scalar 拟合好不保证梯度正确；逐项 reward error、Actor 的各奖励梯度范数、task/style 梯度都记录。后续可把经过验证的项替换成解析函数。
+  奖励头额外输入每步重建的完整 Oracle observation（包含相对参考位姿、上一 raw action）以及当前 raw action。仅用 canonical state 与关节目标无法表达固定参考的锚点偏差，也无法区分腕锁后目标相同、动作变化惩罚却不同的情况；回归测试包含这两个反例。
 - AMP 判别器只训练真实政策转移与原专家池；想象只查询冻结的判别器，保留对输入的梯度。归一化、reward 公式、权重与 ramp 复用原实现。Critic 是 179 维 Oracle observation value，作为首版的部分可观测近似；并非完整仿真状态 value。
 
 ## 数据与放行条件
@@ -25,6 +26,8 @@
 模型拟合和验证按整个环境 ID 隔离：`env_id % 5 == 0` 只用于验证，避免相邻帧泄漏。记录 1/4/8/16 步物理误差及逐项 reward 误差。默认阈值只是保守实验初值，不能当作文献验证过的安全界限。每次拟合后验证，Actor 只有 `--enable_actor` 且预热完成、全部误差门通过、真实动作排序探针通过才更新；不通过会记录原因并继续采集/拟合，不宣称已训练 Actor。
 
 排序探针对相同显式物理/控制/事件/传感器状态执行重复动作与 ±扰动动作，比较 4 步真实回报与模型回报的排序。发生外部事件、终止或 reference 重采样的样本排除。至少 16 对有效比较，排序一致率至少 0.6；重复分支回报差不超过 0.02。**PhysX 接触 warm-start 缓存不能通过现有 API 完整恢复**，因此探针包含重复分支检查，并在报告里保留限制。该探针仍需 GPU 验证，不是已证明的反事实真值器。
+
+探针的所有真实步，包括重复、失败或最终被筛掉的分支，都计入 `progress/probe_transitions` 和 `progress/real_transitions` 总数；`progress/collect_transitions` 单列进入 replay 的采样预算。恢复 simulator 计数器不等于这些计算免费。计时包含 collect、model fit、AMP、validation、ranking、imagination、Actor、Critic 和 checkpoint，CUDA 阶段边界同步；replay sampling 耗时标明是包含在上述阶段内的子项，不能重复相加。正式比较以总真实交互和实测端到端耗时为准。
 
 Timeout 与真正 terminal 分开：模型终止头不将 timeout 当 terminal；虚拟 32 步截断保留 Critic bootstrap。真实仿真状态不随 checkpoint 恢复，不能声称逐帧无缝。Checkpoint 保存 Actor、Critic、WM、归一化、FK/参考表、三个优化器、完整 WM replay、共享 AMP 完整状态、计数、配置、合同及 RNG。checkpoint 使用原子替换；不同专家数据、配置、URDF/动作合同会拒绝完整 resume。
 

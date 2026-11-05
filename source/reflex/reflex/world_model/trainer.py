@@ -14,6 +14,7 @@ from torch import nn
 from .models import WorldModel, Standardizer, mlp
 from .physics import amp_features, state_error
 from .replay import Replay
+from .timing import timestamp
 
 
 @dataclass
@@ -103,6 +104,9 @@ class Trainer:
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=c.lr)
         self.replay = Replay(c.capacity_steps, device)
         self.iteration, self.real_transitions = 0, 0
+        self.probe_transitions = 0
+        self.actor_updates = 0
+        self.replay_seconds = 0.0
         self.normalized = False
 
     def observation(self, b, s=None, previous=None, phase=None):
@@ -137,6 +141,7 @@ class Trainer:
         )
 
     def collect(self, adapter):
+        rewards = []
         with torch.no_grad():
             for _ in range(self.cfg.collect_steps):
                 before = adapter.snapshot()
@@ -163,11 +168,17 @@ class Trainer:
                 if bool(ok.any()):
                     self.prior.add_real(torch.stack((tr["amp"], tr["next_amp"]), 1)[ok])
                 self.real_transitions += len(raw)
+                rewards.append(tr["reward_terms"].sum(-1).mean())
+        return {"real/task_reward": float(torch.stack(rewards).mean())}
 
     def sample(self, horizon=1, starts=False, validation=False):
-        return self.replay.sample(
-            self.cfg.batch, horizon, starts, validation=validation
-        )
+        start = timestamp(self.device)
+        try:
+            return self.replay.sample(
+                self.cfg.batch, horizon, starts, validation=validation
+            )
+        finally:
+            self.replay_seconds += timestamp(self.device) - start
 
     def fit_normalizers(self):
         b = {k: v[0] for k, v in self.sample().items()}
@@ -180,12 +191,15 @@ class Trainer:
                 b["memory"],
                 b["phase"],
                 b["next_blend"],
+                self.observation(b),
+                b["action"],
             )
         )
         self.model.reward_norm.fit(b["reward_terms"])
         self.normalized = True
 
     def fit_model(self):
+        start = timestamp(self.device)
         if not self.normalized:
             self.fit_normalizers()
         last = {}
@@ -201,6 +215,8 @@ class Trainer:
                     m,
                     seq["phase"][t],
                     seq["next_blend"][t],
+                    self.observation({k: v[t] for k, v in seq.items()}, s),
+                    seq["action"][t],
                 )
                 sl = state_error(ns, seq["next_state"][t]).square().mean()
                 rl = (
@@ -226,7 +242,10 @@ class Trainer:
                 "wm/state_loss": float(sl.detach()),
                 "wm/reward_loss": float(rl.detach()),
             }
+        end_model = timestamp(self.device)
+        last["time/model_fit_seconds"] = end_model - start
         last["amp/discriminator_loss"] = self.prior.train_discriminator()
+        last["time/amp_update_seconds"] = timestamp(self.device) - end_model
         last["amp/ramp"] = self.prior.ramp
         return last
 
@@ -248,6 +267,8 @@ class Trainer:
                     m,
                     seq["phase"][t],
                     seq["next_blend"][t],
+                    self.observation({k: v[t] for k, v in seq.items()}, s),
+                    seq["action"][t],
                 )
             error = state_error(s, seq["next_state"][-1]).square().mean(-1).sqrt()
             metrics[f"validation/{h}/state_rmse"] = float(error.mean())
@@ -295,11 +316,14 @@ class Trainer:
         terms = []
         styles = []
         for t in range(self.cfg.horizon):
-            obs = self.obs_norm(self.observation(b, s, previous, phase + t))
+            raw_obs = self.observation(b, s, previous, phase + t)
+            obs = self.obs_norm(raw_obs)
             obs_list.append(obs)
             raw = self.actor(obs)
             target, blend = self.targets(b, raw, blend)
-            ns, m, r, d = self.model(s, target, b["context"], m, phase + t, blend)
+            ns, m, r, d = self.model(
+                s, target, b["context"], m, phase + t, blend, raw_obs, raw
+            )
             style = self.prior.reward(
                 amp_features(s, self.bridge.fk), amp_features(ns, self.bridge.fk)
             )
@@ -324,9 +348,13 @@ class Trainer:
 
     def update_actor(self):
         metrics = {}
+        imagine_seconds = actor_seconds = critic_seconds = 0.0
         for _ in range(self.cfg.actor_steps):
             with freeze(self.model, self.prior._disc, self.critic):
+                start = timestamp(self.device)
                 obs, reward, done, terms, styles = self.imagine()
+                after_imagine = timestamp(self.device)
+                imagine_seconds += after_imagine - start
                 survival = torch.ones_like(reward[0])
                 objective = torch.zeros_like(survival)
                 for t in range(self.cfg.horizon):
@@ -361,6 +389,9 @@ class Trainer:
                 loss.backward()
                 norm = nn.utils.clip_grad_norm_(params, 1, error_if_nonfinite=True)
                 self.actor_opt.step()
+            self.actor_updates += 1
+            after_actor = timestamp(self.device)
+            actor_seconds += after_actor - after_imagine
             with torch.no_grad():
                 values = self.critic(obs.detach()).squeeze(-1)
                 target = lambda_returns(
@@ -372,6 +403,7 @@ class Trainer:
             self.critic_opt.zero_grad(set_to_none=True)
             closs.backward()
             self.critic_opt.step()
+            critic_seconds += timestamp(self.device) - after_actor
             metrics.update(
                 {
                     "actor/loss": float(loss.detach()),
@@ -380,6 +412,13 @@ class Trainer:
                     "imagination/reward": float(reward.detach().mean()),
                 }
             )
+        metrics.update(
+            {
+                "time/imagination_seconds": imagine_seconds,
+                "time/actor_update_seconds": actor_seconds,
+                "time/critic_update_seconds": critic_seconds,
+            }
+        )
         return metrics
 
     def save(self, path):
@@ -390,6 +429,8 @@ class Trainer:
             "reward_names": self.reward_names,
             "iteration": self.iteration,
             "real_transitions": self.real_transitions,
+            "probe_transitions": self.probe_transitions,
+            "actor_updates": self.actor_updates,
             "normalized": self.normalized,
             "replay": self.replay.state_dict(),
             "amp": self.prior.amp_state_dict(),
@@ -452,6 +493,8 @@ class Trainer:
             state["real_transitions"],
         )
         self.normalized = state["normalized"]
+        self.probe_transitions = state["probe_transitions"]
+        self.actor_updates = state["actor_updates"]
         random.setstate(state["python_rng"])
         np.random.set_state(state["numpy_rng"])
         torch.set_rng_state(state["torch_rng"].cpu())

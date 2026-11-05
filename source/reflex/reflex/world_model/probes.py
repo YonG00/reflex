@@ -110,6 +110,7 @@ def rank_actions(
             restore()
             b = adapter.snapshot()
             s, m = b["state"], b["memory"]
+            previous = b["previous_action"]
             mb = b["blend"]
             rr = torch.zeros(e.num_envs, device=e.device)
             mr = rr.clone()
@@ -120,6 +121,9 @@ def rank_actions(
                 rb = adapter.snapshot()
                 target, nb = trainer.targets(rb, candidate)
                 tr = adapter.step(candidate, target, nb)
+                # Repeated and rejected branches still consume real physics.
+                trainer.real_transitions += e.num_envs
+                trainer.probe_transitions += e.num_envs
                 style = trainer.prior.reward(tr["amp"], tr["next_amp"])
                 rr += trainer.cfg.gamma**t * (
                     trainer.prior._w_task * tr["reward_terms"].sum(-1)
@@ -130,7 +134,14 @@ def rank_actions(
                 )
                 mt, mb = trainer.targets(b, candidate, mb)
                 ns, m, reward, _ = trainer.model(
-                    s, mt, b["context"], m, b["phase"] + t, mb
+                    s,
+                    mt,
+                    b["context"],
+                    m,
+                    b["phase"] + t,
+                    mb,
+                    trainer.observation(b, s, previous, b["phase"] + t),
+                    candidate,
                 )
                 ms = trainer.prior.reward(
                     amp_features(s, trainer.bridge.fk),
@@ -140,7 +151,7 @@ def rank_actions(
                     trainer.prior._w_task * reward.sum(-1)
                     + trainer.prior._w_style * trainer.prior.ramp * ms
                 )
-                s = ns
+                s, previous = ns, candidate
             real.append(rr)
             predicted.append(mr)
             masks.append(valid)

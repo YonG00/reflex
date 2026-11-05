@@ -37,15 +37,17 @@ class WorldModel(nn.Module):
         super().__init__()
         self.dt, self.memory_dim, self.rewards = dt, memory_dim, rewards
         self.com_indices = com_indices
-        # Canonical physical features 86 + target29 + ξ + reward memory + phase/blend2.
-        n = 86 + 29 + context_dim + memory_dim + 2
+        # Reward conditioning must include relative reference pose, previous raw
+        # action (in observation), and current raw action: wrist locks make the
+        # raw → processed target map noninvertible.
+        n = 86 + 29 + context_dim + memory_dim + 2 + 179 + 29
         self.inputs = Standardizer(n)
         self.reward_norm = Standardizer(rewards)
         self.net = mlp(n, 82 + memory_dim + rewards + 1, hidden)
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
 
-    def features(self, s, target, context, memory, phase, blend):
+    def features(self, s, target, context, memory, phase, blend, observation, raw):
         return torch.cat(
             (
                 canonical(s),
@@ -54,13 +56,19 @@ class WorldModel(nn.Module):
                 memory,
                 phase[..., None].float() * self.dt,
                 blend,
+                observation,
+                raw,
             ),
             -1,
         )
 
-    def forward(self, s, target, context, memory, phase, blend):
+    def forward(self, s, target, context, memory, phase, blend, observation, raw):
         y = self.net(
-            self.inputs(self.features(s, target, context, memory, phase, blend))
+            self.inputs(
+                self.features(
+                    s, target, context, memory, phase, blend, observation, raw
+                )
+            )
         )
         delta, dm, r, done = y.split((82, self.memory_dim, self.rewards, 1), -1)
         if self.com_indices is None:

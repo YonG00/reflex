@@ -224,6 +224,42 @@ def test_observation_per_environment_default_and_inference(tmp_path):
         build_actor(checkpoint, 170, "cpu")
 
 
+def test_reward_features_distinguish_raw_history_and_reference(tmp_path):
+    t = make_trainer(tmp_path)
+    b = SyntheticAdapter(t.bridge).snapshot()
+    raw = torch.zeros(6, 29)
+    changed = raw.clone()
+    changed[:, 2] = 1.0
+    b["scale"][:, 2] = 0.0
+    target, blend = t.targets(b, raw)
+    same_target, _ = t.targets(b, changed)
+    torch.testing.assert_close(target, same_target)
+
+    def features(batch, action):
+        return t.model.features(
+            batch["state"],
+            target,
+            batch["context"],
+            batch["memory"],
+            batch["phase"],
+            blend,
+            t.observation(batch),
+            action,
+        )
+
+    first = features(b, raw)
+    assert not torch.equal(first, features(b, changed))
+    previous = {**b, "previous_action": changed}
+    assert not torch.equal(first, features(previous, raw))
+    moved = {**b, "state": b["state"].clone()}
+    moved["state"][:, :2] += 1.0
+    moved["state"][:, 71:73] += 1.0
+    # Canonical physical state loses this displacement, but the fixed reference
+    # does not move: reward conditioning must preserve the anchor discrepancy.
+    torch.testing.assert_close(canonical(b["state"]), canonical(moved["state"]))
+    assert not torch.equal(first, features(moved, raw))
+
+
 class SyntheticAdapter:
     """Analytic toy transitions, never claimed to emulate real box contact."""
 
@@ -356,8 +392,11 @@ def test_full_cpu_chain_gradients_checkpoint_resume(tmp_path):
     restored = make_trainer(tmp_path)
     restored.load(path)
     assert restored.iteration == 7 and restored.real_transitions == 240
-    assert restored.fit_model() == expected_model
-    assert restored.update_actor() == expected_actor
+    numeric = lambda metrics: {
+        k: v for k, v in metrics.items() if not k.startswith("time/")
+    }
+    assert numeric(restored.fit_model()) == numeric(expected_model)
+    assert numeric(restored.update_actor()) == numeric(expected_actor)
     for k, v in expected.items():
         torch.testing.assert_close(v, restored.actor.state_dict()[k], rtol=0, atol=0)
     assert not restored.ready(validation, ranking_approved=False)

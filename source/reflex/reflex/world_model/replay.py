@@ -61,7 +61,9 @@ class Replay:
         chosen = choices[torch.randint(len(choices), (n,), device=self.device)]
         t, e = chosen.unbind(-1)
         offsets = torch.arange(horizon, device=self.device)[:, None]
-        return {k: self.ordered(k)[t[None, :] + offsets, e[None, :]] for k in self.data}
+        start = self.pointer if self.count == self.capacity else 0
+        physical = (t[None, :] + offsets + start) % self.capacity
+        return {k: value[physical, e[None, :]] for k, value in self.data.items()}
 
     def state_dict(self):
         return {

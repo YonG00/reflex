@@ -57,6 +57,7 @@ def main():
     from .prior import MotionPrior
     from .trainer import Trainer, TrainConfig
     from .probes import rank_actions
+    from .timing import timestamp
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -169,15 +170,21 @@ def main():
         initial_steps = trainer.real_transitions
         try:
             while trainer.iteration < args.max_iterations:
-                trainer.collect(adapter)
-                metrics = {}
+                trainer.replay_seconds = 0.0
+                collect_start = timestamp(args.device)
+                metrics = trainer.collect(adapter)
+                metrics["time/collect_seconds"] = timestamp(args.device) - collect_start
                 try:
                     trainer.sample(config.model_window)
                 except ValueError:
                     metrics["warmup/insufficient_windows"] = 1.0
                 else:
                     metrics.update(trainer.fit_model())
+                    validation_start = timestamp(args.device)
                     metrics.update(trainer.validate())
+                    metrics["time/validation_seconds"] = (
+                        timestamp(args.device) - validation_start
+                    )
                     ranking = {
                         "passed": False,
                         "reason": "actor updates not enabled / warmup",
@@ -186,7 +193,11 @@ def main():
                         args.enable_actor
                         and trainer.iteration >= config.warmup_iterations
                     ):
+                        ranking_start = timestamp(args.device)
                         ranking = rank_actions(adapter, trainer)
+                        metrics["time/ranking_seconds"] = (
+                            timestamp(args.device) - ranking_start
+                        )
                         (out / f"ranking_{trainer.iteration:05d}.json").write_text(
                             json.dumps(ranking, indent=2)
                         )
@@ -201,9 +212,20 @@ def main():
                         else:
                             metrics.update(trainer.update_actor())
                 trainer.iteration += 1
+                if trainer.iteration % args.save_every == 0:
+                    save_start = timestamp(args.device)
+                    trainer.save(out / f"checkpoint_{trainer.iteration:05d}.pt")
+                    metrics["time/checkpoint_seconds"] = (
+                        timestamp(args.device) - save_start
+                    )
                 metrics.update(
                     {
                         "progress/real_transitions": trainer.real_transitions,
+                        "progress/probe_transitions": trainer.probe_transitions,
+                        "progress/collect_transitions": trainer.real_transitions
+                        - trainer.probe_transitions,
+                        "progress/actor_updates": trainer.actor_updates,
+                        "time/replay_sample_seconds_inclusive": trainer.replay_seconds,
                         "progress/wall_seconds": time.monotonic() - start,
                         "progress/end_to_end_transitions_per_second": (
                             trainer.real_transitions - initial_steps
@@ -218,8 +240,6 @@ def main():
                 with (out / "metrics.jsonl").open("a") as f:
                     f.write(json.dumps(record) + "\n")
                 print(json.dumps(record), flush=True)
-                if trainer.iteration % args.save_every == 0:
-                    trainer.save(out / f"checkpoint_{trainer.iteration:05d}.pt")
             trainer.save(out / "checkpoint_final.pt")
         finally:
             writer.close()
