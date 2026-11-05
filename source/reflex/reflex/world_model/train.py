@@ -149,12 +149,40 @@ def main():
             # Adapter uses unwrapped environment for capture; video wrapper must
             # receive the step for recording, so supply a dispatch hook.
             adapter.step_environment = env.step
+            torch.manual_seed(args.seed)
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+            rewards = []
+            terminated = 0
+            strict_envs = torch.zeros(
+                args.num_envs, dtype=torch.bool, device=args.device
+            )
+            strict_steps = 0
             with torch.no_grad():
                 for _ in range(args.play_steps):
                     b = adapter.snapshot()
                     raw = trainer.act(b)
                     target, blend = trainer.targets(b, raw)
-                    adapter.step(raw, target, blend)
+                    tr = adapter.step(raw, target, blend)
+                    rewards.append(float(tr["reward_terms"].sum(-1).mean()))
+                    terminated += int(tr["terminated"].sum())
+                    # Original strict success is >=30 consecutive frames (0.6s).
+                    strict = adapter.pre_reset["task_history_after_reward"][:, -1] >= 30
+                    strict_envs |= strict
+                    strict_steps += int(strict.sum())
+            summary = {
+                "envs": args.num_envs,
+                "vector_steps": args.play_steps,
+                "mean_step_task_reward": sum(rewards) / len(rewards),
+                "physical_terminations": terminated,
+                "strict_success_envs": int(strict_envs.sum()),
+                "strict_success_env_steps": strict_steps,
+                "actor_updates_in_checkpoint": trainer.actor_updates,
+                "evaluation_seed": args.seed,
+                "evaluation_rng_reset": True,
+            }
+            (out / "play_summary.json").write_text(json.dumps(summary, indent=2))
+            print(json.dumps(summary), flush=True)
             return
         if args.mode == "preflight":
             old = config.collect_steps
