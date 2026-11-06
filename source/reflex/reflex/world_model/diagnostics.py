@@ -50,13 +50,31 @@ def eager_diagnostic(t):
         getattr(t, "_observations", None),
     )
     macro = getattr(getattr(t, "cfg", None), "learn_external_events", False)
-    t._dynamics, t._fk = t.model.predict_all if macro else t.model, t.bridge.fk
+    conditioned = getattr(getattr(t, "cfg", None), "condition_external_events", False)
+    post = getattr(t, "_post", None)
+    scheduler = getattr(t, "event_scheduler", None)
+    event_rng = scheduler.rng.clone() if scheduler is not None else None
+    t._dynamics, t._fk = (
+        (
+            t.model.predict_physical
+            if conditioned
+            else t.model.predict_all
+            if macro
+            else t.model
+        ),
+        t.bridge.fk,
+    )
+    if conditioned:
+        t._post = t.model.predict_post
     if hasattr(t, "_transition"):
         t._transition, t._observations = None, t.imagined_observations
     try:
         yield
     finally:
         t._dynamics, t._fk = dynamics, fk
+        if conditioned:
+            t._post = post
+            scheduler.rng = event_rng
         if hasattr(t, "_transition"):
             t._transition, t._observations = transition, observations
 

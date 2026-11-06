@@ -15,6 +15,7 @@ from .models import (
     WorldModel,
     StateWorldModel,
     MacroWorldModel,
+    ConditionedWorldModel,
     Standardizer,
     mlp,
     TerminationHead,
@@ -28,6 +29,7 @@ from .timing import timestamp
 class TrainConfig:
     monitor_contacts: bool = False
     learn_external_events: bool = False
+    condition_external_events: bool = False
     privileged_critic: bool = False
     actor_zero_output: bool = True
     learned_termination: bool = False
@@ -128,6 +130,7 @@ class Trainer:
         device="cpu",
         cfg=None,
         task=None,
+        event_scheduler=None,
     ):
         self.cfg, self.device = cfg or TrainConfig(), device
         c = self.cfg
@@ -140,10 +143,19 @@ class Trainer:
         if c.tf32:
             torch.set_float32_matmul_precision("high")
         self.task = task.to(device) if task is not None else None
+        self.event_scheduler = event_scheduler
+        if c.condition_external_events and event_scheduler is None:
+            raise ValueError("V24 needs a verified native event scheduler")
         if c.wm_kind not in ("state", "multitask"):
             raise ValueError("Unknown WM kind")
         self.model = (
-            (MacroWorldModel if c.learn_external_events else StateWorldModel)(
+            (
+                ConditionedWorldModel
+                if c.condition_external_events
+                else MacroWorldModel
+                if c.learn_external_events
+                else StateWorldModel
+            )(
                 context_dim,
                 hidden_layers=c.wm_hidden_dims or [2048] * 3,
                 com_indices=contract.get("com_indices"),
@@ -209,12 +221,25 @@ class Trainer:
                 "Macro experiment requires state WM with validated Dynamics/FK compile only"
             )
         dynamics_call = (
-            self.model.predict_all if c.learn_external_events else self.model
+            self.model.predict_physical
+            if c.condition_external_events
+            else self.model.predict_all
+            if c.learn_external_events
+            else self.model
         )
         self._dynamics = (
             torch.compile(dynamics_call, fullgraph=True, backend=c.compile_backend)
             if c.compile_dynamics
             else dynamics_call
+        )
+        self._post = (
+            torch.compile(
+                self.model.predict_post, fullgraph=True, backend=c.compile_backend
+            )
+            if c.condition_external_events and c.compile_dynamics
+            else self.model.predict_post
+            if c.condition_external_events
+            else None
         )
         self._fk = (
             torch.compile(self.bridge.fk, fullgraph=True, backend=c.compile_backend)
@@ -251,7 +276,11 @@ class Trainer:
             self.actor.parameters(), lr=c.lr, betas=(0.9, c.actor_beta2)
         )
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=c.lr)
-        self.replay = Replay(c.capacity_steps, device)
+        self.replay = Replay(
+            c.capacity_steps,
+            device,
+            global_fields=("event_pool",) if c.condition_external_events else (),
+        )
         self.iteration, self.real_transitions = 0, 0
         self.probe_transitions = 0
         self.actor_updates = 0
@@ -273,7 +302,10 @@ class Trainer:
             or state["reward_names"] != self.reward_names
         ):
             raise ValueError("Macro warm start physical/reward contract mismatch")
-        if state["config"].get("learn_external_events", False):
+        if state["config"].get("condition_external_events", False) or (
+            state["config"].get("learn_external_events", False)
+            and not self.cfg.condition_external_events
+        ):
             raise ValueError("Use full resume for an existing macro checkpoint")
         if state.get("task_spec") != self.task.specification():
             raise ValueError("Macro warm start task mismatch")
@@ -494,12 +526,20 @@ class Trainer:
                 first.bias.add_(
                     old_weight @ ((self.obs_norm.mean - old_mean) / old_std)
                 )
-        if self.model.state_only:
+        if self.cfg.condition_external_events:
+            features = self.event_scheduler.codec.pre_features(
+                b["event_state"], b["episode_steps"], self.task.dt
+            )
+            self.model.inputs.fit(
+                self.model.features(b["state"], b["target"], b["context"], features)
+            )
+        elif self.model.state_only:
             self.model.inputs.fit(
                 self.model.features(
                     b["state"], b["target"], b["context"], b["launched"]
                 )
                 if self.cfg.learn_external_events
+                and not self.cfg.condition_external_events
                 else self.model.features(b["state"], b["target"], b["context"])
             )
         else:
@@ -535,7 +575,16 @@ class Trainer:
             with torch.random.fork_rng(devices=devices):
                 row = {k: v[0] for k, v in self.sample(1, n=8).items()}
                 ns = (
-                    self.model.predict_all(
+                    self.model.predict_physical(
+                        row["state"],
+                        row["target"],
+                        row["context"],
+                        self.event_scheduler.codec.pre_features(
+                            row["event_state"], row["episode_steps"], self.task.dt
+                        ),
+                    )
+                    if self.cfg.condition_external_events
+                    else self.model.predict_all(
                         row["state"], row["target"], row["context"], row["launched"]
                     )[0]
                     if self.cfg.learn_external_events
@@ -585,7 +634,17 @@ class Trainer:
                 if self.model.state_only:
                     if mask is not None:
                         s = torch.where(mask[t, :, None], s, seq["state"][t])
-                    if self.cfg.learn_external_events:
+                    if self.cfg.condition_external_events:
+                        pre = self.event_scheduler.codec.pre_features(
+                            seq["event_state"][t], seq["episode_steps"][t], self.task.dt
+                        )
+                        physical = self._dynamics(
+                            s, seq["target"][t], seq["context"][t], pre
+                        )
+                        ns = self._post(
+                            physical, seq["event_targets"][t], seq["event_mask"][t]
+                        )
+                    elif self.cfg.learn_external_events:
                         if mask is not None:
                             mode = torch.where(
                                 mask[t], mode, seq["launched"][t].float()
@@ -611,10 +670,14 @@ class Trainer:
                             .sum(-1)
                         )
                         physics_losses.append(pl)
-                        ml = nn.functional.binary_cross_entropy_with_logits(
-                            mode_logits,
-                            seq["after_launched"][t].float(),
-                            reduction="none",
+                        ml = (
+                            torch.zeros_like(pl)
+                            if self.cfg.condition_external_events
+                            else nn.functional.binary_cross_entropy_with_logits(
+                                mode_logits,
+                                seq["after_launched"][t].float(),
+                                reduction="none",
+                            )
                         )
                         mode_losses.append(ml)
                         sl = sl + pl
@@ -700,7 +763,10 @@ class Trainer:
                 last["wm/post_control_state_loss"] = float(
                     window_mean(macro_losses).detach()
                 )
-                last["wm/launch_mode_bce"] = float(window_mean(mode_losses).detach())
+                if not self.cfg.condition_external_events:
+                    last["wm/launch_mode_bce"] = float(
+                        window_mean(mode_losses).detach()
+                    )
                 last["wm/external_write_transition_fraction"] = (
                     float(seq["external_boundary"].float()[mask].mean())
                     if mask is not None
@@ -749,6 +815,10 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self):
+        if self.cfg.condition_external_events:
+            from .events_v24.evaluation import evaluate
+
+            return evaluate(self, batch=min(self.cfg.batch, 64))
         if self.cfg.learn_external_events:
             return self.validate_macro()
         if self.model.state_only:
@@ -969,8 +1039,13 @@ class Trainer:
             raise RuntimeError("Pure dynamics needs an AnalyticTask for imagination")
         s, m, blend = b["state"], b["memory"], b["blend"]
         mode = b["launched"].float()
+        event_state = b.get("event_state")
+        event_pool = b.get("event_pool")
+        common = b["common_step"]
         if self.cfg.learn_external_events:
             b = {**b, "learn_external_events": True}
+        if self.cfg.condition_external_events:
+            b = {**b, "event_conditioned": True}
         previous, phase = b["previous_action"], b["phase"]
         observations = []
         critic_observations = []
@@ -1022,7 +1097,13 @@ class Trainer:
                     physical, physical_poses = ns, next_poses
                 else:
                     with torch.profiler.record_function("imagine/dynamics"):
-                        if self.cfg.learn_external_events:
+                        if self.cfg.condition_external_events:
+                            pre = self.event_scheduler.codec.pre_features(
+                                event_state, episode, self.task.dt
+                            )
+                            physical = self._dynamics(s, target, b["context"], pre)
+                            ns = physical
+                        elif self.cfg.learn_external_events:
                             physical, ns, mode_logits = self._dynamics(
                                 s, target, b["context"], mode
                             )
@@ -1030,11 +1111,12 @@ class Trainer:
                             ns = self._dynamics(s, target, b["context"])
                             physical = ns
                     with torch.profiler.record_function("imagine/FK"):
-                        next_poses = self._fk(ns)
-                        physical_poses = (
-                            self._fk(physical)
+                        physical_poses = self._fk(physical)
+                        next_poses = (
+                            self._fk(ns)
                             if self.cfg.learn_external_events
-                            else next_poses
+                            and not self.cfg.condition_external_events
+                            else physical_poses
                         )
                     with torch.profiler.record_function(
                         "imagine/reward_and_termination"
@@ -1056,6 +1138,59 @@ class Trainer:
                     r, d, trunc = task.rewards, task.terminated.float(), task.truncated
                     if self.termination is not None:
                         d = self.termination(task.termination_features).sigmoid()
+                if self.cfg.condition_external_events:
+                    from .events_v24.writes import WritePlan
+
+                    active = valid & ~task.truncated & ~task.terminated
+                    ids = active.nonzero().flatten()
+                    plan = WritePlan(physical)
+                    next_event, next_pool = event_state, event_pool
+                    if len(ids):
+                        event_b = {
+                            **b,
+                            "phase": task.phase,
+                            "task_history": task.history,
+                        }
+                        event_b = {
+                            k: (
+                                v[ids]
+                                if torch.is_tensor(v) and v.ndim and len(v) == len(s)
+                                else v
+                            )
+                            for k, v in event_b.items()
+                        }
+                        pp = tuple(
+                            {k: v[ids] for k, v in group.items()}
+                            for group in physical_poses
+                        )
+                        child, ce, cp = self.event_scheduler.step(
+                            event_b,
+                            physical[ids],
+                            pp,
+                            event_state[ids],
+                            event_pool[ids],
+                            task.episode_steps[ids],
+                            common[ids] + 1,
+                        )
+                        plan.merge(ids, child)
+                        next_event = event_state.index_copy(0, ids, ce)
+                        next_pool = event_pool.index_copy(0, ids, cp)
+                    ns = self._post(physical, plan.targets, plan.mask)
+                    next_poses = self._fk(ns)
+                    event_state = torch.where(valid[:, None], next_event, event_state)
+                    event_pool = torch.where(
+                        valid[:, None, None], next_pool, event_pool
+                    )
+                    b = {**b, "launched": self.event_scheduler.codec.mode(event_state)}
+                    history_values, _ = self.event_scheduler.codec.decode(event_state)
+                    task.history = task.history.clone()
+                    from .task import HISTORY_FIELDS
+
+                    for key in ("_box_regrace", "_v38_cradle_ticks"):
+                        task.history[:, HISTORY_FIELDS.index(key)] = history_values[
+                            key
+                        ].float()
+                    common = torch.where(valid, common + 1, common)
                 hist = torch.where(valid[:, None], task.history, hist)
                 episode = torch.where(valid, task.episode_steps, episode)
                 event = torch.where(valid, task.event_seconds, event)
@@ -1093,10 +1228,17 @@ class Trainer:
             else:
                 poses = self._fk(torch.where(valid[:, None], ns, s))
             s = torch.where(valid[:, None], ns, s)
-            if self.cfg.learn_external_events:
+            if (
+                self.cfg.learn_external_events
+                and not self.cfg.condition_external_events
+            ):
                 mode = torch.where(valid, mode_logits.sigmoid(), mode)
                 predicted_modes.append(mode)
                 b = {**b, "launched": mode.detach() > 0.5}
+            if self.cfg.condition_external_events:
+                predicted_modes.append(
+                    self.event_scheduler.codec.mode(event_state).float()
+                )
             previous = torch.where(valid[:, None], raw, previous)
             phase = torch.where(valid, next_phase, phase)
             valid = valid & ~trunc & ~(d.detach() >= 1)
@@ -1254,6 +1396,8 @@ class Trainer:
             else None,
         }
 
+        if self.cfg.condition_external_events:
+            result["event_scheduler"] = self.event_scheduler.specification()
         if self.cfg.learn_external_events:
             result["state_transition"] = (
                 "learned_physics_and_post_control_with_next_mode_v1"
@@ -1293,6 +1437,9 @@ class Trainer:
             "version": 3
             if (self.cfg.privileged_critic or self.cfg.learned_termination)
             else 2,
+            "event_rng": self.event_scheduler.rng
+            if self.event_scheduler is not None
+            else None,
             "model_kind": self.cfg.wm_kind,
             "sampling_policy": "all_valid_states_uniform_with_replacement_v2",
             "contact_filter_schema": self.contact_filter_schema,
@@ -1493,6 +1640,8 @@ class Trainer:
         ):
             self.invalidate_contact_history(state.get("contact_filter_schema"))
         self.normalized = state["normalized"]
+        if self.event_scheduler is not None:
+            self.event_scheduler.rng = state["event_rng"].cpu()
         self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
         if migration:
             self.initialization["training_migration"] = migration

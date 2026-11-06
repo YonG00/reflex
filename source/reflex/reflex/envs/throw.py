@@ -1702,8 +1702,9 @@ def box_hover_and_launch(
     bad = env._box_launched & (
         (z < 0.2) | (z > 30.0) | (bspeed > 30.0) | torch.isnan(z) | torch.isnan(bspeed))
     env._box_regrace = torch.where(bad, env._box_regrace + 1, torch.zeros_like(env._box_regrace))
-    if RETHROW_ENABLED and int(env.common_step_counter) % 5 == 0:
-        rethrow = env._box_regrace >= RETHROW_GRACE_STEPS
+    if RETHROW_ENABLED:
+        from reflex.event_math import rethrow_mask
+        rethrow = rethrow_mask(env.common_step_counter, env._box_regrace, RETHROW_GRACE_STEPS)
         if rethrow.any():
             ids = rethrow.nonzero(as_tuple=False).squeeze(-1)
             reset_box_throw(env, ids)

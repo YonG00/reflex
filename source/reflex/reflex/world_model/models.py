@@ -227,3 +227,74 @@ class MacroWorldModel(StateWorldModel):
             else:
                 current[key].copy_(value)
         self.load_state_dict(current)
+
+
+class ConditionedWorldModel(StateWorldModel):
+    """V24 causal split: predict physics, then condition on issued events.
+
+    Post-control commands cannot reach the physical encoder. The decoder learns
+    their effects; neither scheduler nor write plan substitutes its state output.
+    """
+
+    pre_dim = 4
+    condition_dim = 166
+
+    def __init__(self, context_dim, **kwargs):
+        super().__init__(context_dim, **kwargs)
+        old = self.net[0]
+        self.net[0] = nn.Linear(old.in_features + self.pre_dim, old.out_features)
+        self.inputs = Standardizer(old.in_features + self.pre_dim)
+        self.post = mlp(
+            86 + self.condition_dim, 82, layers=[512, 512], activation=nn.SiLU
+        )
+        nn.init.zeros_(self.post[-1].weight)
+        nn.init.zeros_(self.post[-1].bias)
+
+    def features(self, state, target, context, event):
+        return torch.cat((canonical(state), target, context, event), -1)
+
+    def predict_physical(self, state, target, context, event):
+        delta = self.net(self.inputs(self.features(state, target, context, event)))
+        if self.com_indices is None:
+            return integrate(state, delta, self.dt)
+        root, box = self.com_indices
+        return integrate(
+            state,
+            delta,
+            self.dt,
+            context[..., root : root + 3],
+            context[..., box : box + 3],
+        )
+
+    def predict_post(self, physical, targets, mask):
+        from .events_v24.writes import event_condition
+
+        condition = event_condition(physical, targets, mask)
+        delta = self.post(torch.cat((canonical(physical), condition), -1))
+        return integrate(physical, delta, 0.0)
+
+    def forward(self, state, target, context, event):
+        return self.predict_physical(state, target, context, event)
+
+    def warm_start_physical(self, old):
+        current = self.state_dict()
+        last = str(len(self.net) - 1)
+        base = self.net[0].in_features - self.pre_dim
+        old_mode = old["net.0.weight"].shape[1] == base + 1
+        for key, value in old.items():
+            if key not in current or key.startswith("post."):
+                continue
+            if key == "net.0.weight":
+                current[key].zero_()
+                current[key][:, :base].copy_(value[:, :base])
+                if old_mode:
+                    current[key][:, base].copy_(value[:, base])
+            elif key in ("inputs.mean", "inputs.std"):
+                current[key][:base].copy_(value[:base])
+                if old_mode:
+                    current[key][base].copy_(value[base])
+            elif key in ("net." + last + ".weight", "net." + last + ".bias"):
+                current[key].copy_(value[:82])
+            else:
+                current[key].copy_(value)
+        self.load_state_dict(current)

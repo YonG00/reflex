@@ -4,8 +4,9 @@ import torch
 
 
 class Replay:
-    def __init__(self, capacity_steps, device="cpu"):
+    def __init__(self, capacity_steps, device="cpu", global_fields=()):
         self.capacity, self.device = capacity_steps, device
+        self.global_fields = set(global_fields)
         self.data, self.count, self.pointer = {}, 0, 0
 
     def add(self, transition):
@@ -81,7 +82,14 @@ class Replay:
         offsets = torch.arange(horizon, device=self.device)[:, None]
         start = self.pointer if self.count == self.capacity else 0
         physical = (t[None, :] + offsets + start) % self.capacity
-        return {k: value[physical, e[None, :]] for k, value in self.data.items()}
+        return {
+            k: (
+                value[physical]
+                if k in self.global_fields
+                else value[physical, e[None, :]]
+            )
+            for k, value in self.data.items()
+        }
 
     def sample_variable_windows(self, n, horizon, validation=False):
         """Up to H physical transitions, never crossing external writes/resets.
@@ -119,7 +127,12 @@ class Replay:
         start = self.pointer if self.count == self.capacity else 0
         physical = (times + start) % self.capacity
         result = {
-            k: v[physical, e[None, :].expand_as(times)] for k, v in self.data.items()
+            k: (
+                v[physical]
+                if k in self.global_fields
+                else v[physical, e[None, :].expand_as(times)]
+            )
+            for k, v in self.data.items()
         }
         result["loss_mask"] = torch.stack(masks)
         return result
@@ -149,10 +162,14 @@ class Replay:
         t, e = choices[torch.randint(len(choices), (n,), device=self.device)].unbind(-1)
         start = self.pointer if self.count == self.capacity else 0
         physical = (t + start) % self.capacity
-        return {k: v[physical, e] for k, v in self.data.items()}
+        return {
+            k: (v[physical] if k in self.global_fields else v[physical, e])
+            for k, v in self.data.items()
+        }
 
     def state_dict(self):
         return {
+            "global_fields": sorted(self.global_fields),
             "capacity": self.capacity,
             "count": self.count,
             "pointer": self.pointer,
@@ -165,6 +182,8 @@ class Replay:
     def load_state_dict(self, state):
         if state["capacity"] != self.capacity:
             raise ValueError("Replay capacity mismatch")
+        if set(state.get("global_fields", [])) != self.global_fields:
+            raise ValueError("Replay global metadata schema mismatch")
         self.count, self.pointer = state["count"], state["pointer"]
         if (
             not 0 <= self.count <= self.capacity

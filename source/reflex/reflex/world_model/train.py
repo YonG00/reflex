@@ -17,6 +17,8 @@ parser.add_argument(
         "gradient_audit",
         "compile_step_check",
         "event_boundary_probe",
+        "event_inventory",
+        "event_condition_probe",
     ),
     default="preflight",
 )
@@ -173,6 +175,14 @@ def main():
         if config.wm_kind == "state":
             task = AnalyticTask.from_environment(adapter)
             adapter.attach_task(task)
+        event_scheduler = None
+        if config.condition_external_events:
+            from .events_v24.runtime import NativeEventScheduler
+
+            event_scheduler = NativeEventScheduler(
+                env.unwrapped, task, seed=args.seed + 24000
+            )
+            adapter.event_scheduler = event_scheduler
         prior = MotionPrior(
             os.environ.get("AMP_DATASET", paths.AMP_DATASET),
             args.device,
@@ -189,6 +199,7 @@ def main():
             args.device,
             config,
             task=task,
+            event_scheduler=event_scheduler,
         )
         trainer.contact_filter_schema = (
             "explicit_urdf_rigid_links_v2" if config.monitor_contacts else "disabled"
@@ -210,6 +221,9 @@ def main():
             "all_valid_states_uniform_with_replacement_v2"
         )
         manifest["learn_external_events"] = config.learn_external_events
+        manifest["event_scheduler"] = (
+            event_scheduler.specification() if event_scheduler is not None else None
+        )
         manifest["contact_monitoring_enabled"] = config.monitor_contacts
         manifest["contact_filter_schema"] = trainer.contact_filter_schema
         manifest["contact_filter_migration"] = trainer.contact_filter_migration
@@ -232,6 +246,22 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "event_condition_probe":
+            from .events_v24.probe import check
+
+            result = check(adapter, trainer)
+            (out / "event_condition_probe.json").write_text(
+                json.dumps(result, indent=2)
+            )
+            print(json.dumps(result), flush=True)
+            return
+        if args.mode == "event_inventory":
+            from .event_inventory import inspect
+
+            result = inspect(adapter, trainer)
+            (out / "event_inventory.json").write_text(json.dumps(result, indent=2))
+            print(json.dumps(result["after_one_step"]["events"], indent=2), flush=True)
+            return
         if args.mode == "event_boundary_probe":
             from .event_probe import check
 

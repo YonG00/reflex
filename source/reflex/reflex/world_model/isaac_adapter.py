@@ -52,6 +52,8 @@ class IsaacAdapter:
             e.num_envs, dtype=torch.bool, device=self.device
         )
         self._before = None
+        self.event_scheduler = None
+        self.event_plan = None
         self.reward_names = list(e.reward_manager.active_terms)
         self.joint_names = list(self.robot.data.joint_names)
         if len(self.joint_names) != 29 or e.action_manager.total_action_dim != 29:
@@ -306,6 +308,18 @@ class IsaacAdapter:
 
         def write(*args, **kwargs):
             before = self.physical()
+            if self.event_plan is not None:
+                from .events_v24.writes import record_native
+
+                record_native(
+                    self.event_plan,
+                    before,
+                    self.env.scene.env_origins,
+                    asset is self.robot,
+                    name,
+                    args,
+                    kwargs,
+                )
             result = original(*args, **kwargs)
             after = self.physical()
             self.events |= physical_write_mask(before, after)
@@ -528,6 +542,8 @@ class IsaacAdapter:
                 & torch.isfinite(result["context"]).all(-1),
             }
         )
+        if self.event_scheduler is not None:
+            result.update(self.event_scheduler.snapshot(self.env))
         self._before = result
         return result
 
@@ -585,6 +601,10 @@ class IsaacAdapter:
         self.events.zero_()
         self.real_steps += 1
         self.pre_reset = None
+        if self.event_scheduler is not None:
+            from .events_v24.writes import WritePlan
+
+            self.event_plan = WritePlan(b["state"])
         getattr(self, "step_environment", self.env.step)(raw)
         p = self.pre_reset
         if p is None:
@@ -635,6 +655,17 @@ class IsaacAdapter:
                 self.events.clone() | launch_event | ~b["launched"].bool()
             )
             tr["boundary"] = macro_reset
+        if self.event_scheduler is not None:
+            reset = done | reference_jump
+            tr["event_targets"] = torch.where(
+                reset[:, None], 0, self.event_plan.targets
+            )
+            tr["event_mask"] = self.event_plan.mask & ~reset[:, None]
+            next_event = self.event_scheduler.snapshot(self.env)["event_state"]
+            tr["next_event_state"] = torch.where(
+                reset[:, None], b["event_state"], next_event
+            )
+            self.event_plan = None
         from reflex.envs.base.chest_v5_terms import STRICT_PERSIST_FRAMES
 
         tr.update(

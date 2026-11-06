@@ -535,13 +535,14 @@ class AnalyticTask(nn.Module):
             | ~torch.isfinite(z)
             | ~torch.isfinite(speed)
         )
-        view._box_regrace = torch.where(bad, view._box_regrace + 1, 0)
-        cr = (
-            self.cradled(view, view.scene["balloon"])
-            if self.cradled is not None
-            else torch.zeros_like(term)
-        )
-        view._v38_cradle_ticks = torch.where(cr, view._v38_cradle_ticks + 1, 0)
+        if not b.get("event_conditioned", False):
+            view._box_regrace = torch.where(bad, view._box_regrace + 1, 0)
+            cr = (
+                self.cradled(view, view.scene["balloon"])
+                if self.cradled is not None
+                else torch.zeros_like(term)
+            )
+            view._v38_cradle_ticks = torch.where(cr, view._v38_cradle_ticks + 1, 0)
         hist = torch.stack([getattr(view, name).float() for name in HISTORY_FIELDS], -1)
         phase_next = phase + 1
         event_next = event_seconds - self.dt
