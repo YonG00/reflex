@@ -109,10 +109,9 @@ if (
     parser.error("Choose exactly one resume/warm-start source")
 if args.checkpoint and args.warm_start_actor:
     parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
-if args.num_envs < 6 or args.save_every < 1:
-    parser.error(
-        "Use at least 6 envs for separate holdout environments and save_every >= 1"
-    )
+minimum_envs = 1 if args.mode == "play" else 6
+if args.num_envs < minimum_envs or args.save_every < 1:
+    parser.error(f"Use at least {minimum_envs} envs for this mode and save_every >= 1")
 if args.benchmark_no_checkpoint and (
     args.mode != "train"
     or args.max_seconds is None
