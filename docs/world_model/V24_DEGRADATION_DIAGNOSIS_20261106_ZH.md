@@ -117,3 +117,20 @@ obs/done/valid/launch误差0，reward误差1.86e-9，Actor梯度范数3.7143，�
 配置1024真实环境、2048/H32、WM每轮10次，预算1800秒，每500采集迭代及结束保存；
 TensorBoard在tensorboard/，指标metrics.jsonl，日志run.log。
 此记录仅证明恢复验收通过并已启动，不代表半小时训练或效果评测已经完成。
+
+## 半小时纯软续训已完成
+
+正常结束，训练循环1802.82秒，无failure.txt，无残留训练进程。
+新增Actor297次（累计340），WM/Termination各2970次（累计3400），1024环境。
+最近20次真实单步奖励均值+0.07057；累计平均回合奖励1.417→2.781，
+累计平均回合长度34.17→44.22步（dt0.02约0.88秒，仍然很短）。
+最近20次WM state loss均值6.071→3.373，Termination BCE0.0507→0.0162，
+Actor更新时间约2.840秒。Critic loss由约0.140升至1.661，仍需关注。
+动态留出集条件化Physical RMSE：H1 0.2793→0.1504，H8 0.3142→0.2375，
+H16 0.5074→0.3863，H32 0.7568→0.5470；不是固定数据集严格对照。
+自由H32 Post-control RMSE1.3780→0.7802，仍有明显长程误差。
+日志completed_strict_successes=30，但strict_hold_per_completed_throw=0，
+这两个统计口径不一致，不能直接称为接箱成功率；尚未独立play验收。
+最终checkpoint_final.pt大小7,526,792,489字节，中途checkpoint_00500.pt大小4,383,365,277字节，
+均位于outputs/world_model/20261106_v24_pure_soft_joint_30min/。
+结论：避免旧版早期严重退化，真实回报/回合长度与预测指标改善；尚未证明学会稳定接箱。
