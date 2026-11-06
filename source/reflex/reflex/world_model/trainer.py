@@ -55,6 +55,8 @@ class TrainConfig:
     compile_backend: str = "inductor"
     tf32: bool = False
     schedule: str = "guarded"
+    pure_soft_survival: bool = False
+    hard_imagination_boundaries: bool = False
     initial_collect_steps: int = 40
     updates_per_env_step: float = 0.4
     actor_batch: int = 0
@@ -153,6 +155,26 @@ class Trainer:
         torch.backends.cudnn.allow_tf32 = c.tf32
         torch.set_float32_matmul_precision("high" if c.tf32 else "highest")
         self.task = task.to(device) if task is not None else None
+        self.terminal_reward_index = None
+        self.terminal_reward_cost = 0.0
+        if c.pure_soft_survival:
+            if (
+                c.hard_imagination_boundaries
+                or not c.learned_termination
+                or task is None
+            ):
+                raise ValueError(
+                    "Pure soft survival requires learned termination and no hard boundaries"
+                )
+            if "fall_terminated" in self.reward_names:
+                self.terminal_reward_index = self.reward_names.index("fall_terminated")
+                specs = [r for r in task.rewards if r.name == "fall_terminated"]
+                if len(specs) != 1:
+                    raise ValueError(
+                        "Original terminal reward specification is ambiguous"
+                    )
+                self.terminal_reward_cost = specs[0].weight * task.dt
+
         self.event_scheduler = event_scheduler
         if c.minimal_event_view:
             if not c.condition_external_events or event_scheduler is None:
@@ -1418,10 +1440,22 @@ class Trainer:
                     r, d, trunc = task.rewards, task.terminated.float(), task.truncated
                     if self.termination is not None:
                         d = self.termination(task.termination_features).sigmoid()
+                if self.cfg.pure_soft_survival:
+                    from .events_v24.soft_survival import expected_terminal_reward
+
+                    r = expected_terminal_reward(
+                        r, d, self.terminal_reward_index, self.terminal_reward_cost
+                    )
+                if self.cfg.hard_imagination_boundaries:
+                    # A real physical termination ends the episode before any
+                    # interval writes. Keep its reward, never bootstrap beyond it.
+                    d = torch.where(task.terminated, torch.ones_like(d), d)
                 if self.cfg.condition_external_events:
                     from .events_v24.writes import WritePlan
 
-                    active = valid & ~task.truncated & ~task.terminated
+                    active = valid & ~task.truncated
+                    if not self.cfg.pure_soft_survival:
+                        active = active & ~task.terminated
                     ids = active.nonzero().flatten()
                     plan = WritePlan(physical)
                     next_event, next_pool = event_state, event_pool
@@ -1522,6 +1556,8 @@ class Trainer:
             previous = torch.where(valid[:, None], raw, previous)
             phase = torch.where(valid, next_phase, phase)
             valid = valid & ~trunc & ~(d.detach() >= 1)
+            if self.cfg.hard_imagination_boundaries and self.model.state_only:
+                valid = valid & ~task.terminated
         final_obs = self.observation(b, s, previous, phase, poses)
         observations.append(self.obs_norm(final_obs))
         critic_observations.append(
@@ -1687,6 +1723,12 @@ class Trainer:
                 "physical_nn_native_scheduler_deterministic_apply_v1"
             )
             result["event_supervision"] = self.cfg.event_supervision_protocol
+        if self.cfg.pure_soft_survival:
+            result["soft_survival"] = (
+                "learned_hazard_expected_original_terminal_cost_v1"
+            )
+        if self.cfg.hard_imagination_boundaries:
+            result["imagination_boundaries"] = "original_physical_terminal_absorbing_v1"
         if self.cfg.joint_predicted_termination:
             result["termination_training"] = (
                 "autoregressive_predicted_features_joint_bce_v1"
@@ -1780,7 +1822,14 @@ class Trainer:
 
         os.replace(temporary, path)
 
-    def load(self, path, migrate_termination_training=False, reinitialize_replay=False):
+    def load(
+        self,
+        path,
+        migrate_termination_training=False,
+        reinitialize_replay=False,
+        migrate_imagination_boundaries=False,
+        migrate_soft_survival=False,
+    ):
         state = torch.load(path, map_location=self.device, weights_only=False)
         saved_config = dict(state["config"])
         if state.get("version") == 1:
@@ -1805,6 +1854,23 @@ class Trainer:
         if reinitialize_replay:
             loaded_config.pop("capacity_steps", None)
             requested_config.pop("capacity_steps", None)
+        if migrate_soft_survival:
+            if not self.cfg.pure_soft_survival or loaded_config["pure_soft_survival"]:
+                raise ValueError(
+                    "Soft-survival migration requires old to pure-soft configuration"
+                )
+            loaded_config.pop("pure_soft_survival")
+            requested_config.pop("pure_soft_survival")
+        if migrate_imagination_boundaries:
+            if (
+                not self.cfg.hard_imagination_boundaries
+                or loaded_config["hard_imagination_boundaries"]
+            ):
+                raise ValueError(
+                    "Boundary migration requires explicit old-soft to hard-boundary configuration"
+                )
+            loaded_config.pop("hard_imagination_boundaries")
+            requested_config.pop("hard_imagination_boundaries")
         migration = None
         if migrate_termination_training:
             if (
@@ -1849,6 +1915,10 @@ class Trainer:
                 requested_learning.pop(key, None)
         import copy
 
+        if migrate_soft_survival:
+            requested_learning.pop("soft_survival", None)
+        if migrate_imagination_boundaries:
+            requested_learning.pop("imagination_boundaries", None)
         saved_learning = copy.deepcopy(state.get("learning_contract"))
         requested_learning = copy.deepcopy(requested_learning)
         if reinitialize_replay:
@@ -1951,6 +2021,18 @@ class Trainer:
         self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
         if migration:
             self.initialization["training_migration"] = migration
+        if migrate_soft_survival:
+            self.initialization["soft_survival_migration"] = {
+                "source": str(path),
+                "optimizers_preserved": True,
+                "original_terminal_cost": self.terminal_reward_cost,
+            }
+        if migrate_imagination_boundaries:
+            self.initialization["imagination_boundary_migration"] = {
+                "source": str(path),
+                "optimizers_preserved": True,
+                "physical_terminals_absorbing": True,
+            }
         if reinitialize_replay:
             self.initialization["replay_reinitialization"] = {
                 "source": str(path),

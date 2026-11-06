@@ -82,7 +82,7 @@ def eager_diagnostic(t):
             t._transition, t._observations = transition, observations
 
 
-def gradient_audit(t):
+def gradient_audit(t, per_reward=True):
     from .joint import returns
 
     started = time.monotonic()
@@ -118,12 +118,13 @@ def gradient_audit(t):
             "task": t.prior._w_task * imagined["terms"].sum(-1),
             "amp": t.prior._w_style * t.prior.ramp * imagined["style"],
         }
-        values.update(
-            {
-                f"reward/{n}": t.prior._w_task * imagined["terms"][..., i]
-                for i, n in enumerate(t.reward_names)
-            }
-        )
+        if per_reward:
+            values.update(
+                {
+                    f"reward/{n}": t.prior._w_task * imagined["terms"][..., i]
+                    for i, n in enumerate(t.reward_names)
+                }
+            )
         for name, r in values.items():
             for mode in ("direct", "with_survival"):
                 g = vector(

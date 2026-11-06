@@ -299,6 +299,39 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     imagined = t.imagine(start)
     assert not imagined["predicted_launch_probability"][0].bool().any()
     assert imagined["predicted_launch_probability"][1].bool().all()
+    if deterministic:
+        from dataclasses import replace
+        from reflex.world_model.joint import returns
+
+        original_evaluate = t.task.evaluate_step
+
+        def terminal_step(*args, **kwargs):
+            result = original_evaluate(*args, **kwargs)
+            return replace(result, terminated=torch.ones_like(result.terminated))
+
+        t.task.evaluate_step = terminal_step
+        t.cfg.hard_imagination_boundaries = True
+        stopped = t.imagine(start)
+        assert stopped["valid"][0].all()
+        assert not stopped["valid"][1:].any()
+        assert stopped["done"][0].eq(1).all()
+        # Terminal reward is counted once; all later reward and bootstrap vanish.
+        actual = returns(stopped, lambda x: torch.ones(*x.shape[:-1], 1), t.cfg.gamma)
+        torch.testing.assert_close(actual, stopped["reward"][0])
+        changed = {**stopped, "reward": stopped["reward"].clone()}
+        changed["reward"][1:] = 10000
+        torch.testing.assert_close(
+            returns(changed, lambda x: torch.ones(*x.shape[:-1], 1), t.cfg.gamma),
+            actual,
+        )
+        t.cfg.hard_imagination_boundaries = False
+        t.cfg.pure_soft_survival = True
+        soft = t.imagine(start)
+        assert soft["valid"][1].all()
+        assert (soft["done"][0] < 1).all()
+        assert soft["predicted_launch_probability"][1].bool().all()
+        t.cfg.pure_soft_survival = False
+        t.task.evaluate_step = original_evaluate
     before_rng = runtime.rng.clone()
     audit = gradient_audit(t)
     torch.testing.assert_close(runtime.rng, before_rng)
@@ -323,6 +356,23 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         assert t.initialization["replay_reinitialization"]["optimizers_preserved"]
         assert t.actor_opt.state_dict()["state"]
         runtime.source_count = source_count
+        t.load(path)
+        t.cfg.pure_soft_survival = True
+        with pytest.raises(ValueError):
+            t.load(path)
+        t.load(path, migrate_soft_survival=True)
+        assert t.initialization["soft_survival_migration"]["optimizers_preserved"]
+        t.cfg.pure_soft_survival = False
+        t.load(path)
+        t.cfg.hard_imagination_boundaries = True
+        with pytest.raises(ValueError):
+            t.load(path)
+        t.load(path, migrate_imagination_boundaries=True)
+        assert t.actor_updates == 1
+        assert t.initialization["imagination_boundary_migration"][
+            "optimizers_preserved"
+        ]
+        t.cfg.hard_imagination_boundaries = False
         t.load(path)
         checkpoint = torch.load(path, weights_only=False)
         legacy_execution = copy.deepcopy(checkpoint)

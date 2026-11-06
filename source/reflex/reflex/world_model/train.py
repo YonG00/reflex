@@ -26,6 +26,8 @@ parser.add_argument(
         "actor_update_equivalence",
         "v24_fusion_check",
         "actor_fusion_update_equivalence",
+        "imagination_boundary_check",
+        "pure_soft_survival_check",
     ),
     default="preflight",
 )
@@ -48,6 +50,9 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument("--migrate_soft_survival", action="store_true")
+parser.add_argument("--aggregate_gradient_audit", action="store_true")
+parser.add_argument("--migrate_imagination_boundaries", action="store_true")
 parser.add_argument(
     "--reinitialize_replay",
     action="store_true",
@@ -223,6 +228,8 @@ def main():
                 args.checkpoint,
                 migrate_termination_training=args.migrate_termination_training,
                 reinitialize_replay=args.reinitialize_replay,
+                migrate_imagination_boundaries=args.migrate_imagination_boundaries,
+                migrate_soft_survival=args.migrate_soft_survival,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)
@@ -272,6 +279,16 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "pure_soft_survival_check":
+            from .events_v24.boundary_check import check_soft
+
+            print(json.dumps(check_soft(trainer, out)), flush=True)
+            return
+        if args.mode == "imagination_boundary_check":
+            from .events_v24.boundary_check import check
+
+            print(json.dumps(check(trainer, out)), flush=True)
+            return
         if args.mode == "actor_fusion_update_equivalence":
             from .events_v24.actor_profile import update_equivalence
 
@@ -349,7 +366,9 @@ def main():
 
             before = (trainer.actor_updates, trainer.model_updates)
             compiled = (trainer._dynamics, trainer._fk)
-            result = gradient_audit(trainer)
+            result = gradient_audit(
+                trainer, per_reward=not args.aggregate_gradient_audit
+            )
             assert before == (trainer.actor_updates, trainer.model_updates)
             assert trainer._dynamics is compiled[0] and trainer._fk is compiled[1]
             result["optimizer_updates"] = 0
