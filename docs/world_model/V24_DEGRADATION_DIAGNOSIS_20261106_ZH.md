@@ -106,3 +106,14 @@ outputs/world_model/20261106_v24_pure_soft_fix_checks/short_regression/checkpoin
 证据：evidence/20261106_v24_pure_soft_fix.json。
 运行时服务器Git尚为2b1d61e加已部署补丁；trainer.py/train.py的SHA256与本地及远程
 Git提交e9d5df1完全一致，原始SHA256已附证据文件，不能把旧manifest.git_sha误当生效源码。
+
+## 继续半小时纯软联合训练
+
+用户随后授权继续半小时。最终存档GPU恢复检查通过：解析终止标记强制替换后，
+obs/done/valid/launch误差0，reward误差1.86e-9，Actor梯度范数3.7143，无优化器更新。
+从上述pure-soft checkpoint完整恢复模型、Adam、AMP、Replay及计数（Actor43、WM/Term430），
+没有重新初始化Replay或模型，没有启用解析硬终止。
+运行目录：outputs/world_model/20261106_v24_pure_soft_joint_30min/。
+配置1024真实环境、2048/H32、WM每轮10次，预算1800秒，每500采集迭代及结束保存；
+TensorBoard在tensorboard/，指标metrics.jsonl，日志run.log。
+此记录仅证明恢复验收通过并已启动，不代表半小时训练或效果评测已经完成。
