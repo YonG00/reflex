@@ -10,6 +10,8 @@ def check(adapter, trainer, steps=12):
         raise ValueError("V24 probe needs the event scheduler")
     env = adapter.env
     n = env.num_envs
+    if not hasattr(env, "_box_regrace"):
+        env._box_regrace = torch.zeros(n, dtype=torch.long, device=adapter.device)
     if n < 8:
         raise ValueError("V24 probe needs at least 8 environments")
     manager = env.event_manager
