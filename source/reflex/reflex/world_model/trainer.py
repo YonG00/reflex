@@ -5,20 +5,24 @@ during actor backprop; their derivatives with respect to inputs remain enabled.
 """
 
 from __future__ import annotations
+
+import random
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-import random
+
 import numpy as np
 import torch
 from torch import nn
+
 from .models import (
-    WorldModel,
-    StateWorldModel,
-    MacroWorldModel,
     ConditionedWorldModel,
+    DeterministicEventWorldModel,
+    MacroWorldModel,
     Standardizer,
-    mlp,
+    StateWorldModel,
     TerminationHead,
+    WorldModel,
+    mlp,
 )
 from .physics import amp_features, state_error
 from .replay import Replay
@@ -30,6 +34,8 @@ class TrainConfig:
     monitor_contacts: bool = False
     learn_external_events: bool = False
     condition_external_events: bool = False
+    deterministic_event_apply: bool = False
+    event_supervision_protocol: str = "recorded_commands"
     privileged_critic: bool = False
     actor_zero_output: bool = True
     learned_termination: bool = False
@@ -144,13 +150,24 @@ class Trainer:
             torch.set_float32_matmul_precision("high")
         self.task = task.to(device) if task is not None else None
         self.event_scheduler = event_scheduler
+        if (
+            c.condition_external_events
+            and c.event_supervision_protocol != "recorded_commands"
+        ):
+            raise ValueError(
+                "V24 H8 supervision requires recorded event commands; free rollouts are evaluation/Actor only"
+            )
+        if c.deterministic_event_apply and not c.condition_external_events:
+            raise ValueError("Deterministic events require conditioned events")
         if c.condition_external_events and event_scheduler is None:
             raise ValueError("V24 needs a verified native event scheduler")
         if c.wm_kind not in ("state", "multitask"):
             raise ValueError("Unknown WM kind")
         self.model = (
             (
-                ConditionedWorldModel
+                DeterministicEventWorldModel
+                if c.deterministic_event_apply
+                else ConditionedWorldModel
                 if c.condition_external_events
                 else MacroWorldModel
                 if c.learn_external_events
@@ -302,7 +319,10 @@ class Trainer:
             or state["reward_names"] != self.reward_names
         ):
             raise ValueError("Macro warm start physical/reward contract mismatch")
-        if state["config"].get("condition_external_events", False) or (
+        if (
+            state["config"].get("condition_external_events", False)
+            and not self.cfg.deterministic_event_apply
+        ) or (
             state["config"].get("learn_external_events", False)
             and not self.cfg.condition_external_events
         ):
@@ -635,6 +655,9 @@ class Trainer:
                     if mask is not None:
                         s = torch.where(mask[t, :, None], s, seq["state"][t])
                     if self.cfg.condition_external_events:
+                        # Conditional supervised rollout: recorded event inputs
+                        # align the stochastic branch with measured labels.
+                        # Actor/free evaluation never consumes these future inputs.
                         pre = self.event_scheduler.codec.pre_features(
                             seq["event_state"][t], seq["episode_steps"][t], self.task.dt
                         )
@@ -680,7 +703,7 @@ class Trainer:
                             )
                         )
                         mode_losses.append(ml)
-                        sl = sl + pl
+                        sl = pl if self.cfg.deterministic_event_apply else sl + pl
                     if self.cfg.joint_predicted_termination:
                         row = {k: v[t] for k, v in seq.items()}
                         features = self.task.predicted_termination_features(
@@ -762,6 +785,9 @@ class Trainer:
                 )
                 last["wm/post_control_state_loss"] = float(
                     window_mean(macro_losses).detach()
+                )
+                last["wm/post_control_in_objective"] = float(
+                    not self.cfg.deterministic_event_apply
                 )
                 if not self.cfg.condition_external_events:
                     last["wm/launch_mode_bce"] = float(
@@ -1041,7 +1067,7 @@ class Trainer:
         mode = b["launched"].float()
         event_state = b.get("event_state")
         event_pool = b.get("event_pool")
-        common = b["common_step"]
+        common = b["common_step"] if self.cfg.condition_external_events else None
         if self.cfg.learn_external_events:
             b = {**b, "learn_external_events": True}
         if self.cfg.condition_external_events:
@@ -1402,6 +1428,11 @@ class Trainer:
             result["state_transition"] = (
                 "learned_physics_and_post_control_with_next_mode_v1"
             )
+        if self.cfg.deterministic_event_apply:
+            result["state_transition"] = (
+                "physical_nn_native_scheduler_deterministic_apply_v1"
+            )
+            result["event_supervision"] = self.cfg.event_supervision_protocol
         if self.cfg.joint_predicted_termination:
             result["termination_training"] = (
                 "autoregressive_predicted_features_joint_bce_v1"

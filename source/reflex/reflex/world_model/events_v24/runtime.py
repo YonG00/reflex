@@ -7,10 +7,12 @@ replacement physical state to the imagined plant.
 import copy
 from contextlib import contextmanager
 from dataclasses import dataclass
+
 import torch
-from ..task import Scene
+
+from ..task import Scene, primitive
 from .state import EventStateCodec
-from .writes import WritePlan, PlannedAsset
+from .writes import PlannedAsset, WritePlan
 
 
 @dataclass
@@ -78,7 +80,41 @@ class NativeEventScheduler:
         self.rng = generator.get_state()
 
     def specification(self):
+        import hashlib
+        import sys
+        from pathlib import Path
+
+        sources = {}
+        constants = {}
+        for term in self.terms:
+            module = sys.modules[term.function.__module__]
+            path = Path(module.__file__)
+            sources[term.function.__module__] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+            values = {}
+            for name, value in vars(module).items():
+                if (
+                    name.isupper()
+                    and not name.startswith("_")
+                    and isinstance(value, (bool, int, float, str, tuple, list, dict))
+                ):
+                    try:
+                        values[name] = primitive(value)
+                    except TypeError:
+                        pass
+            constants[term.function.__module__] = values
+        for path in (
+            Path(__file__),
+            Path(__file__).with_name("state.py"),
+            Path(__file__).with_name("writes.py"),
+            Path(__file__).parents[2] / "event_math.py",
+        ):
+            if path.exists():
+                sources[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
         return {
+            "source_sha256": sources,
+            "constants": constants,
             "schema": 1,
             "state": self.codec.specification(),
             "source_world_envs": self.source_count,
@@ -86,6 +122,7 @@ class NativeEventScheduler:
                 {
                     "name": t.name,
                     "function": t.function.__module__ + "." + t.function.__name__,
+                    "parameters": primitive(t.params),
                     "interval": list(t.interval),
                     "global_time": t.global_time,
                     "ignores_ids": t.ignores_ids,

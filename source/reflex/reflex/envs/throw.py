@@ -1780,7 +1780,11 @@ def hold_init_apply(env, env_ids,
                 jv_c = robot_c.data.joint_vel[cids].clone()
                 jp_c[:, d_c["hold_init_ids"]] = d_c["hold_init_target"][None, :]
                 jv_c[:, d_c["hold_init_ids"]] = 0.0
-                robot_c.write_joint_state_to_sim(jp_c, jv_c, env_ids=cids)
+                from reflex.event_math import event_write
+                write_mask = torch.zeros_like(jp_c, dtype=torch.bool)
+                write_mask[:, d_c["hold_init_ids"]] = True
+                event_write(robot_c, "write_joint_state_to_sim", jp_c, jv_c,
+                            env_ids=cids, write_mask=write_mask)
     m = env._hold_init_pending & (env.episode_length_buf <= 1)
     if not bool(m.any()):
         return
@@ -1815,7 +1819,11 @@ def hold_init_apply(env, env_ids,
         _tgt = _tgt + (torch.rand_like(_tgt) * 2 - 1) * _rsi
     jp[:, d["hold_init_ids"]] = _tgt
     jv[:, d["hold_init_ids"]] = 0.0
-    robot.write_joint_state_to_sim(jp, jv, env_ids=ids)
+    from reflex.event_math import event_write
+    write_mask = torch.zeros_like(jp, dtype=torch.bool)
+    write_mask[:, d["hold_init_ids"]] = True
+    event_write(robot, "write_joint_state_to_sim", jp, jv,
+                env_ids=ids, write_mask=write_mask)
     q = robot.data.root_quat_w[ids]
     qw, qx, qy, qz = q.unbind(-1)
     fwd = torch.stack([1 - 2 * (qy * qy + qz * qz),

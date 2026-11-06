@@ -442,8 +442,9 @@ def v38_walking_hover_and_launch(
                       torch.where(hovering.unsqueeze(-1),
                                   torch.zeros_like(cur_vel), cur_vel))
 
-    box.write_root_pose_to_sim(pose)
-    box.write_root_velocity_to_sim(vel)
+    from reflex.event_math import event_write
+    event_write(box, "write_root_pose_to_sim", pose, write_mask=hold_or_launch)
+    event_write(box, "write_root_velocity_to_sim", vel, write_mask=hold_or_launch)
     env._box_launched = env._box_launched | launching
 
     if not hasattr(env, "_box_regrace"):
@@ -632,8 +633,9 @@ def v38_cradle_perturb(env, env_ids: torch.Tensor,
     dv[:, 2] = (torch.rand(n, device=device) - 0.6) * 0.5   # slight down bias
     dv[:, 3:6] = (torch.rand(n, 3, device=device) - 0.5) * 2 * V38_PERTURB_W
     vel = torch.cat([box.data.root_lin_vel_w, box.data.root_ang_vel_w], dim=-1)
-    box.write_root_velocity_to_sim(
-        torch.where(kick[:, None], vel + dv, vel))
+    from reflex.event_math import event_write
+    event_write(box, "write_root_velocity_to_sim",
+                torch.where(kick[:, None], vel + dv, vel), write_mask=kick[:, None])
 
 
 def v38_cradle_anchor(env,

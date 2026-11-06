@@ -319,6 +319,7 @@ class IsaacAdapter:
                     name,
                     args,
                     kwargs,
+                    getattr(asset, "_reflex_event_write_mask", None),
                 )
             result = original(*args, **kwargs)
             after = self.physical()

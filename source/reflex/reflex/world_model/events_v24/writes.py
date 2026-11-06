@@ -1,7 +1,8 @@
-"""Requested native writes become NN conditions, never substitute NN outputs."""
+"""Record issued native writes for learned or deterministic event application."""
 
 import torch
-from ..physics import state_error, heading, inverse, apply
+
+from ..physics import apply, heading, inverse, state_error
 from ..task import Asset
 
 
@@ -12,7 +13,7 @@ class WritePlan:
         self.targets = torch.zeros_like(physical)
         self.mask = torch.zeros_like(physical, dtype=torch.bool)
 
-    def record(self, before, requested, env_ids, slots):
+    def record(self, before, requested, env_ids, slots, intervention=None):
         ids = (
             torch.arange(len(self.targets), device=self.targets.device)
             if env_ids is None
@@ -21,14 +22,17 @@ class WritePlan:
         if isinstance(ids, slice):
             ids = torch.arange(len(self.targets), device=self.targets.device)[ids]
         slots = torch.as_tensor(slots, device=self.targets.device)
-        changed = (requested - before).abs() > 1e-7
-        # A quaternion is one rotation, not four independently replaceable scalars.
-        if len(slots) in (6, 7):
-            changed[:, :3] = changed[:, :3].any(-1, keepdim=True)
-            changed[:, 3:] = changed[:, 3:].any(-1, keepdim=True)
+        # A native write overwrites every requested component even when its
+        # numeric value equals the previous value. This also preserves the
+        # correct derivative through constant/predicted write targets.
         rr, cc = ids[:, None], slots[None, :]
-        self.targets[rr, cc] = torch.where(changed, requested, self.targets[rr, cc])
-        self.mask[rr, cc] |= changed
+        active = (
+            torch.ones_like(requested, dtype=torch.bool)
+            if intervention is None
+            else intervention.expand_as(requested)
+        )
+        self.targets[rr, cc] = torch.where(active, requested, self.targets[rr, cc])
+        self.mask[rr, cc] |= active
 
     def condition(self, physical):
         return event_condition(physical, self.targets, self.mask)
@@ -70,7 +74,9 @@ class PlannedAsset(Asset):
         )
         local = torch.cat((pose[:, :3] - self.origins[ids], pose[:, 3:]), -1)
         slots = list(range(7)) if self.robot else list(range(71, 78))
-        self.plan.record(before, local, ids, slots)
+        self.plan.record(
+            before, local, ids, slots, getattr(self, "_reflex_event_write_mask", None)
+        )
         d.root_pos_w = d.root_pos_w.index_copy(0, ids, pose[:, :3])
         d.root_quat_w = d.root_quat_w.index_copy(0, ids, pose[:, 3:])
         self._refresh()
@@ -83,6 +89,7 @@ class PlannedAsset(Asset):
             vel,
             ids,
             list(range(36, 42)) if self.robot else list(range(78, 84)),
+            getattr(self, "_reflex_event_write_mask", None),
         )
         d.root_lin_vel_w = d.root_lin_vel_w.index_copy(0, ids, vel[:, :3])
         d.root_ang_vel_w = d.root_ang_vel_w.index_copy(0, ids, vel[:, 3:])
@@ -99,10 +106,18 @@ class PlannedAsset(Asset):
             joints = torch.arange(29, device=self.device)[joints]
         d = self.data
         self.plan.record(
-            d.joint_pos[ids[:, None], joints[None, :]], positions, ids, joints + 7
+            d.joint_pos[ids[:, None], joints[None, :]],
+            positions,
+            ids,
+            joints + 7,
+            getattr(self, "_reflex_event_write_mask", None),
         )
         self.plan.record(
-            d.joint_vel[ids[:, None], joints[None, :]], velocities, ids, joints + 42
+            d.joint_vel[ids[:, None], joints[None, :]],
+            velocities,
+            ids,
+            joints + 42,
+            getattr(self, "_reflex_event_write_mask", None),
         )
         q, v = d.joint_pos.clone(), d.joint_vel.clone()
         q[ids[:, None], joints[None, :]] = positions
@@ -110,7 +125,9 @@ class PlannedAsset(Asset):
         d.joint_pos, d.joint_vel = q, v
 
 
-def record_native(plan, physical, origins, robot, method, args, kwargs):
+def record_native(
+    plan, physical, origins, robot, method, args, kwargs, intervention=None
+):
     """Capture issued control parameters BEFORE the native API applies them."""
     if method == "write_joint_state_to_sim":
         ids = kwargs.get("env_ids", args[3] if len(args) > 3 else None)
@@ -122,10 +139,18 @@ def record_native(plan, physical, origins, robot, method, args, kwargs):
         if isinstance(joints, slice):
             joints = torch.arange(29, device=physical.device)[joints]
         plan.record(
-            physical[ids[:, None], (joints + 7)[None, :]], args[0], ids, joints + 7
+            physical[ids[:, None], (joints + 7)[None, :]],
+            args[0],
+            ids,
+            joints + 7,
+            intervention,
         )
         plan.record(
-            physical[ids[:, None], (joints + 42)[None, :]], args[1], ids, joints + 42
+            physical[ids[:, None], (joints + 42)[None, :]],
+            args[1],
+            ids,
+            joints + 42,
+            intervention,
         )
         return
     ids = kwargs.get("env_ids", args[1] if len(args) > 1 else None)
@@ -140,7 +165,7 @@ def record_native(plan, physical, origins, robot, method, args, kwargs):
         requested = args[0]
     else:
         raise ValueError(f"Unverified V24 native writer: {method}")
-    plan.record(physical[ids][:, slots], requested, ids, slots)
+    plan.record(physical[ids][:, slots], requested, ids, slots, intervention)
 
 
 def event_condition(physical, targets, mask):

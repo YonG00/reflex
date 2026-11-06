@@ -1,9 +1,11 @@
 from types import SimpleNamespace as NS
+
+import pytest
 import torch
-from reflex.event_math import rethrow_mask
+from reflex.event_math import event_write, rethrow_mask
+from reflex.world_model.events_v24.runtime import EventTerm, NativeEventScheduler
 from reflex.world_model.events_v24.state import EventStateCodec
 from reflex.world_model.events_v24.writes import WritePlan
-from reflex.world_model.events_v24.runtime import EventTerm, NativeEventScheduler
 from test_repaired_joint import repaired
 
 
@@ -13,17 +15,25 @@ def toy_control(env, env_ids=None):
     launch = waiting & (env.episode_length_buf >= env._box_launch_step)
     pose = torch.cat((env._box_p0, env._box_q0), -1)
     old = torch.cat((box.data.root_pos_w, box.data.root_quat_w), -1)
-    box.write_root_pose_to_sim(torch.where(waiting[:, None], pose, old))
+    event_write(
+        box,
+        "write_root_pose_to_sim",
+        torch.where(waiting[:, None], pose, old),
+        write_mask=waiting[:, None],
+    )
     velocity = torch.zeros_like(box.data.root_vel_w)
     velocity[:, :3] = env._box_v0 + env.scene["robot"].data.root_pos_w
-    box.write_root_velocity_to_sim(
+    event_write(
+        box,
+        "write_root_velocity_to_sim",
         torch.where(
             launch[:, None],
             velocity,
             torch.where(
                 waiting[:, None], torch.zeros_like(velocity), box.data.root_vel_w
             ),
-        )
+        ),
+        write_mask=waiting[:, None],
     )
     env._box_launched = env._box_launched | launch
 
@@ -86,18 +96,21 @@ def test_clock_advances_to_launch_and_reaim_uses_predicted_robot(tmp_path):
     torch.testing.assert_close(
         plan.targets[:, 78:81], torch.ones(len(physical), 3) + physical[:, :3]
     )
-    gradient = torch.autograd.grad(plan.condition(physical).sum(), physical)[0]
-    assert gradient[:, :3].abs().sum() > 0
+    post = torch.where(plan.mask, plan.targets, physical)
+    gradient = torch.autograd.grad(post[:, 78:81].sum(), physical)[0]
+    torch.testing.assert_close(gradient[:, :3], torch.ones_like(gradient[:, :3]))
 
 
-def test_noop_write_contains_no_observed_future_state():
+def test_equal_value_constant_write_remains_explicit_command():
     state = torch.randn(3, 84)
     state[:, 3:7] = torch.tensor([1.0, 0, 0, 0])
     state[:, 74:78] = torch.tensor([1.0, 0, 0, 0])
     plan = WritePlan(state)
     plan.record(state[:, 78:84], state[:, 78:84].clone(), None, list(range(78, 84)))
-    assert not plan.mask.any() and plan.targets.eq(0).all()
-    assert plan.condition(state).abs().max() < 1e-5
+    assert plan.mask[:, 78:84].all()
+    assert not plan.mask[:, :78].any()
+    torch.testing.assert_close(plan.targets[:, 78:84], state[:, 78:84])
+    assert plan.condition(state)[:, 84:].abs().max() < 1e-5
 
 
 def test_rethrow_cadence_shared_scalar_and_per_agent_clocks():
@@ -163,10 +176,12 @@ def test_global_timer_metadata_is_stored_once_and_sampled_per_source_frame():
     assert len(clone.start_indices()) == len(r.start_indices())
 
 
-def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path):
+@pytest.mark.parametrize("deterministic", [False, True])
+def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, deterministic):
     import copy
-    from reflex.world_model.trainer import Trainer
+
     from reflex.world_model.diagnostics import gradient_audit
+    from reflex.world_model.trainer import Trainer
 
     old, b, runtime, event = setup(tmp_path)
     old.fit_model()
@@ -175,10 +190,12 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path):
     cfg = copy.deepcopy(old.cfg)
     cfg.learn_external_events = True
     cfg.condition_external_events = True
+    cfg.deterministic_event_apply = deterministic
     cfg.joint_predicted_termination = True
     cfg.variable_model_windows = True
     cfg.state_loss_reduction = "sum"
     cfg.horizon = 32
+    cfg.model_window = 8
     t = Trainer(
         copy.deepcopy(old.bridge),
         copy.deepcopy(old.action_map),
@@ -253,9 +270,21 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path):
         )
         t.replay.add(tr)
         s, event = post, next_event
+    training_rng = runtime.rng.clone()
     metrics = t.fit_model()
+    torch.testing.assert_close(runtime.rng, training_rng)
     assert metrics["termination/probe_weighted_bce_wm_gradient_norm"] > 0
     assert "wm/launch_mode_bce" not in metrics
+    if deterministic:
+        assert metrics["wm/post_control_in_objective"] == 0
+        assert metrics["wm/state_loss"] == pytest.approx(
+            metrics["wm/physical_state_loss"]
+        )
+        assert metrics["wm/loss"] == pytest.approx(
+            metrics["wm/physical_state_loss"]
+            + cfg.term_loss_weight * metrics["termination/train_bce"],
+            rel=1e-5,
+        )
     assert t.model_updates == t.termination_updates == cfg.model_steps
     # Explicitly start all imagined trajectories before launch.
     start = {
@@ -279,6 +308,13 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path):
     t.save(path)
     t.load(path)
     assert t.actor_updates == 1
+    if deterministic:
+        checkpoint = torch.load(path, weights_only=False)
+        checkpoint["config"]["deterministic_event_apply"] = False
+        incompatible = tmp_path / "incompatible.pt"
+        torch.save(checkpoint, incompatible)
+        with pytest.raises(ValueError):
+            t.load(incompatible)
 
 
 def test_batch_coupled_timer_uses_foreign_due_clock_without_changing_native_law(
@@ -343,3 +379,165 @@ def test_batch_coupled_timer_uses_foreign_due_clock_without_changing_native_law(
     )
     assert actual.mask[[0, 2], 78:84].all()
     assert not actual.mask[[1, 3]].any()
+
+
+def test_deterministic_apply_preserves_unwritten_state_and_target_gradients():
+    from reflex.world_model.models import DeterministicEventWorldModel
+
+    model = DeterministicEventWorldModel(2, hidden_layers=(16, 16, 16))
+    assert not any(k.startswith("post.") for k in model.state_dict())
+    physical = torch.randn(3, 84, requires_grad=True)
+    targets = physical * 2
+    mask = torch.zeros_like(physical, dtype=torch.bool)
+    mask[:, 78:81] = True
+    post = model.predict_post(physical, targets, mask)
+    assert torch.equal(post[~mask], physical[~mask])
+    assert torch.equal(post[mask], targets[mask])
+    grad = torch.autograd.grad(post.sum(), physical)[0]
+    assert torch.equal(grad, torch.where(mask, 2.0, 1.0))
+
+
+def test_deterministic_migration_preserves_v24_physical_features():
+    from reflex.world_model.models import (
+        ConditionedWorldModel,
+        DeterministicEventWorldModel,
+    )
+
+    old = ConditionedWorldModel(2, hidden_layers=(16, 16, 16))
+    new = DeterministicEventWorldModel(2, hidden_layers=(16, 16, 16))
+    with torch.no_grad():
+        old.inputs.mean.copy_(torch.randn_like(old.inputs.mean))
+        old.inputs.std.fill_(2)
+    new.warm_start_physical(old.state_dict())
+    for key, value in new.state_dict().items():
+        torch.testing.assert_close(value, old.state_dict()[key])
+    with pytest.raises(RuntimeError):
+        new.load_state_dict(old.state_dict())
+
+
+def test_native_write_plan_frames_subsets_and_last_write_wins():
+    from reflex.world_model.events_v24.writes import record_native
+    from test_world_model import robot_state
+
+    physical = robot_state(4)
+    origins = torch.tensor(
+        [[10.0, 2.0, 0.0], [-10.0, 4.0, 0.0], [0.0, 9.0, 1.0], [3.0, 2.0, 0.0]]
+    )
+    plan = WritePlan(physical)
+    ids = torch.tensor([1, 3])
+    local = physical[ids, 71:78].clone()
+    local[:, :3] += 0.25
+    world = local.clone()
+    world[:, :3] += origins[ids]
+    record_native(
+        plan,
+        physical,
+        origins,
+        False,
+        "write_root_pose_to_sim",
+        (world,),
+        {"env_ids": ids},
+    )
+    velocity = torch.arange(12).reshape(2, 6).float()
+    record_native(
+        plan,
+        physical,
+        origins,
+        False,
+        "write_root_velocity_to_sim",
+        (velocity,),
+        {"env_ids": ids},
+    )
+    joints = torch.tensor([0, 5, 28])
+    record_native(
+        plan,
+        physical,
+        origins,
+        True,
+        "write_joint_state_to_sim",
+        (torch.ones(2, 3), torch.full((2, 3), 2.0)),
+        {"joint_ids": joints, "env_ids": ids},
+    )
+    expected = physical.clone()
+    expected[ids, 71:78] = local
+    expected[ids, 78:84] = velocity
+    expected[ids[:, None], (joints + 7)[None, :]] = 1
+    expected[ids[:, None], (joints + 42)[None, :]] = 2
+    torch.testing.assert_close(torch.where(plan.mask, plan.targets, physical), expected)
+    # Explicit equal-value writes and sub-epsilon writes must still overwrite.
+    tiny = physical[ids, 78:84].clone()
+    tiny[:, 0] += 1e-8
+    record_native(
+        plan,
+        physical,
+        origins,
+        False,
+        "write_root_velocity_to_sim",
+        (tiny,),
+        {"env_ids": ids},
+    )
+    assert plan.mask[ids, 78:84].all()
+    assert torch.equal(plan.targets[ids, 78:84], tiny)
+
+
+def test_passthrough_provenance_does_not_teacher_force_equal_constant_writes(tmp_path):
+    trainer, b, runtime, event = setup(tmp_path)
+    values, timers = runtime.codec.decode(event)
+    values["_box_launched"][:] = True
+    event = runtime.codec.encode(values, timers)
+    physical = b["state"].clone().requires_grad_()
+    plan, _, _ = runtime.step(
+        b,
+        physical,
+        trainer.bridge.fk(physical),
+        event,
+        physical.new_empty(len(physical), 0, len(physical)),
+        torch.full((len(physical),), 3),
+        torch.full((len(physical),), 3),
+    )
+    assert not plan.mask.any()  # Native full-buffer writes are explicit identity.
+    torch.testing.assert_close(torch.where(plan.mask, plan.targets, physical), physical)
+    assert torch.equal(
+        torch.autograd.grad(
+            torch.where(plan.mask, plan.targets, physical).sum(), physical
+        )[0],
+        torch.ones_like(physical),
+    )
+    # Equal-valued constant interventions remain writes, unlike identity fields.
+    explicit = WritePlan(physical)
+    explicit.record(
+        physical[:, 78:84],
+        physical[:, 78:84].detach(),
+        None,
+        list(range(78, 84)),
+        torch.ones(len(physical), 1, dtype=torch.bool),
+    )
+    assert explicit.mask[:, 78:84].all()
+    post = torch.where(explicit.mask, explicit.targets, physical)
+    assert torch.autograd.grad(post[:, 78:84].sum(), physical)[0][:, 78:84].eq(0).all()
+
+
+def test_event_write_preserves_native_arguments_rng_and_restores_metadata():
+    calls = []
+    target = torch.randn(2, 6)
+    ids = torch.tensor([0, 2])
+    mask = torch.tensor([[True], [False]])
+    asset = NS(_reflex_event_write_mask="outer")
+
+    def native(value, env_ids=None):
+        assert value is target and env_ids is ids
+        assert asset._reflex_event_write_mask is mask
+        calls.append(1)
+        return "native-result"
+
+    asset.write_root_velocity_to_sim = native
+    rng = torch.get_rng_state().clone()
+    assert (
+        event_write(
+            asset, "write_root_velocity_to_sim", target, env_ids=ids, write_mask=mask
+        )
+        == "native-result"
+    )
+    assert calls == [1]
+    assert asset._reflex_event_write_mask == "outer"
+    assert torch.equal(torch.get_rng_state(), rng)

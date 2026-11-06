@@ -1,6 +1,7 @@
 """Native callback equivalence, with the identical pre-event RNG state."""
 
 import torch
+
 from .writes import WritePlan
 
 
@@ -42,6 +43,9 @@ def check(adapter, trainer, steps=12):
         adapter.event_plan = WritePlan(physical)
         result = original(mode, *args, **kwargs)
         actual = adapter.event_plan
+        post_control = adapter.physical()
+        applied = torch.where(actual.mask, actual.targets, physical)
+        torch.testing.assert_close(applied, post_control, atol=2e-4, rtol=2e-5)
         after = scheduler.snapshot(env)["event_state"]
         devices = (
             [torch.device(adapter.device).index or 0] if cuda_rng is not None else []
@@ -71,6 +75,9 @@ def check(adapter, trainer, steps=12):
         traces.append(
             {
                 "step": len(traces),
+                "max_deterministic_post_error": float(
+                    (applied - post_control).abs().max()
+                ),
                 "max_command_error": float(
                     (planned.targets - actual.targets).abs().max()
                 ),

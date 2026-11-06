@@ -2,6 +2,7 @@
 
 import torch
 from torch import nn
+
 from .physics import canonical, integrate
 
 
@@ -286,11 +287,17 @@ class ConditionedWorldModel(StateWorldModel):
                 continue
             if key == "net.0.weight":
                 current[key].zero_()
-                current[key][:, :base].copy_(value[:, :base])
+                if value.shape == current[key].shape:
+                    current[key].copy_(value)
+                else:
+                    current[key][:, :base].copy_(value[:, :base])
                 if old_mode:
                     current[key][:, base].copy_(value[:, base])
             elif key in ("inputs.mean", "inputs.std"):
-                current[key][:base].copy_(value[:base])
+                if value.shape == current[key].shape:
+                    current[key].copy_(value)
+                else:
+                    current[key][:base].copy_(value[:base])
                 if old_mode:
                     current[key][base].copy_(value[base])
             elif key in ("net." + last + ".weight", "net." + last + ".bias"):
@@ -298,3 +305,16 @@ class ConditionedWorldModel(StateWorldModel):
             else:
                 current[key].copy_(value)
         self.load_state_dict(current)
+
+
+class DeterministicEventWorldModel(ConditionedWorldModel):
+    """V24 physical network with exact native command application."""
+
+    def __init__(self, context_dim, **kwargs):
+        super().__init__(context_dim, **kwargs)
+        del self.post
+
+    def predict_post(self, physical, targets, mask):
+        # Native plans already use local positions and world-frame velocities.
+        # Do not integrate/normalize untouched quaternion or velocity components.
+        return torch.where(mask, targets, physical)
