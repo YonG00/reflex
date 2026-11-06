@@ -650,3 +650,66 @@ def test_expanded_compile_matches_actor_gradients(tmp_path):
         torch.testing.assert_close(eager[key], actual[key], atol=1e-6, rtol=1e-4)
     for x, y in zip(eg, ag):
         torch.testing.assert_close(x, y, atol=1e-6, rtol=1e-4)
+
+
+def test_predicted_termination_features_match_imagination(tmp_path):
+    t = repaired(tmp_path)
+    b = t.sample(starts=True, n=3)
+    s = b["state"]
+    ns = t.model(s, b["target"], b["context"])
+    for step in (0, 3):
+        actual = t.task.evaluate_step(
+            b,
+            s,
+            ns,
+            b["action"],
+            b["previous_action"],
+            b["phase"],
+            b["task_history"],
+            b["episode_steps"],
+            b["next_external_event_seconds"],
+            step,
+        )
+        features = t.task.predicted_termination_features(
+            b, s, ns, b["phase"], initial=step == 0
+        )
+        torch.testing.assert_close(features, actual.termination_features)
+
+
+def test_joint_predicted_bce_updates_wm_and_head(tmp_path):
+    t = repaired(tmp_path)
+    t.cfg.joint_predicted_termination = True
+    t.cfg.state_loss_reduction = "sum"
+    t._termination_probe_due = True
+    t.cfg.variable_model_windows = True
+    metrics = t.fit_model()
+    assert metrics["termination/probe_weighted_bce_wm_gradient_norm"] > 0
+    assert t.model_updates == t.termination_updates == t.cfg.model_steps
+    assert metrics["wm/loss"] == pytest.approx(
+        metrics["wm/state_loss"] + metrics["termination/train_bce"], rel=1e-5
+    )
+
+
+def test_head_training_migration_is_explicit_and_preserves_adam(tmp_path):
+    t = repaired(tmp_path)
+    t.fit_model()
+    path = tmp_path / "separate.pt"
+    t.save(path)
+    new = repaired(tmp_path, collect=False)
+    new.cfg.joint_predicted_termination = True
+    new.cfg.state_loss_reduction = "sum"
+    with pytest.raises(ValueError, match="mismatch"):
+        new.load(path)
+    new.load(path, migrate_termination_training=True)
+    assert new.initialization["training_migration"]["optimizers_preserved"]
+    for old_opt, new_opt in (
+        (t.model_opt, new.model_opt),
+        (t.termination_opt, new.termination_opt),
+    ):
+        for key, value in old_opt.state_dict()["state"].items():
+            for name, expected in value.items():
+                torch.testing.assert_close(
+                    expected, new_opt.state_dict()["state"][key][name]
+                )
+    new.fit_model()
+    assert new.termination_updates == new.model_updates == 2 * new.cfg.model_steps

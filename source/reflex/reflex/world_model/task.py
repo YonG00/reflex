@@ -8,11 +8,19 @@ in the manifest instead of claiming sensor parity.
 
 from __future__ import annotations
 from dataclasses import dataclass
-from types import SimpleNamespace as NS
 import re
 import torch
 from torch import nn
 from .physics import apply, inverse, mul, heading
+
+
+class NS:
+    """Attribute facade traceable by the server's Torch 2.7 Dynamo."""
+
+    def __init__(self, **values):
+        for name, value in values.items():
+            setattr(self, name, value)
+
 
 HISTORY_FIELDS = (
     "_bed_hold_steps",
@@ -145,7 +153,7 @@ class AnalyticTask(nn.Module):
         self.context_slices = {}
         offset = 0
         for key, size in context_schema:
-            self.context_slices[key] = slice(offset, offset + size)
+            self.context_slices[key] = (offset, offset + size)
             offset += size
 
     @classmethod
@@ -230,7 +238,8 @@ class AnalyticTask(nn.Module):
         }
 
     def _com(self, b):
-        values = b["context"][..., self.context_slices["robot.coms"]]
+        start, stop = self.context_slices["robot.coms"]
+        values = b["context"][..., start:stop]
         return values.reshape(*values.shape[:-1], len(self.body_names), 7)[..., :3]
 
     @property
@@ -373,6 +382,7 @@ class AnalyticTask(nn.Module):
             step_dt=self.dt,
             physics_dt=self.dt / 4,
             common_step_counter=step,
+            _wm_ephemeral_view=True,
             episode_length_buf=episode_steps,
             max_episode_length=self.max_steps,
             command_manager=NS(get_term=lambda name: cmd, _terms={"motion": cmd}),
@@ -393,6 +403,42 @@ class AnalyticTask(nn.Module):
         for name, value in self._static_cache.items():
             setattr(view, name, value)
         return view
+
+    def predicted_termination_features(
+        self, b, before, after, phase, initial=True, fk_before=None, fk_after=None
+    ):
+        """Same 48 features as evaluate_step, differentiable in predicted states."""
+        old_p, old_q = self.fk(before) if fk_before is None else fk_before
+        p, q = self.fk(after) if fk_after is None else fk_after
+        n = len(after)
+        zero = torch.zeros_like(b["yaw"])
+        yawq = torch.stack(
+            (torch.cos(b["yaw"] / 2), zero, zero, torch.sin(b["yaw"] / 2)), -1
+        )
+        yq = yawq[:, None, :].expand(n, len(self.tracked_names), 4)
+        ref_p = apply(yq, self.ref_p[phase])
+        ref_q = mul(yq, self.ref_quat[phase])
+        ai = self.tracked_names.index(self.anchor_name)
+        goal_p, goal_q = ref_p[:, ai], ref_q[:, ai]
+        alignment = heading(mul(old_q[self.anchor_name], inverse(goal_q)))
+        anchor = old_p[self.anchor_name].clone()
+        anchor[:, 2] = goal_p[:, 2]
+        relative = anchor[:, None, :] + apply(
+            alignment[:, None, :].expand_as(ref_q), ref_p - goal_p[:, None, :]
+        )
+        if initial and "reference_relative_p" in b:
+            relative = b["reference_relative_p"]
+        gravity = after.new_tensor((0.0, 0.0, -1.0)).expand(n, 3)
+        bodies = torch.stack([p[name] for name in self.tracked_names], 1)
+        return torch.cat(
+            (
+                goal_p - p[self.anchor_name],
+                apply(inverse(goal_q), gravity)
+                - apply(inverse(q[self.anchor_name]), gravity),
+                (relative - bodies).flatten(-2),
+            ),
+            -1,
+        )
 
     def evaluate_step(
         self,
@@ -499,11 +545,14 @@ class AnalyticTask(nn.Module):
         hist = torch.stack([getattr(view, name).float() for name in HISTORY_FIELDS], -1)
         phase_next = phase + 1
         event_next = event_seconds - self.dt
-        trunc = timeout | (phase_next >= len(self.ref_q)) | (event_next <= 0)
-        if self.rethrow_enabled:
+        learned_external = b.get("learn_external_events", False)
+        trunc = timeout | (phase_next >= len(self.ref_q))
+        if not learned_external:
+            trunc |= (event_next <= 0) | ~b["launched"].bool()
+        if self.rethrow_enabled and not learned_external:
             common = b["common_step"] + step + 1
             trunc |= (view._box_regrace >= self.rethrow_grace) & (common % 5 == 0)
-        if self.perturb_enabled:
+        if self.perturb_enabled and not learned_external:
             trunc |= view._v38_cradle_ticks >= 75
         return TaskResult(
             torch.stack(parts, -1),

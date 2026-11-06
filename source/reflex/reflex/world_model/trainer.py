@@ -11,7 +11,14 @@ import random
 import numpy as np
 import torch
 from torch import nn
-from .models import WorldModel, StateWorldModel, Standardizer, mlp, TerminationHead
+from .models import (
+    WorldModel,
+    StateWorldModel,
+    MacroWorldModel,
+    Standardizer,
+    mlp,
+    TerminationHead,
+)
 from .physics import amp_features, state_error
 from .replay import Replay
 from .timing import timestamp
@@ -20,9 +27,14 @@ from .timing import timestamp
 @dataclass
 class TrainConfig:
     monitor_contacts: bool = False
+    learn_external_events: bool = False
     privileged_critic: bool = False
     actor_zero_output: bool = True
     learned_termination: bool = False
+    joint_predicted_termination: bool = False
+    variable_model_windows: bool = False
+    state_loss_reduction: str = "mean"
+    term_loss_weight: float = 1.0
     termination_lr: float = 2e-4
     diagnostic_every: int = 0
     diagnostic_batch: int = 16
@@ -131,7 +143,7 @@ class Trainer:
         if c.wm_kind not in ("state", "multitask"):
             raise ValueError("Unknown WM kind")
         self.model = (
-            StateWorldModel(
+            (MacroWorldModel if c.learn_external_events else StateWorldModel)(
                 context_dim,
                 hidden_layers=c.wm_hidden_dims or [2048] * 3,
                 com_indices=contract.get("com_indices"),
@@ -178,26 +190,53 @@ class Trainer:
             if self.termination is not None
             else None
         )
+        if c.joint_predicted_termination and self.termination is None:
+            raise ValueError("Joint predicted termination requires the learned head")
+        if c.state_loss_reduction not in ("sum", "mean"):
+            raise ValueError("state_loss_reduction must be sum or mean")
+        self._termination_probe_due = c.joint_predicted_termination
         self.last_diagnostic_seconds = 0.0
         self.contact_filter_schema = None
         self.contact_filter_migration = None
         self.profile_next_actor = False
         self.profile_dir = None
+        if c.learn_external_events and (
+            not self.model.state_only
+            or c.compile_step
+            or not c.joint_predicted_termination
+        ):
+            raise ValueError(
+                "Macro experiment requires state WM with validated Dynamics/FK compile only"
+            )
+        dynamics_call = (
+            self.model.predict_all if c.learn_external_events else self.model
+        )
         self._dynamics = (
-            torch.compile(self.model, fullgraph=True, backend=c.compile_backend)
+            torch.compile(dynamics_call, fullgraph=True, backend=c.compile_backend)
             if c.compile_dynamics
-            else self.model
+            else dynamics_call
         )
         self._fk = (
             torch.compile(self.bridge.fk, fullgraph=True, backend=c.compile_backend)
             if c.compile_fk
             else self.bridge.fk
         )
-        self._transition = (
-            torch.compile(self.transition, fullgraph=True, backend=c.compile_backend)
+        self._transition_cache_ready = False
+        self._task_step = (
+            torch.compile(
+                self.task.evaluate_step, fullgraph=True, backend=c.compile_backend
+            )
             if c.compile_step
-            else None
+            else (self.task.evaluate_step if self.task is not None else None)
         )
+        self._termination_fn = (
+            torch.compile(self.termination, fullgraph=True, backend=c.compile_backend)
+            if c.compile_step and self.termination is not None
+            else self.termination
+        )
+        # Keep FK and reward graphs separate: Torch 2.7's fused backward
+        # codegen expands their shared quaternion expressions excessively.
+        self._transition = self.transition if c.compile_step else None
         self._observations = (
             torch.compile(
                 self.imagined_observations, fullgraph=True, backend=c.compile_backend
@@ -224,6 +263,45 @@ class Trainer:
         from .experience import ExperienceMetrics
 
         self.experience = ExperienceMetrics(monitor_contacts=self.cfg.monitor_contacts)
+
+    def warm_start_macro(self, path):
+        if not self.cfg.learn_external_events:
+            raise ValueError("Macro warm start requires learn_external_events")
+        state = torch.load(path, map_location=self.device, weights_only=False)
+        if (
+            state["contract"] != self.contract
+            or state["reward_names"] != self.reward_names
+        ):
+            raise ValueError("Macro warm start physical/reward contract mismatch")
+        if state["config"].get("learn_external_events", False):
+            raise ValueError("Use full resume for an existing macro checkpoint")
+        if state.get("task_spec") != self.task.specification():
+            raise ValueError("Macro warm start task mismatch")
+        for name in (
+            "actor",
+            "critic",
+            "obs_norm",
+            "critic_norm",
+            "bridge",
+            "action_map",
+            "actor_opt",
+            "critic_opt",
+        ):
+            getattr(self, name).load_state_dict(state[name])
+        self.model.warm_start_physical(state["model"])
+        self.termination.load_state_dict(state["termination"])
+        self.termination_opt.load_state_dict(state["termination_opt"])
+        self.task.load_state_dict(state["task_state"])
+        self.prior.load_amp_state_dict(state["amp"])
+        self.normalized = state["normalized"]
+        self.initialization = {
+            "kind": "macro_environment_warm_start",
+            "source": str(path),
+            "source_actor_updates": state["actor_updates"],
+            "wm_optimizer_reset": True,
+            "replay_reset": True,
+            "physical_wm_weights_preserved": True,
+        }
 
     def warm_start_actor(self, path):
         """Engineering bootstrap only: preserve first166 channels, zero new cols.
@@ -366,6 +444,10 @@ class Trainer:
         try:
             if starts:
                 return self.replay.sample_starts(n or self.cfg.batch, validation)
+            if self.cfg.variable_model_windows and not validation:
+                return self.replay.sample_variable_windows(
+                    n or self.cfg.batch, horizon, validation
+                )
             return self.replay.sample(
                 n or self.cfg.batch,
                 horizon,
@@ -414,7 +496,11 @@ class Trainer:
                 )
         if self.model.state_only:
             self.model.inputs.fit(
-                self.model.features(b["state"], b["target"], b["context"])
+                self.model.features(
+                    b["state"], b["target"], b["context"], b["launched"]
+                )
+                if self.cfg.learn_external_events
+                else self.model.features(b["state"], b["target"], b["context"])
             )
         else:
             self.model.inputs.fit(
@@ -436,6 +522,45 @@ class Trainer:
         start = timestamp(self.device)
         if not self.normalized:
             self.fit_normalizers()
+        probe = {}
+        if self.cfg.joint_predicted_termination:
+            for group in self.termination_opt.param_groups:
+                group["lr"] = self.model_opt.param_groups[0]["lr"]
+        if self._termination_probe_due:
+            devices = (
+                [torch.device(self.device).index or 0]
+                if str(self.device).startswith("cuda")
+                else []
+            )
+            with torch.random.fork_rng(devices=devices):
+                row = {k: v[0] for k, v in self.sample(1, n=8).items()}
+                ns = (
+                    self.model.predict_all(
+                        row["state"], row["target"], row["context"], row["launched"]
+                    )[0]
+                    if self.cfg.learn_external_events
+                    else self.model(row["state"], row["target"], row["context"])
+                )
+                features = self.task.predicted_termination_features(
+                    row, row["state"], ns, row["phase"]
+                )
+                bce = nn.functional.binary_cross_entropy_with_logits(
+                    self.termination(features), row["terminated"].float()
+                )
+                parameters = tuple(self.model.parameters())
+                grads = torch.autograd.grad(
+                    self.cfg.term_loss_weight * bce, parameters, allow_unused=True
+                )
+                norm = (
+                    torch.stack([g.square().sum() for g in grads if g is not None])
+                    .sum()
+                    .sqrt()
+                )
+                probe = {
+                    "termination/probe_bce": float(bce.detach()),
+                    "termination/probe_weighted_bce_wm_gradient_norm": float(norm),
+                }
+            self._termination_probe_due = False
         last = {}
         for _ in range(self.cfg.model_steps):
             seq = self.sample(self.cfg.model_window)
@@ -443,11 +568,81 @@ class Trainer:
             losses = []
             state_losses = []
             reward_losses = []
+            termination_losses = []
+            physics_losses, macro_losses, mode_losses = [], [], []
+            mode = seq["launched"][0].float()
+            mask = seq.get("loss_mask")
+
+            def window_mean(values):
+                values = torch.stack(values)
+                if mask is not None:
+                    return (
+                        torch.where(mask, values, 0).sum(0) / mask.sum(0).clamp_min(1)
+                    ).mean()
+                return values.mean()
+
             for t in range(self.cfg.model_window):
                 if self.model.state_only:
-                    ns = self._dynamics(s, seq["target"][t], seq["context"][t])
-                    sl = state_error(ns, seq["next_state"][t]).square().mean()
-                    losses.append(sl)
+                    if mask is not None:
+                        s = torch.where(mask[t, :, None], s, seq["state"][t])
+                    if self.cfg.learn_external_events:
+                        if mask is not None:
+                            mode = torch.where(
+                                mask[t], mode, seq["launched"][t].float()
+                            )
+                        physical, ns, mode_logits = self._dynamics(
+                            s, seq["target"][t], seq["context"][t], mode
+                        )
+                        mode = mode_logits.sigmoid()
+                    else:
+                        ns = self._dynamics(s, seq["target"][t], seq["context"][t])
+                        physical = ns
+                    squared = state_error(ns, seq["next_state"][t]).square()
+                    sl = (
+                        squared.sum(-1)
+                        if self.cfg.state_loss_reduction == "sum"
+                        else squared.mean(-1)
+                    )
+                    if self.cfg.learn_external_events:
+                        macro_losses.append(sl)
+                        pl = (
+                            state_error(physical, seq["physical_next_state"][t])
+                            .square()
+                            .sum(-1)
+                        )
+                        physics_losses.append(pl)
+                        ml = nn.functional.binary_cross_entropy_with_logits(
+                            mode_logits,
+                            seq["after_launched"][t].float(),
+                            reduction="none",
+                        )
+                        mode_losses.append(ml)
+                        sl = sl + pl
+                    if self.cfg.joint_predicted_termination:
+                        row = {k: v[t] for k, v in seq.items()}
+                        features = self.task.predicted_termination_features(
+                            row,
+                            s,
+                            physical,
+                            row["phase"],
+                            initial=t == 0,
+                            fk_before=self._fk(s),
+                            fk_after=self._fk(physical),
+                        )
+                        dl = nn.functional.binary_cross_entropy_with_logits(
+                            self.termination(features),
+                            row["terminated"].float(),
+                            reduction="none",
+                        )
+                        termination_losses.append(dl)
+                        combined = sl + self.cfg.term_loss_weight * dl
+                        losses.append(
+                            combined + ml
+                            if self.cfg.learn_external_events
+                            else combined
+                        )
+                    else:
+                        losses.append(sl)
                     state_losses.append(sl)
                     s = ns
                     continue
@@ -475,26 +670,61 @@ class Trainer:
                 state_losses.append(sl)
                 reward_losses.append(rl)
                 s, m = ns, nm
-            loss = torch.stack(losses).mean()
+            loss = window_mean(losses)
             self.model_opt.zero_grad(set_to_none=True)
+            if self.cfg.joint_predicted_termination:
+                self.termination_opt.zero_grad(set_to_none=True)
             loss.backward()
+            parameters = list(self.model.parameters())
+            if self.cfg.joint_predicted_termination:
+                parameters += list(self.termination.parameters())
             nn.utils.clip_grad_norm_(
-                self.model.parameters(),
+                parameters,
                 self.cfg.model_grad_clip,
                 error_if_nonfinite=True,
             )
             self.model_opt.step()
+            if self.cfg.joint_predicted_termination:
+                self.termination_opt.step()
+                self.termination_updates += 1
             self.model_updates += 1
             last = {
                 "wm/loss": float(loss.detach()),
-                "wm/state_loss": float(torch.stack(state_losses).mean().detach()),
-                "wm/last_step_state_loss": float(sl.detach()),
+                "wm/state_loss": float(window_mean(state_losses).detach()),
+                "wm/last_step_state_loss": float(sl.mean().detach()),
             }
+            if physics_losses:
+                last["wm/physical_state_loss"] = float(
+                    window_mean(physics_losses).detach()
+                )
+                last["wm/post_control_state_loss"] = float(
+                    window_mean(macro_losses).detach()
+                )
+                last["wm/launch_mode_bce"] = float(window_mean(mode_losses).detach())
+                last["wm/external_write_transition_fraction"] = (
+                    float(seq["external_boundary"].float()[mask].mean())
+                    if mask is not None
+                    else float(seq["external_boundary"].float().mean())
+                )
+            if termination_losses:
+                last["termination/train_bce"] = float(
+                    window_mean(termination_losses).detach()
+                )
+                last["termination/bce_updates_wm"] = 1.0
+            if mask is not None:
+                last["wm/last_step_state_loss"] = float(
+                    (sl.detach() * mask[-1]).sum() / mask[-1].sum().clamp_min(1)
+                )
+                last["wm/last_step_samples"] = int(mask[-1].sum())
+                last["wm/effective_window_steps"] = float(mask.sum(0).float().mean())
+                last["wm/prelaunch_window_fraction"] = float(
+                    (~seq["launched"][0].bool()).float().mean()
+                )
             if reward_losses:
                 last["wm/reward_loss"] = float(
                     torch.stack(reward_losses).mean().detach()
                 )
-        if self.termination is not None:
+        if self.termination is not None and not self.cfg.joint_predicted_termination:
             for _ in range(self.cfg.model_steps):
                 b = {k: v[0] for k, v in self.sample(1).items()}
                 logits = self.termination(b["termination_features"].detach())
@@ -509,6 +739,7 @@ class Trainer:
                 self.termination_opt.step()
                 self.termination_updates += 1
             last["termination/train_bce"] = float(loss.detach())
+        last.update(probe)
         end_model = timestamp(self.device)
         last["time/model_fit_seconds"] = end_model - start
         last["amp/discriminator_loss"] = self.prior.train_discriminator()
@@ -518,6 +749,8 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self):
+        if self.cfg.learn_external_events:
+            return self.validate_macro()
         if self.model.state_only:
             from .offline import evaluate
 
@@ -537,11 +770,13 @@ class Trainer:
                 from .diagnostics import calibration
 
                 b = {k: v[0] for k, v in self.sample(1, validation=True).items()}
-                metrics.update(
-                    calibration(
-                        self.termination(b["termination_features"]), b["terminated"]
+                features = b["termination_features"]
+                if self.cfg.joint_predicted_termination:
+                    ns = self.model(b["state"], b["target"], b["context"])
+                    features = self.task.predicted_termination_features(
+                        b, b["state"], ns, b["phase"]
                     )
-                )
+                metrics.update(calibration(self.termination(features), b["terminated"]))
             return metrics
         metrics = {}
         for h in (1, 4, 8, 16):
@@ -583,6 +818,49 @@ class Trainer:
                     metrics[f"reward_error/{name}"] = float(value)
         return metrics
 
+    @torch.no_grad()
+    def validate_macro(self):
+        from .diagnostics import calibration
+
+        metrics = {}
+        for h in (1, 4, 8, 16, 32):
+            try:
+                seq = self.replay.sample(self.cfg.batch, h, validation=True)
+            except ValueError:
+                continue
+            s, mode = seq["state"][0], seq["launched"][0].float()
+            errors, physical_errors, mode_errors = [], [], []
+            for j in range(h):
+                physical, ns, logits = self.model.predict_all(
+                    s, seq["target"][j], seq["context"][j], mode
+                )
+                errors.append(state_error(ns, seq["next_state"][j]).square())
+                physical_errors.append(
+                    state_error(physical, seq["physical_next_state"][j]).square()
+                )
+                mode_errors.append(
+                    nn.functional.binary_cross_entropy_with_logits(
+                        logits, seq["after_launched"][j].float()
+                    )
+                )
+                if h == 1:
+                    row = {k: v[0] for k, v in seq.items()}
+                    f = self.task.predicted_termination_features(
+                        row, s, physical, row["phase"]
+                    )
+                    metrics.update(calibration(self.termination(f), row["terminated"]))
+                s, mode = ns, logits.sigmoid()
+            metrics[f"validation/{h}/state_rmse"] = float(
+                torch.stack(errors).mean().sqrt()
+            )
+            metrics[f"validation/{h}/physical_state_rmse"] = float(
+                torch.stack(physical_errors).mean().sqrt()
+            )
+            metrics[f"validation/{h}/launch_mode_bce"] = float(
+                torch.stack(mode_errors).mean()
+            )
+        return metrics
+
     def basic_ready(self, metrics):
         if self.model.state_only:
             value = metrics.get("validation/8/state_rmse", float("inf"))
@@ -615,6 +893,9 @@ class Trainer:
         ):
             for group in opt.param_groups:
                 group["lr"] = base * ratio
+        if self.cfg.joint_predicted_termination:
+            for group in self.termination_opt.param_groups:
+                group["lr"] = (self.cfg.model_lr or self.cfg.lr) * ratio
         return (self.cfg.model_lr or self.cfg.lr) * ratio
 
     def updates_due(self):
@@ -658,9 +939,9 @@ class Trainer:
         step,
         first,
     ):
-        ns = self.model(s, target, b["context"])
-        next_poses = self.bridge.fk(ns)
-        task = self.task.evaluate_step(
+        ns = self._dynamics(s, target, b["context"])
+        next_poses = self._fk(ns)
+        task = self._task_step(
             b,
             s,
             ns,
@@ -676,7 +957,7 @@ class Trainer:
             initial_step=first,
         )
         d = (
-            self.termination(task.termination_features).sigmoid()
+            self._termination_fn(task.termination_features).sigmoid()
             if self.termination is not None
             else task.terminated.float()
         )
@@ -687,6 +968,9 @@ class Trainer:
         if self.model.state_only and self.task is None:
             raise RuntimeError("Pure dynamics needs an AnalyticTask for imagination")
         s, m, blend = b["state"], b["memory"], b["blend"]
+        mode = b["launched"].float()
+        if self.cfg.learn_external_events:
+            b = {**b, "learn_external_events": True}
         previous, phase = b["previous_action"], b["phase"]
         observations = []
         critic_observations = []
@@ -696,10 +980,19 @@ class Trainer:
         styles = []
         validity = []
         truncations = []
+        predicted_modes = []
         valid = torch.ones(len(s), dtype=torch.bool, device=s.device)
         hist = b.get("task_history")
         episode = b.get("episode_steps")
         event = b.get("next_external_event_seconds")
+        if self._transition is not None and not self._transition_cache_ready:
+            # Original rewards initialize constant body/joint indices and log
+            # once. Do that outside fullgraph; discard this local view/history.
+            with torch.no_grad():
+                self.task.evaluate_step(
+                    b, s, s, previous, previous, phase, hist, episode, event, 0
+                )
+            self._transition_cache_ready = True
         poses = self._fk(s)
         for t in range(self.cfg.horizon):
             with torch.profiler.record_function("imagine/observation"):
@@ -726,18 +1019,30 @@ class Trainer:
                         t == 0,
                     )
                     r, trunc = task.rewards, task.truncated
+                    physical, physical_poses = ns, next_poses
                 else:
                     with torch.profiler.record_function("imagine/dynamics"):
-                        ns = self._dynamics(s, target, b["context"])
+                        if self.cfg.learn_external_events:
+                            physical, ns, mode_logits = self._dynamics(
+                                s, target, b["context"], mode
+                            )
+                        else:
+                            ns = self._dynamics(s, target, b["context"])
+                            physical = ns
                     with torch.profiler.record_function("imagine/FK"):
                         next_poses = self._fk(ns)
+                        physical_poses = (
+                            self._fk(physical)
+                            if self.cfg.learn_external_events
+                            else next_poses
+                        )
                     with torch.profiler.record_function(
                         "imagine/reward_and_termination"
                     ):
                         task = self.task.evaluate_step(
                             b,
                             s,
-                            ns,
+                            physical,
                             raw,
                             previous,
                             phase,
@@ -746,7 +1051,7 @@ class Trainer:
                             event,
                             t,
                             fk_before=poses,
-                            fk_after=next_poses,
+                            fk_after=physical_poses,
                         )
                     r, d, trunc = task.rewards, task.terminated.float(), task.truncated
                     if self.termination is not None:
@@ -766,9 +1071,9 @@ class Trainer:
                 style = self.prior.reward(
                     amp_features(s, self.bridge.fk, poses),
                     amp_features(
-                        ns,
+                        physical if self.model.state_only else ns,
                         self.bridge.fk,
-                        next_poses if self.model.state_only else None,
+                        physical_poses if self.model.state_only else None,
                     ),
                 )
             rewards.append(
@@ -788,6 +1093,10 @@ class Trainer:
             else:
                 poses = self._fk(torch.where(valid[:, None], ns, s))
             s = torch.where(valid[:, None], ns, s)
+            if self.cfg.learn_external_events:
+                mode = torch.where(valid, mode_logits.sigmoid(), mode)
+                predicted_modes.append(mode)
+                b = {**b, "launched": mode.detach() > 0.5}
             previous = torch.where(valid[:, None], raw, previous)
             phase = torch.where(valid, next_phase, phase)
             valid = valid & ~trunc & ~(d.detach() >= 1)
@@ -797,6 +1106,9 @@ class Trainer:
             self.critic_observation(b, s, previous, phase, poses, final_obs)
         )
         return {
+            "predicted_launch_probability": torch.stack(predicted_modes)
+            if predicted_modes
+            else torch.empty(0, device=self.device),
             "obs": torch.stack(observations),
             "critic_obs": torch.stack(critic_observations),
             "reward": torch.stack(rewards),
@@ -929,7 +1241,7 @@ class Trainer:
 
     @property
     def learning_contract(self):
-        return {
+        result = {
             "critic_input_dim": self.critic_dim,
             "critic_layout": "reflex_privileged292_v1"
             if self.cfg.privileged_critic
@@ -941,6 +1253,19 @@ class Trainer:
             if self.termination is not None
             else None,
         }
+
+        if self.cfg.learn_external_events:
+            result["state_transition"] = (
+                "learned_physics_and_post_control_with_next_mode_v1"
+            )
+        if self.cfg.joint_predicted_termination:
+            result["termination_training"] = (
+                "autoregressive_predicted_features_joint_bce_v1"
+            )
+            result["state_loss_reduction"] = self.cfg.state_loss_reduction
+            result["term_loss_weight"] = self.cfg.term_loss_weight
+            result["variable_model_windows"] = self.cfg.variable_model_windows
+        return result
 
     def invalidate_contact_history(self, old_schema):
         # Physics/reward/termination labels are valid; only old sensor telemetry
@@ -969,6 +1294,7 @@ class Trainer:
             if (self.cfg.privileged_critic or self.cfg.learned_termination)
             else 2,
             "model_kind": self.cfg.wm_kind,
+            "sampling_policy": "all_valid_states_uniform_with_replacement_v2",
             "contact_filter_schema": self.contact_filter_schema,
             "contact_filter_migration": self.contact_filter_migration,
             "learning_contract": self.learning_contract,
@@ -1022,7 +1348,7 @@ class Trainer:
 
         os.replace(temporary, path)
 
-    def load(self, path):
+    def load(self, path, migrate_termination_training=False):
         state = torch.load(path, map_location=self.device, weights_only=False)
         saved_config = dict(state["config"])
         if state.get("version") == 1:
@@ -1040,6 +1366,30 @@ class Trainer:
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
+        migration = None
+        if migrate_termination_training:
+            if (
+                state.get("version") != 3
+                or not self.cfg.joint_predicted_termination
+                or loaded_config["joint_predicted_termination"]
+            ):
+                raise ValueError(
+                    "Explicit migration requires old separate-head v3 to joint predicted training"
+                )
+            migration = {
+                "from": "separate_real_features",
+                "to": "joint_predicted_features",
+                "source": str(path),
+                "optimizers_preserved": True,
+            }
+            for key in (
+                "joint_predicted_termination",
+                "variable_model_windows",
+                "state_loss_reduction",
+                "term_loss_weight",
+            ):
+                loaded_config.pop(key)
+                requested_config.pop(key)
         if (
             state.get("version") not in (1, 2, 3)
             or state["contract"] != self.contract
@@ -1049,9 +1399,18 @@ class Trainer:
             raise ValueError(
                 "Checkpoint model schema/config/physical contract mismatch; v1 multitask cannot silently resume pure dynamics"
             )
+        requested_learning = dict(self.learning_contract)
+        if migration:
+            for key in (
+                "termination_training",
+                "variable_model_windows",
+                "state_loss_reduction",
+                "term_loss_weight",
+            ):
+                requested_learning.pop(key, None)
         if (
             state.get("version") == 3
-            and state.get("learning_contract") != self.learning_contract
+            and state.get("learning_contract") != requested_learning
         ):
             raise ValueError("Checkpoint learning layout mismatch")
         if self.cfg.privileged_critic or self.cfg.learned_termination:
@@ -1088,6 +1447,29 @@ class Trainer:
             self.termination.load_state_dict(state["termination"])
             self.termination_opt.load_state_dict(state["termination_opt"])
         self.replay.load_state_dict(state["replay"])
+        if migration:
+            # Old adapter validity included launched, not only finite state.
+            count = self.replay.count
+            data = self.replay.data
+            finite = torch.ones_like(data["valid"][:count])
+            for key in (
+                "state",
+                "next_state",
+                "context",
+                "memory",
+                "next_memory",
+                "reward_terms",
+                "target",
+            ):
+                finite &= torch.isfinite(data[key][:count]).flatten(2).all(-1)
+            recovered = finite & ~data["valid"][:count]
+            data["valid"][:count].copy_(finite)
+            if "start_valid" in data:
+                data["start_valid"][:count].copy_(
+                    torch.isfinite(data["state"][:count]).all(-1)
+                    & torch.isfinite(data["context"][:count]).all(-1)
+                )
+            migration["recovered_finite_transitions"] = int(recovered.sum())
         if self.task is not None:
             self.task.load_state_dict(state["task_state"])
         self.prior.load_amp_state_dict(state["amp"])
@@ -1111,7 +1493,9 @@ class Trainer:
         ):
             self.invalidate_contact_history(state.get("contact_filter_schema"))
         self.normalized = state["normalized"]
-        self.initialization = state.get("initialization", {"kind": "scratch"})
+        self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
+        if migration:
+            self.initialization["training_migration"] = migration
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)

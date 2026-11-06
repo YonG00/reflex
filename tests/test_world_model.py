@@ -179,7 +179,8 @@ def test_replay_no_crossing_events_timeouts_or_wrap():
         or seq["label"][0, 0] == 6
     )
     starts = r.sample(20, 2, starts=True)
-    assert starts["launched"][0].all()
+    eligible = r.indices(2, starts=True)
+    assert (~r.ordered("launched")[eligible[:, 0], eligible[:, 1]]).any()
     assert not (starts["phase"][0] == 8).any()
     v = r.sample(10, 1, validation=True)
     assert v["phase"].shape == (1, 10)
@@ -589,3 +590,57 @@ def test_joint_validation_uses_model_rounds_and_cosine_schedule(tmp_path):
     assert t.validation_due()
     t.iteration = 249999
     assert t.schedule_lr() == pytest.approx((t.cfg.model_lr or t.cfg.lr) * 0.03)
+
+
+def test_stationary_prelaunch_states_are_eligible_without_mutating_replay():
+    r = Replay(4)
+    for i in range(2):
+        r.add(
+            {
+                "state": torch.zeros(6, 84),
+                "valid": torch.ones(6, dtype=torch.bool),
+                "start_valid": torch.ones(6, dtype=torch.bool),
+                "boundary": torch.zeros(6, dtype=torch.bool),
+                "terminated": torch.zeros(6, dtype=torch.bool),
+                "timeout": torch.zeros(6, dtype=torch.bool),
+                "launched": torch.zeros(6, dtype=torch.bool),
+                "phase": torch.full((6,), -1 if i == 0 else 0),
+                "reference_length": torch.full((6,), 100),
+            }
+        )
+    before = r.ordered("start_valid").clone()
+    b = r.sample_starts(64)
+    assert not b["launched"].any()
+    assert b["state"][:, 78:81].norm(dim=-1).eq(0).all()
+    assert b["phase"].eq(0).all()
+    torch.testing.assert_close(before, r.ordered("start_valid"))
+    assert (r.indices(1, starts=True)[:, 0] == 1).all()
+
+
+def test_variable_windows_include_waiting_but_stop_at_external_writes():
+    r = Replay(8)
+    for j in range(4):
+        r.add(
+            {
+                "valid": torch.ones(6, dtype=torch.bool),
+                "boundary": torch.full((6,), j == 0),
+                "terminated": torch.full((6,), j == 2),
+                "timeout": torch.zeros(6, dtype=torch.bool),
+                "launched": torch.full((6,), j > 0),
+                "phase": torch.full((6,), j),
+                "reference_length": torch.full((6,), 10),
+                "label": torch.full((6,), j),
+            }
+        )
+    b = r.sample_variable_windows(200, 4)
+    assert b["loss_mask"][0].all()
+    waiting = ~b["launched"][0]
+    assert waiting.any()
+    assert b["loss_mask"][:, waiting].sum(0).eq(1).all()
+    falling = b["label"][0] == 2
+    assert falling.any()
+    assert b["terminated"][0, falling].all()
+    assert b["loss_mask"][:, falling].sum(0).eq(1).all()
+    for j in range(1, 4):
+        assert not (b["loss_mask"][j] & b["boundary"][j - 1]).any()
+        assert not (b["loss_mask"][j] & b["terminated"][j - 1]).any()

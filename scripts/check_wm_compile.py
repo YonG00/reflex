@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import time
 import torch
-from reflex.world_model.models import StateWorldModel
+from reflex.world_model.models import StateWorldModel, MacroWorldModel
 from reflex.world_model.physics import Kinematics
 from reflex.world_model.replay import Replay
 
@@ -28,7 +28,8 @@ def main():
     if hashlib.sha256(Path(args.urdf).read_bytes()).hexdigest() != c["urdf_sha256"]:
         raise ValueError("URDF differs from saved physics contract")
     torch.set_float32_matmul_precision("high" if conf.get("tf32") else "highest")
-    model = StateWorldModel(
+    macro = conf.get("learn_external_events", False)
+    model = (MacroWorldModel if macro else StateWorldModel)(
         c["context_dim"],
         hidden_layers=conf["wm_hidden_dims"],
         com_indices=c["com_indices"],
@@ -48,10 +49,18 @@ def main():
         s = seq["state"][0].detach().clone().requires_grad_(True)
         targets = seq["target"].detach().clone().requires_grad_(True)
         x = s
+        mode = seq["launched"][0].float()
         loss = 0
         for j in range(8):
-            x = call(x, targets[j], seq["context"][j])
+            if macro:
+                physical, x, logits = call(x, targets[j], seq["context"][j], mode)
+                mode = logits.sigmoid()
+                loss = loss + physical.square().mean() + logits.square().mean()
+            else:
+                x = call(x, targets[j], seq["context"][j])
             loss = loss + x.square().mean()
+        if macro:
+            x = torch.cat((physical, x, mode[:, None]), -1)
         grads = torch.autograd.grad(loss, (s, targets, *model.parameters()))
         return x.detach(), tuple(g.detach() for g in grads)
 
@@ -68,7 +77,14 @@ def main():
         "optimizer_updates": 0,
         "components": {},
     }
-    for name, module, run in [("dynamics", model, model_eval), ("fk", fk, fk_eval)]:
+    for name, module, run in [
+        (
+            "macro_dynamics" if macro else "dynamics",
+            model.predict_all if macro else model,
+            model_eval,
+        ),
+        ("fk", fk, fk_eval),
+    ]:
         compiled = torch.compile(module, backend=args.backend, fullgraph=True)
         eager = run(module)
         candidate = run(compiled)

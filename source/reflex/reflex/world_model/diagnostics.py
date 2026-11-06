@@ -49,7 +49,8 @@ def eager_diagnostic(t):
         getattr(t, "_transition", None),
         getattr(t, "_observations", None),
     )
-    t._dynamics, t._fk = t.model, t.bridge.fk
+    macro = getattr(getattr(t, "cfg", None), "learn_external_events", False)
+    t._dynamics, t._fk = t.model.predict_all if macro else t.model, t.bridge.fk
     if hasattr(t, "_transition"):
         t._transition, t._observations = None, t.imagined_observations
     try:

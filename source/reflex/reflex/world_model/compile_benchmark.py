@@ -23,8 +23,14 @@ def check(t, repeats=3):
             for k in ("obs", "critic_obs", "reward", "done", "truncated")
         }, tuple(x.detach() for x in g)
 
-    old = (t._transition, t._observations)
-    fused = torch.compile(t.transition, fullgraph=True, backend=t.cfg.compile_backend)
+    old = (t._transition, t._observations, t._task_step, t._termination_fn)
+    fused = t.transition
+    t._task_step = torch.compile(
+        t.task.evaluate_step, fullgraph=True, backend=t.cfg.compile_backend
+    )
+    t._termination_fn = torch.compile(
+        t.termination, fullgraph=True, backend=t.cfg.compile_backend
+    )
     observation = torch.compile(
         t.imagined_observations, fullgraph=True, backend=t.cfg.compile_backend
     )
@@ -40,13 +46,32 @@ def check(t, repeats=3):
         with torch.random.fork_rng(devices=devices):
             torch.manual_seed(114)
             b = t.sample(starts=True, n=8)
+            # Initialize original reward constants/log-once caches outside capture.
+            cores = t._dynamics, t._fk
+            t._dynamics, t._fk = t.model, t.bridge.fk
+            try:
+                run(b)
+            finally:
+                t._dynamics, t._fk = cores
+            print("FULLGRAPH_CAPTURE_START", flush=True)
+            t._transition = torch.compile(t.transition, fullgraph=True, backend="eager")
+            t._observations = torch.compile(
+                t.imagined_observations, fullgraph=True, backend="eager"
+            )
+            run(b)
+            print("FULLGRAPH_CAPTURE_PASSED", flush=True)
             t._transition, t._observations = None, t.imagined_observations
             eager, eg = run(b)
+            print("BASELINE_EQUIVALENCE_READY", flush=True)
             t._transition, t._observations = fused, observation
             actual, ag = run(b)
             for key in eager:
                 torch.testing.assert_close(
-                    eager[key], actual[key], atol=2e-4, rtol=3e-3
+                    eager[key],
+                    actual[key],
+                    atol=2e-4,
+                    rtol=3e-3,
+                    msg=lambda message: key + ": " + message,
                 )
             for x, y in zip(eg, ag):
                 torch.testing.assert_close(x, y, atol=2e-5, rtol=3e-3)
@@ -73,5 +98,5 @@ def check(t, repeats=3):
                 result[name + "_bptt_seconds"] = times
                 print(name, times, flush=True)
     finally:
-        t._transition, t._observations = old
+        t._transition, t._observations, t._task_step, t._termination_fn = old
     return result

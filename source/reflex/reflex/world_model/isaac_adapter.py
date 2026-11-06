@@ -13,6 +13,7 @@ from .physics import Kinematics, ActionMap, amp_features
 from .observation import OracleObservation
 from .oracle_env import box_dimensions, box_mass
 from .task import HISTORY_FIELDS
+from .events import physical_write_mask, macro_step_target
 
 
 MEMORY_FIELDS = ("_bed_hold_steps", "_tp_count", "_box_regrace", "_v38_cradle_ticks")
@@ -35,8 +36,9 @@ EXPECTED_TERMS = (
 
 
 class IsaacAdapter:
-    def __init__(self, env, urdf, monitor_contacts=False):
+    def __init__(self, env, urdf, monitor_contacts=False, learn_external_events=False):
         self.monitor_contacts = monitor_contacts
+        self.learn_external_events = learn_external_events
         self.env = env.unwrapped
         e = self.env
         self.device = e.device
@@ -306,7 +308,7 @@ class IsaacAdapter:
             before = self.physical()
             result = original(*args, **kwargs)
             after = self.physical()
-            self.events |= (before - after).abs().amax(-1) > 1e-7
+            self.events |= physical_write_mask(before, after)
             return result
 
         setattr(asset, name, write)
@@ -522,8 +524,7 @@ class IsaacAdapter:
                 "hard_joint_limits": limits.clone(),
                 "soft_joint_limits": self.robot.data.soft_joint_pos_limits.clone(),
                 "next_external_event_seconds": self.next_event_seconds(),
-                "start_valid": e._box_launched.bool()
-                & torch.isfinite(state).all(-1)
+                "start_valid": torch.isfinite(state).all(-1)
                 & torch.isfinite(result["context"]).all(-1),
             }
         )
@@ -597,7 +598,13 @@ class IsaacAdapter:
         done = p["terminated"] | p["timeout"]
         # Counters updated by non-physical interval events belong to next memory.
         memory = torch.where(done[:, None], p["memory"], self.memory())
-        boundary = self.events | done | (self.command.time_steps != b["phase"] + 1)
+        launch_event = self.env._box_launched.bool() & (
+            ~b["launched"].bool() | (self.env._box_launch_step != b["launch_step"])
+        )
+        reference_jump = self.command.time_steps != b["phase"] + 1
+        boundary = (
+            self.events | done | launch_event | ~b["launched"].bool() | reference_jump
+        )
         tr = {
             **b,
             "action": raw.clone(),
@@ -609,12 +616,25 @@ class IsaacAdapter:
             "terminated": p["terminated"],
             "timeout": p["timeout"],
             "boundary": boundary,
-            "valid": b[
-                "launched"
-            ].bool(),  # prelaunch artificial hover is not plant dynamics
+            "valid": b["start_valid"].clone(),  # all finite physical transitions
             "amp": self.real_amp_from_state_before(b),
             "next_amp": p["amp"],
         }
+        if self.learn_external_events:
+            tr["physical_next_state"] = p["state"]
+            tr["next_state"], macro_mode_target, macro_reset = macro_step_target(
+                p["state"],
+                self.physical(),
+                done,
+                reference_jump,
+                b["launched"],
+                self.env._box_launched,
+            )
+            tr["next_memory"] = torch.where(macro_reset[:, None], p["memory"], memory)
+            tr["external_boundary"] = (
+                self.events.clone() | launch_event | ~b["launched"].bool()
+            )
+            tr["boundary"] = macro_reset
         from reflex.envs.base.chest_v5_terms import STRICT_PERSIST_FRAMES
 
         tr.update(
@@ -635,10 +655,10 @@ class IsaacAdapter:
         tr["strict_success"] = (
             p["task_history_after_reward"][:, -1] >= STRICT_PERSIST_FRAMES
         )
-        tr["launch_event"] = self.env._box_launched.bool() & (
-            ~b["launched"].bool() | (self.env._box_launch_step != b["launch_step"])
-        )
+        tr["launch_event"] = launch_event
         tr["after_launched"] = self.env._box_launched.bool().clone()
+        if self.learn_external_events:
+            tr["after_launched"] = macro_mode_target
         self._contact_seen &= ~(done | tr["launch_event"])
         if "termination_features" in p:
             tr["termination_features"] = p["termination_features"]

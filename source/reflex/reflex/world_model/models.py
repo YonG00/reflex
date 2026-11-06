@@ -161,3 +161,69 @@ class TerminationHead(nn.Module):
     def forward(self, features):
         x = self.inputs(features)
         return self.net(torch.cat((x, x.abs()), -1)).squeeze(-1)
+
+
+class MacroWorldModel(StateWorldModel):
+    """One learned macro step, including external control writes.
+
+    Shared trunk predicts pre-control physics, post-control state and next
+    launched mode. No simulator control/event callback runs in imagination.
+    """
+
+    def __init__(self, context_dim, **kwargs):
+        super().__init__(context_dim, **kwargs)
+        first, last = self.net[0], self.net[-1]
+        self.inputs = Standardizer(first.in_features + 1)
+        self.net[0] = nn.Linear(first.in_features + 1, first.out_features)
+        self.net[-1] = nn.Linear(last.in_features, 165)
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+
+    def features(self, state, target, context, mode=None):
+        if mode is None:
+            mode = torch.zeros_like(state[..., 0])
+        return torch.cat(
+            (canonical(state), target, context, mode.float()[..., None]), -1
+        )
+
+    def predict_all(self, state, target, context, mode=None):
+        values = self.net(self.inputs(self.features(state, target, context, mode)))
+        if self.com_indices is None:
+            physical = integrate(state, values[..., :82], self.dt)
+        else:
+            root, box = self.com_indices
+            physical = integrate(
+                state,
+                values[..., :82],
+                self.dt,
+                context[..., root : root + 3],
+                context[..., box : box + 3],
+            )
+        # dt=0 applies learned instantaneous corrections, without another
+        # analytic physics step or any hand-coded launch/hover rule.
+        post_control = integrate(physical, values[..., 82:164], 0.0)
+        return physical, post_control, values[..., 164]
+
+    def forward(self, state, target, context, mode=None):
+        return self.predict_all(state, target, context, mode)[1]
+
+    step = forward
+
+    def warm_start_physical(self, old):
+        current = self.state_dict()
+        last = str(len(self.net) - 1)
+        for key, value in old.items():
+            if key == "net.0.weight":
+                current[key].zero_()
+                current[key][:, :-1].copy_(value)
+            elif key in ("inputs.mean", "inputs.std"):
+                current[key][:-1].copy_(value)
+            elif key == "net." + last + ".weight":
+                current[key].zero_()
+                current[key][:82].copy_(value)
+            elif key == "net." + last + ".bias":
+                current[key].zero_()
+                current[key][:82].copy_(value)
+            else:
+                current[key].copy_(value)
+        self.load_state_dict(current)

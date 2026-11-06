@@ -158,7 +158,9 @@ def compute_strict_components(env: "ManagerBasedRLEnv") -> dict[str, torch.Tenso
         d_head, d_lsh, d_rsh, d_lwrist, d_rwrist, d_lelbow, d_relbow: (B,) float
         speed: (B,) float
     """
-    step = int(env.common_step_counter)
+    # Each WM view lives for one step only; preserve per-step reuse without
+    # extracting its tensor timestep into Python during fullgraph capture.
+    step = 0 if getattr(env, "_wm_ephemeral_view", False) else int(env.common_step_counter)
     cache = getattr(env, "_chest_v5_cache", None)
     if cache is not None and cache["step"] == step:
         return cache["result"]

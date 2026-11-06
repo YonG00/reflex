@@ -16,6 +16,7 @@ parser.add_argument(
         "contact_probe",
         "gradient_audit",
         "compile_step_check",
+        "event_boundary_probe",
     ),
     default="preflight",
 )
@@ -39,6 +40,14 @@ parser.add_argument(
 )
 parser.add_argument("--checkpoint")
 parser.add_argument(
+    "--warm_start_macro", help="New macro-step experiment; reset replay/WM optimizer"
+)
+parser.add_argument(
+    "--migrate_termination_training",
+    action="store_true",
+    help="Explicitly migrate separate real-feature head training to joint predicted BCE",
+)
+parser.add_argument(
     "--warm_start_actor", help="PPO Teacher engineering bootstrap; not full resume"
 )
 parser.add_argument("--output", default="logs/world_model/stage1")
@@ -53,6 +62,13 @@ parser.add_argument("--play_steps", type=int, default=1500)
 parser.add_argument("--video", action="store_true")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
+if (
+    sum(
+        bool(x) for x in (args.checkpoint, args.warm_start_actor, args.warm_start_macro)
+    )
+    > 1
+):
+    parser.error("Choose exactly one resume/warm-start source")
 if args.checkpoint and args.warm_start_actor:
     parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
 if args.num_envs < 6 or args.save_every < 1:
@@ -142,7 +158,12 @@ def main():
         # Parse exactly the asset that the environment imported, rather than a
         # convenient local URDF that could have different link/joint frames.
         urdf = cfg.scene.robot.spawn.asset_path
-        adapter = IsaacAdapter(env, urdf, monitor_contacts=config.monitor_contacts)
+        adapter = IsaacAdapter(
+            env,
+            urdf,
+            monitor_contacts=config.monitor_contacts,
+            learn_external_events=config.learn_external_events,
+        )
         if (
             not config.monitor_contacts
             and "wm_box_contacts" in env.unwrapped.scene.sensors
@@ -175,11 +196,20 @@ def main():
         trainer.profile_dir = str(out / "profiles")
         trainer.profile_next_actor = args.profile_joint
         if args.checkpoint:
-            trainer.load(args.checkpoint)
+            trainer.load(
+                args.checkpoint,
+                migrate_termination_training=args.migrate_termination_training,
+            )
+        elif args.warm_start_macro:
+            trainer.warm_start_macro(args.warm_start_macro)
         elif args.warm_start_actor:
             trainer.warm_start_actor(args.warm_start_actor)
         manifest = adapter.manifest()
         manifest["actor_initialization"] = trainer.initialization
+        manifest["imagination_start_policy"] = (
+            "all_valid_states_uniform_with_replacement_v2"
+        )
+        manifest["learn_external_events"] = config.learn_external_events
         manifest["contact_monitoring_enabled"] = config.monitor_contacts
         manifest["contact_filter_schema"] = trainer.contact_filter_schema
         manifest["contact_filter_migration"] = trainer.contact_filter_migration
@@ -202,6 +232,16 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "event_boundary_probe":
+            from .event_probe import check
+
+            result = check(adapter, trainer, trace_path=out / "event_trace.json")
+            (out / "event_boundary_probe.json").write_text(json.dumps(result, indent=2))
+            print(
+                json.dumps({k: v for k, v in result.items() if k != "transitions"}),
+                flush=True,
+            )
+            return
         if args.mode == "compile_step_check":
             if not args.checkpoint:
                 raise ValueError("compile_step_check requires --checkpoint")

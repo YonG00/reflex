@@ -119,6 +119,20 @@ def _update_actor(t):
         "time/critic_update_seconds": time.monotonic() - begin - actor_seconds,
     }
 
+    if "launched" in starts:
+        result["imagination/start_waiting_fraction"] = float(
+            (~starts["launched"].bool()).float().mean()
+        )
+        result["imagination/start_launched_fraction"] = float(
+            starts["launched"].float().mean()
+        )
+    speed = starts["state"][:, 78:81].norm(dim=-1)
+    result["imagination/start_box_stationary_fraction"] = float(
+        (speed <= 0.1).float().mean()
+    )
+    result["imagination/start_box_moving_fraction"] = float(
+        (speed > 0.1).float().mean()
+    )
     if "stage" in starts:
         result.update(
             {

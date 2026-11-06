@@ -47,7 +47,7 @@ class Replay:
         if horizon > 1:
             valid[-horizon + 1 :] = False
         if starts:
-            valid &= self.ordered("launched").bool()
+            valid &= self.ordered("phase") >= 0
             valid &= self.ordered("phase") + horizon < self.ordered("reference_length")
         return valid.nonzero()
 
@@ -59,7 +59,7 @@ class Replay:
         # the same physical episode between fit and validation.
         choices = choices[(choices[:, 1] % 5 == 0) == validation]
         if len(choices) == 0:
-            raise ValueError("No valid replay windows: gather more post-launch data")
+            raise ValueError("No valid replay windows: gather more valid data")
         if stage_balanced and not validation:
             labels = self.ordered("stage")[choices[:, 0], choices[:, 1]]
             pools = [choices[labels == stage] for stage in range(4)]
@@ -83,6 +83,47 @@ class Replay:
         physical = (t[None, :] + offsets + start) % self.capacity
         return {k: value[physical, e[None, :]] for k, value in self.data.items()}
 
+    def sample_variable_windows(self, n, horizon, validation=False):
+        """Up to H physical transitions, never crossing external writes/resets.
+
+        One-step hover transitions remain useful; padded entries carry no loss.
+        """
+        choices = self.indices(1)
+        choices = choices[(choices[:, 1] % 5 == 0) == validation]
+        if "phase" in self.data:
+            phase = self.ordered("phase")[choices[:, 0], choices[:, 1]]
+            length = self.ordered("reference_length")[choices[:, 0], choices[:, 1]]
+            choices = choices[(phase >= 0) & (phase < length)]
+        if not len(choices):
+            raise ValueError("No valid variable-length windows")
+        t0, e = choices[torch.randint(len(choices), (n,), device=self.device)].unbind(
+            -1
+        )
+        times = []
+        masks = []
+        alive = torch.ones(n, dtype=torch.bool, device=self.device)
+        valid = self.ordered("valid")
+        edge = (
+            self.ordered("boundary")
+            | self.ordered("terminated")
+            | self.ordered("timeout")
+        )
+        for j in range(horizon):
+            raw = t0 + j
+            ix = raw.clamp_max(self.count - 1)
+            alive = alive & (raw < self.count) & valid[ix, e]
+            times.append(torch.where(alive, ix, t0))
+            masks.append(alive)
+            alive = alive & ~edge[ix, e]
+        times = torch.stack(times)
+        start = self.pointer if self.count == self.capacity else 0
+        physical = (times + start) % self.capacity
+        result = {
+            k: v[physical, e[None, :].expand_as(times)] for k, v in self.data.items()
+        }
+        result["loss_mask"] = torch.stack(masks)
+        return result
+
     def start_indices(self, validation=False):
         """Only the snapshot must be valid; no real future is inspected.
 
@@ -91,10 +132,9 @@ class Replay:
         """
         if not self.count:
             return torch.empty((0, 2), dtype=torch.long, device=self.device)
-        valid = (
-            self.ordered("start_valid" if "start_valid" in self.data else "valid")
-            & self.ordered("launched").bool()
-        )
+        valid = self.ordered(
+            "start_valid" if "start_valid" in self.data else "valid"
+        ).clone()
         if "phase" in self.data:
             valid &= (self.ordered("phase") >= 0) & (
                 self.ordered("phase") < self.ordered("reference_length")
@@ -105,7 +145,7 @@ class Replay:
     def sample_starts(self, n, validation=False):
         choices = self.start_indices(validation)
         if not len(choices):
-            raise ValueError("No valid post-launch start snapshots")
+            raise ValueError("No valid imagination start snapshots")
         t, e = choices[torch.randint(len(choices), (n,), device=self.device)].unbind(-1)
         start = self.pointer if self.count == self.capacity else 0
         physical = (t + start) % self.capacity

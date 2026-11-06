@@ -23,3 +23,5 @@
 - 候选新增单步 WM+FK+Reward+Termination 融合，以及单独 Actor/Critic Observation 编译；维持真实 timestep、初始参考缓存和历史更新。
 - `compile_step_check` 在同 replay 上比较输出/Actor梯度，并分别 warmup 后测2048起点、H32完整BPTT；不执行optimizer.step。
 - CPU 全套44项通过（含 expanded aot_eager 轨迹/Actor梯度一致性）；服务器 CUDA 实测仍待完成。未确认提速前不将候选作为正式配置。
+- 只读梯度诊断 GPU 重跑通过：396.16秒，optimizer_updates=0，总梯度范数0.40177，加性重构相对误差3.69e-5。
+- 扩大编译首轮真实 GPU 捕获发现 Torch2.7 不支持 SimpleNamespace 构造；改为纯 Python 属性容器。第二轮捕获确认 chest 组件缓存中的 int(tensor step) 导致 graph break；仅对每步新建 WM view 使用常量缓存token，时间与事件计算仍使用真实step，物理环境缓存逻辑不变。
