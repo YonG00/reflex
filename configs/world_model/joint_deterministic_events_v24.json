@@ -67,5 +67,6 @@
   "compile_step": false,
   "condition_external_events": true,
   "deterministic_event_apply": true,
-  "event_supervision_protocol": "recorded_commands"
+  "event_supervision_protocol": "recorded_commands",
+  "minimal_event_view": true
 }

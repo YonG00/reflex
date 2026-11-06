@@ -35,6 +35,7 @@ class TrainConfig:
     learn_external_events: bool = False
     condition_external_events: bool = False
     deterministic_event_apply: bool = False
+    minimal_event_view: bool = False
     event_supervision_protocol: str = "recorded_commands"
     privileged_critic: bool = False
     actor_zero_output: bool = True
@@ -150,6 +151,16 @@ class Trainer:
             torch.set_float32_matmul_precision("high")
         self.task = task.to(device) if task is not None else None
         self.event_scheduler = event_scheduler
+        if c.minimal_event_view:
+            if not c.condition_external_events or event_scheduler is None:
+                raise ValueError(
+                    "Minimal native view requires conditioned event scheduler"
+                )
+            import types
+
+            from .events_v24.fast_view import build
+
+            event_scheduler._view = types.MethodType(build, event_scheduler)
         if (
             c.condition_external_events
             and c.event_supervision_protocol != "recorded_commands"
@@ -1541,6 +1552,7 @@ class Trainer:
             "compile_backend",
             "compile_step",
             "monitor_contacts",
+            "minimal_event_view",
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)

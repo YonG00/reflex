@@ -191,6 +191,7 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     cfg.learn_external_events = True
     cfg.condition_external_events = True
     cfg.deterministic_event_apply = deterministic
+    cfg.minimal_event_view = deterministic
     cfg.joint_predicted_termination = True
     cfg.variable_model_windows = True
     cfg.state_loss_reduction = "sum"
@@ -310,6 +311,12 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     assert t.actor_updates == 1
     if deterministic:
         checkpoint = torch.load(path, weights_only=False)
+        legacy_execution = copy.deepcopy(checkpoint)
+        legacy_execution["config"].pop("minimal_event_view")
+        legacy_path = tmp_path / "legacy_execution.pt"
+        torch.save(legacy_execution, legacy_path)
+        t.load(legacy_path)
+        assert t.cfg.minimal_event_view and t.actor_updates == 1
         checkpoint["config"]["deterministic_event_apply"] = False
         incompatible = tmp_path / "incompatible.pt"
         torch.save(checkpoint, incompatible)
@@ -323,6 +330,14 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         assert paired["completed"] and paired["frozen_replay"]
         assert paired["results"]["learned"]["checkpoint_reload_passed"]
         assert paired["results"]["deterministic"]["checkpoint_reload_passed"]
+        from reflex.world_model.events_v24.actor_profile import update_equivalence
+
+        actor_before = copy.deepcopy(t.actor.state_dict())
+        update_pair = update_equivalence(t, paired_dir)
+        assert update_pair["passed"] and update_pair["initial_state_restored"]
+        assert t.actor_updates == 1
+        for key, value in t.actor.state_dict().items():
+            torch.testing.assert_close(value, actor_before[key], rtol=0, atol=0)
 
 
 def test_batch_coupled_timer_uses_foreign_due_clock_without_changing_native_law(
@@ -616,3 +631,45 @@ def test_native_rethrow_preserves_saved_masks_scalars_and_robot_gradient(tmp_pat
     assert torch.isfinite(gradient).all() and gradient[:, :3].abs().sum() > 0
     assert not env._box_lib_mask.any()
     assert env._box_tmult.eq(2).all()
+
+
+def test_minimal_event_view_matches_full_view_commands_and_gradients(tmp_path):
+    import types
+
+    from reflex.world_model.events_v24.fast_view import build
+
+    trainer, b, runtime, event = setup(tmp_path)
+    original_view = runtime._view
+    rng = runtime.rng.clone()
+    outputs = []
+    original_body = trainer.task._body_data
+    for minimal in (False, True):
+        physical = b["state"].clone().requires_grad_()
+        poses = trainer.bridge.fk(physical)
+        runtime.rng = rng.clone()
+        if minimal:
+            runtime._view = types.MethodType(build, runtime)
+
+            def forbidden(*args, **kwargs):
+                raise AssertionError(
+                    "Native event facade must not construct body velocity FK"
+                )
+
+            trainer.task._body_data = forbidden
+        try:
+            plan, after, pool = runtime.step(
+                b,
+                physical,
+                poses,
+                event,
+                physical.new_empty(4, 0, 4),
+                torch.full((4,), 2),
+                torch.full((4,), 2),
+            )
+            gradient = torch.autograd.grad(plan.targets[:, 78:81].sum(), physical)[0]
+            outputs.append((plan.targets, plan.mask, after, pool, gradient))
+        finally:
+            runtime._view = original_view
+            trainer.task._body_data = original_body
+    for x, y in zip(*outputs):
+        torch.testing.assert_close(x, y, rtol=0, atol=0)

@@ -20,6 +20,9 @@ parser.add_argument(
         "event_inventory",
         "event_condition_probe",
         "v24_short_compare",
+        "actor_profile",
+        "actor_view_benchmark",
+        "actor_update_equivalence",
     ),
     default="preflight",
 )
@@ -225,6 +228,12 @@ def main():
         manifest["event_scheduler"] = (
             event_scheduler.specification() if event_scheduler is not None else None
         )
+        manifest["event_view_execution"] = {
+            "kind": "minimal_root_joint" if config.minimal_event_view else "full_task_view",
+            "source_sha256": hashlib.sha256(
+                Path(__file__).with_name("events_v24").joinpath("fast_view.py").read_bytes()
+            ).hexdigest() if config.minimal_event_view else None,
+        }
         manifest["contact_monitoring_enabled"] = config.monitor_contacts
         manifest["contact_filter_schema"] = trainer.contact_filter_schema
         manifest["contact_filter_migration"] = trainer.contact_filter_migration
@@ -247,6 +256,21 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "actor_update_equivalence":
+            from .events_v24.actor_profile import update_equivalence
+
+            update_equivalence(trainer, out)
+            return
+        if args.mode == "actor_view_benchmark":
+            from .events_v24.actor_profile import benchmark_views
+
+            benchmark_views(trainer, out)
+            return
+        if args.mode == "actor_profile":
+            from .events_v24.actor_profile import run
+
+            run(trainer, out)
+            return
         if args.mode == "v24_short_compare":
             from .events_v24.compare import run
 
