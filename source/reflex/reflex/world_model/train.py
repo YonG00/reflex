@@ -55,6 +55,7 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument("--migrate_standing_profile", action="store_true")
 parser.add_argument("--migrate_event_execution", action="store_true")
 parser.add_argument("--migrate_update_rate", action="store_true")
 parser.add_argument("--migrate_soft_survival", action="store_true")
@@ -164,6 +165,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     # Save config before simulator creation, so failed preflight has evidence.
     config = TrainConfig(**json.loads(Path(args.config).read_text()))
+    from .standing_profile import apply_profile
+
+    apply_profile(cfg, config.reward_profile)
     if args.max_seconds is not None and args.max_seconds <= 0:
         raise ValueError("max_seconds must be positive")
     if config.monitor_contacts:
@@ -266,6 +270,7 @@ def main():
                 migrate_soft_survival=args.migrate_soft_survival,
                 migrate_event_execution=args.migrate_event_execution,
                 migrate_update_rate=args.migrate_update_rate,
+                migrate_standing_profile=args.migrate_standing_profile,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)

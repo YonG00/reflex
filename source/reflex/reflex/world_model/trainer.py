@@ -55,6 +55,8 @@ class TrainConfig:
     compile_backend: str = "inductor"
     tf32: bool = False
     schedule: str = "guarded"
+    reward_profile: str = "original"
+    save_replay: bool = True
     native_collection_inputs: bool = False
     compact_event_inputs: bool = False
     real_parity_every: int = 1
@@ -1814,7 +1816,7 @@ class Trainer:
             "termination_opt": self.termination_opt.state_dict()
             if self.termination_opt is not None
             else None,
-            "replay": self.replay.state_dict(),
+            "replay": self.replay.state_dict() if self.cfg.save_replay else None,
             "amp": self.prior.amp_state_dict(),
             "torch_rng": torch.get_rng_state(),
             "numpy_rng": np.random.get_state(),
@@ -1851,6 +1853,7 @@ class Trainer:
         migrate_soft_survival=False,
         migrate_event_execution=False,
         migrate_update_rate=False,
+        migrate_standing_profile=False,
     ):
         state = torch.load(path, map_location=self.device, weights_only=False)
         saved_config = dict(state["config"])
@@ -1861,6 +1864,7 @@ class Trainer:
         # Execution optimizations and optional telemetry do not change weights,
         # optimizers or task semantics. Contact metadata is migrated separately.
         for key in (
+            "save_replay",
             "native_collection_inputs",
             "compact_event_inputs",
             "real_parity_every",
@@ -1877,6 +1881,22 @@ class Trainer:
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
+        standing_migration = None
+        if migrate_standing_profile:
+            if not reinitialize_replay:
+                raise ValueError("Reward migration requires fresh replay")
+            from .standing_profile import validate_migration
+
+            standing_migration = validate_migration(
+                state, self.task, self.reward_names, self.cfg
+            )
+            for key in ("horizon", "reward_profile"):
+                loaded_config.pop(key)
+                requested_config.pop(key)
+        if not reinitialize_replay and state.get("replay") is None:
+            raise ValueError(
+                "Checkpoint has no WM replay; use explicit reinitialize_replay"
+            )
         update_rate_migration = None
         if migrate_update_rate:
             if (
@@ -1942,7 +1962,7 @@ class Trainer:
             state.get("version") not in (1, 2, 3)
             or state["contract"] != self.contract
             or loaded_config != requested_config
-            or state["reward_names"] != self.reward_names
+            or (state["reward_names"] != self.reward_names and not standing_migration)
         ):
             raise ValueError(
                 "Checkpoint model schema/config/physical contract mismatch; v1 multitask cannot silently resume pure dynamics"
@@ -2007,7 +2027,7 @@ class Trainer:
         ):
             raise ValueError("Checkpoint missing learned termination state/optimizer")
         task_spec = self.task.specification() if self.task is not None else None
-        if state.get("task_spec") != task_spec:
+        if state.get("task_spec") != task_spec and not standing_migration:
             raise ValueError("Checkpoint analytic task contract mismatch")
         for name in (
             "actor",
@@ -2075,7 +2095,7 @@ class Trainer:
             state["iteration"],
             state["real_transitions"],
         )
-        if "experience" in state:
+        if "experience" in state and not standing_migration:
             self.experience.load_state_dict(state["experience"])
         from .diagnostics import saved_diagnostic_duration
 
@@ -2091,6 +2111,8 @@ class Trainer:
         self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
         if migration:
             self.initialization["training_migration"] = migration
+        if standing_migration:
+            self.initialization["standing_profile_migration"] = standing_migration
         if update_rate_migration:
             self.initialization["update_rate_migration"] = update_rate_migration
         if event_migration:

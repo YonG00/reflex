@@ -376,6 +376,15 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         t.cfg.hard_imagination_boundaries = False
         t.load(path)
         checkpoint = torch.load(path, weights_only=False)
+        t.cfg.save_replay = False
+        compact_checkpoint = tmp_path / "without_replay.pt"
+        t.save(compact_checkpoint)
+        with pytest.raises(ValueError, match="no WM replay"):
+            t.load(compact_checkpoint)
+        t.load(compact_checkpoint, reinitialize_replay=True)
+        assert t.replay.count == 0 and t.actor_updates == 1
+        t.cfg.save_replay = True
+        t.load(path)
         schedule_trial = copy.deepcopy(checkpoint)
         schedule_trial["config"]["schedule"] = "joint_reproduction"
         schedule_path = tmp_path / "schedule_trial.pt"
