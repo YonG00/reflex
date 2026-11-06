@@ -310,6 +310,20 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     t.load(path)
     assert t.actor_updates == 1
     if deterministic:
+        # Explicit new-world resume retains all learned states but cannot reuse
+        # environment-indexed replay. Other contracts remain strict.
+        source_count = runtime.source_count
+        runtime.source_count = source_count + 1
+        with pytest.raises(ValueError, match="learning layout"):
+            t.load(path)
+        t.load(path, reinitialize_replay=True)
+        assert t.actor_updates == 1
+        assert t.replay.count == 0
+        assert t.iteration == 0
+        assert t.initialization["replay_reinitialization"]["optimizers_preserved"]
+        assert t.actor_opt.state_dict()["state"]
+        runtime.source_count = source_count
+        t.load(path)
         checkpoint = torch.load(path, weights_only=False)
         legacy_execution = copy.deepcopy(checkpoint)
         legacy_execution["config"].pop("minimal_event_view")
@@ -336,6 +350,43 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         update_pair = update_equivalence(t, paired_dir)
         assert update_pair["passed"] and update_pair["initial_state_restored"]
         assert t.actor_updates == 1
+        from reflex.world_model.events_v24.fused_step import check
+
+        torch._dynamo.reset()  # Different test backends/shapes must not share an 8-entry cache.
+        old_step, old_obs = t._v24_step, t._observations
+        t._v24_step = torch.compile(
+            t.v24_physical_step, fullgraph=True, backend="aot_eager"
+        )
+        t._observations = torch.compile(
+            t.imagined_observations, fullgraph=True, backend="aot_eager"
+        )
+        try:
+            fused = check(t, paired_dir, repeats=1)
+            assert fused["equivalence_passed"] and fused["optimizer_updates"] == 0
+        finally:
+            t._v24_step, t._observations = old_step, old_obs
+        torch._dynamo.reset()
+        original_heads, original_scope = t._v24_heads, t.cfg.v24_fusion_scope
+        t.cfg.v24_fusion_scope = "packed_heads"
+        t._v24_heads = torch.compile(
+            t.v24_packed_reward_termination,
+            fullgraph=True,
+            backend="aot_eager",
+            dynamic=False,
+        )
+        t._v24_step = t.v24_partitioned_step
+        t._observations = torch.compile(
+            t.imagined_observations, fullgraph=True, backend="aot_eager", dynamic=False
+        )
+        try:
+            packed = check(t, paired_dir, repeats=1)
+            assert packed["equivalence_passed"]
+            torch._dynamo.reset()
+            fused_update = update_equivalence(t, paired_dir, fusion=True)
+            assert fused_update["passed"] and fused_update["initial_state_restored"]
+        finally:
+            t._v24_heads, t.cfg.v24_fusion_scope = original_heads, original_scope
+            t._v24_step, t._observations = old_step, old_obs
         for key, value in t.actor.state_dict().items():
             torch.testing.assert_close(value, actor_before[key], rtol=0, atol=0)
 
@@ -673,3 +724,17 @@ def test_minimal_event_view_matches_full_view_commands_and_gradients(tmp_path):
             trainer.task._body_data = original_body
     for x, y in zip(*outputs):
         torch.testing.assert_close(x, y, rtol=0, atol=0)
+
+
+def test_critic_anchor_self_rotation_is_exact_identity_with_zero_gradient(tmp_path):
+    t, b, _, _ = setup(tmp_path)
+    state = b["state"].clone().requires_grad_()
+    poses = t.bridge.fk(state)
+    raw = t.observation(b, state, fk_result=poses)
+    critic = t.privileged_bridge(state, fk_result=poses, actor_result=raw)
+    anchor_index = t.privileged_bridge.tracked_names.index(t.bridge.anchor_name)
+    start = 67 + 42 + 6 * anchor_index
+    identity = state.new_tensor([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).expand(len(state), 6)
+    assert torch.equal(critic[:, start : start + 6], identity)
+    gradient = torch.autograd.grad(critic[:, start : start + 6].sum(), state)[0]
+    assert gradient.eq(0).all()

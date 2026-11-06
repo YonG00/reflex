@@ -124,7 +124,17 @@ class PrivilegedObservation(nn.Module):
         body_p = torch.stack(
             [apply(ai, p[n] - p[anchor]) for n in self.tracked_names], -2
         ).flatten(-2)
+        # A frame relative to itself is exactly identity. Expanding conj(q)*q
+        # creates cancellation noise (and spurious gradients) under GPU FMA;
+        # Adam amplifies that noise on these otherwise constant critic columns.
+        identity6 = state.new_tensor([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).expand(
+            *state.shape[:-1], 6
+        )
         body_q = torch.stack(
-            [rot6(mul(ai, q[n])) for n in self.tracked_names], -2
+            [
+                identity6 if n == anchor else rot6(mul(ai, q[n]))
+                for n in self.tracked_names
+            ],
+            -2,
         ).flatten(-2)
         return torch.cat((actor[..., :67], body_p, body_q, actor[..., 67:166]), -1)

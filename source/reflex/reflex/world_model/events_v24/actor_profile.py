@@ -8,7 +8,7 @@ import torch
 from .compare import seed
 
 
-def run(trainer, output):
+def run(trainer, output, profile=True):
     out = Path(output)
     records = []
     for j in range(3):
@@ -16,6 +16,19 @@ def run(trainer, output):
         result = trainer.update_actor()
         records.append(result)
         print(json.dumps({"actor_benchmark": j, **result}), flush=True)
+    if not profile:
+        result = {
+            "completed": True,
+            "records": records,
+            "batch": trainer.cfg.actor_batch,
+            "horizon": trainer.cfg.horizon,
+            "tf32": trainer.cfg.tf32,
+            "fusion_scope": trainer.cfg.v24_fusion_scope,
+            "diagnostic_actor_updates": len(records),
+            "checkpoint_saved": False,
+        }
+        (out / "actor_timing.json").write_text(json.dumps(result, indent=2))
+        return result
     scheduler = trainer.event_scheduler
     original_step = scheduler.step
     original_fk = trainer._fk
@@ -221,7 +234,7 @@ def benchmark_views(t, output, repeats=3):
         scheduler.rng = event_rng
 
 
-def update_equivalence(t, output):
+def update_equivalence(t, output, fusion=False):
     """Compare one complete Actor/Critic Adam update and restore initial state."""
     import copy
     import types
@@ -232,20 +245,34 @@ def update_equivalence(t, output):
     names = ("actor", "critic", "actor_opt", "critic_opt", "obs_norm", "critic_norm")
     initial = {name: copy.deepcopy(getattr(t, name).state_dict()) for name in names}
     original_view = t.event_scheduler._view
+    original_step, original_observations = t._v24_step, t._observations
+    if fusion and original_step is None:
+        raise ValueError("Fusion update equivalence requires compiled V24 step")
     event_rng = t.event_scheduler.rng.clone()
     original_updates = t.actor_updates
     expected = None
     records = {}
     try:
-        for label in ("reference", "minimal_native_view"):
+        labels = (
+            ("baseline", "fused") if fusion else ("reference", "minimal_native_view")
+        )
+        for label in labels:
             for name in names:
                 getattr(t, name).load_state_dict(copy.deepcopy(initial[name]))
             t.actor_updates = original_updates
-            t.event_scheduler._view = (
-                NativeEventScheduler._view.__get__(t.event_scheduler)
-                if label == "reference"
-                else types.MethodType(build, t.event_scheduler)
-            )
+            if fusion:
+                t._v24_step = original_step if label == "fused" else None
+                t._observations = (
+                    original_observations
+                    if label == "fused"
+                    else t.imagined_observations
+                )
+            else:
+                t.event_scheduler._view = (
+                    NativeEventScheduler._view.__get__(t.event_scheduler)
+                    if label == "reference"
+                    else types.MethodType(build, t.event_scheduler)
+                )
             t.event_scheduler.rng = event_rng.clone()
             seed(9501)
             metrics = t.update_actor()
@@ -257,7 +284,18 @@ def update_equivalence(t, output):
             if expected is None:
                 expected = current
             else:
-                errors = {}
+                errors = {
+                    name + "_parameter_max_abs_error": max(
+                        float((value - expected[name][key]).abs().max())
+                        for key, value in state.items()
+                    )
+                    for name, state in current.items()
+                }
+                records.update(errors)
+                records["passed"] = False
+                (Path(output) / "actor_update_equivalence.json").write_text(
+                    json.dumps(records, indent=2)
+                )
                 for name, parameter_state in current.items():
                     for key, value in parameter_state.items():
                         torch.testing.assert_close(
@@ -283,6 +321,7 @@ def update_equivalence(t, output):
             getattr(t, name).load_state_dict(copy.deepcopy(initial[name]))
         t.actor_updates = original_updates
         t.event_scheduler._view = original_view
+        t._v24_step, t._observations = original_step, original_observations
         t.event_scheduler.rng = event_rng
     (Path(output) / "actor_update_equivalence.json").write_text(
         json.dumps(records, indent=2)

@@ -21,8 +21,11 @@ parser.add_argument(
         "event_condition_probe",
         "v24_short_compare",
         "actor_profile",
+        "actor_timing",
         "actor_view_benchmark",
         "actor_update_equivalence",
+        "v24_fusion_check",
+        "actor_fusion_update_equivalence",
     ),
     default="preflight",
 )
@@ -45,6 +48,11 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument(
+    "--reinitialize_replay",
+    action="store_true",
+    help="Explicit new simulator world: retain weights/optimizers, rebuild replay and collection warmup",
+)
 parser.add_argument(
     "--warm_start_macro", help="New macro-step experiment; reset replay/WM optimizer"
 )
@@ -214,6 +222,7 @@ def main():
             trainer.load(
                 args.checkpoint,
                 migrate_termination_training=args.migrate_termination_training,
+                reinitialize_replay=args.reinitialize_replay,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)
@@ -229,10 +238,17 @@ def main():
             event_scheduler.specification() if event_scheduler is not None else None
         )
         manifest["event_view_execution"] = {
-            "kind": "minimal_root_joint" if config.minimal_event_view else "full_task_view",
+            "kind": "minimal_root_joint"
+            if config.minimal_event_view
+            else "full_task_view",
             "source_sha256": hashlib.sha256(
-                Path(__file__).with_name("events_v24").joinpath("fast_view.py").read_bytes()
-            ).hexdigest() if config.minimal_event_view else None,
+                Path(__file__)
+                .with_name("events_v24")
+                .joinpath("fast_view.py")
+                .read_bytes()
+            ).hexdigest()
+            if config.minimal_event_view
+            else None,
         }
         manifest["contact_monitoring_enabled"] = config.monitor_contacts
         manifest["contact_filter_schema"] = trainer.contact_filter_schema
@@ -256,6 +272,16 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "actor_fusion_update_equivalence":
+            from .events_v24.actor_profile import update_equivalence
+
+            update_equivalence(trainer, out, fusion=True)
+            return
+        if args.mode == "v24_fusion_check":
+            from .events_v24.fused_step import check
+
+            check(trainer, out)
+            return
         if args.mode == "actor_update_equivalence":
             from .events_v24.actor_profile import update_equivalence
 
@@ -265,6 +291,11 @@ def main():
             from .events_v24.actor_profile import benchmark_views
 
             benchmark_views(trainer, out)
+            return
+        if args.mode == "actor_timing":
+            from .events_v24.actor_profile import run
+
+            run(trainer, out, profile=False)
             return
         if args.mode == "actor_profile":
             from .events_v24.actor_profile import run

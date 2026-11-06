@@ -36,6 +36,8 @@ class TrainConfig:
     condition_external_events: bool = False
     deterministic_event_apply: bool = False
     minimal_event_view: bool = False
+    compile_v24_step: bool = False
+    v24_fusion_scope: str = "full"
     event_supervision_protocol: str = "recorded_commands"
     privileged_critic: bool = False
     actor_zero_output: bool = True
@@ -147,8 +149,9 @@ class Trainer:
             prior,
         )
         self.reward_names, self.contract = list(reward_names), contract
-        if c.tf32:
-            torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.matmul.allow_tf32 = c.tf32
+        torch.backends.cudnn.allow_tf32 = c.tf32
+        torch.set_float32_matmul_precision("high" if c.tf32 else "highest")
         self.task = task.to(device) if task is not None else None
         self.event_scheduler = event_scheduler
         if c.minimal_event_view:
@@ -256,13 +259,18 @@ class Trainer:
             else self.model
         )
         self._dynamics = (
-            torch.compile(dynamics_call, fullgraph=True, backend=c.compile_backend)
+            torch.compile(
+                dynamics_call, fullgraph=True, backend=c.compile_backend, dynamic=False
+            )
             if c.compile_dynamics
             else dynamics_call
         )
         self._post = (
             torch.compile(
-                self.model.predict_post, fullgraph=True, backend=c.compile_backend
+                self.model.predict_post,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
             )
             if c.condition_external_events and c.compile_dynamics
             else self.model.predict_post
@@ -270,20 +278,58 @@ class Trainer:
             else None
         )
         self._fk = (
-            torch.compile(self.bridge.fk, fullgraph=True, backend=c.compile_backend)
+            torch.compile(
+                self.bridge.fk, fullgraph=True, backend=c.compile_backend, dynamic=False
+            )
             if c.compile_fk
             else self.bridge.fk
+        )
+        if c.compile_v24_step and not c.condition_external_events:
+            raise ValueError("V24 fused step requires conditioned external events")
+        if c.v24_fusion_scope not in ("full", "heads", "packed_heads"):
+            raise ValueError("Unknown V24 fusion scope")
+        self._v24_heads = (
+            torch.compile(
+                self.v24_packed_reward_termination
+                if c.v24_fusion_scope == "packed_heads"
+                else self.v24_reward_termination,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+            )
+            if c.compile_v24_step and c.v24_fusion_scope in ("heads", "packed_heads")
+            else None
+        )
+        self._v24_step = (
+            torch.compile(
+                self.v24_physical_step,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+            )
+            if c.compile_v24_step and c.v24_fusion_scope == "full"
+            else self.v24_partitioned_step
+            if c.compile_v24_step
+            else None
         )
         self._transition_cache_ready = False
         self._task_step = (
             torch.compile(
-                self.task.evaluate_step, fullgraph=True, backend=c.compile_backend
+                self.task.evaluate_step,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
             )
             if c.compile_step
             else (self.task.evaluate_step if self.task is not None else None)
         )
         self._termination_fn = (
-            torch.compile(self.termination, fullgraph=True, backend=c.compile_backend)
+            torch.compile(
+                self.termination,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+            )
             if c.compile_step and self.termination is not None
             else self.termination
         )
@@ -292,9 +338,12 @@ class Trainer:
         self._transition = self.transition if c.compile_step else None
         self._observations = (
             torch.compile(
-                self.imagined_observations, fullgraph=True, backend=c.compile_backend
+                self.imagined_observations,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
             )
-            if c.compile_step
+            if c.compile_step or c.compile_v24_step
             else self.imagined_observations
         )
         self.model_opt = torch.optim.Adam(
@@ -1031,6 +1080,177 @@ class Trainer:
         critic = self.critic_observation(b, s, previous, phase, poses, raw)
         return raw, critic
 
+    def v24_reward_termination(
+        self,
+        b,
+        s,
+        physical,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        poses,
+        physical_poses,
+        step,
+        first,
+    ):
+        task = self.task.evaluate_step(
+            b,
+            s,
+            physical,
+            raw,
+            previous,
+            phase,
+            hist,
+            episode,
+            event,
+            step,
+            fk_before=poses,
+            fk_after=physical_poses,
+            initial_step=first,
+        )
+        return task, self.termination(task.termination_features).sigmoid()
+
+    def v24_packed_reward_termination(
+        self,
+        b,
+        s,
+        physical,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        names,
+        pp,
+        pq,
+        np,
+        nq,
+        step,
+        first,
+    ):
+        before = (
+            {name: pp[:, i] for i, name in enumerate(names)},
+            {name: pq[:, i] for i, name in enumerate(names)},
+        )
+        after = (
+            {name: np[:, i] for i, name in enumerate(names)},
+            {name: nq[:, i] for i, name in enumerate(names)},
+        )
+        return self.v24_reward_termination(
+            b,
+            s,
+            physical,
+            raw,
+            previous,
+            phase,
+            hist,
+            episode,
+            event,
+            before,
+            after,
+            step,
+            first,
+        )
+
+    def v24_partitioned_step(
+        self,
+        b,
+        s,
+        target,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        poses,
+        pre,
+        step,
+        first,
+    ):
+        physical = self._dynamics(s, target, b["context"], pre)
+        physical_poses = self._fk(physical)
+        if self.cfg.v24_fusion_scope == "packed_heads":
+            names = tuple(poses[0])
+            packed = [
+                torch.stack([group[name] for name in names], 1)
+                for group in (*poses, *physical_poses)
+            ]
+            task, done = self._v24_heads(
+                b,
+                s,
+                physical,
+                raw,
+                previous,
+                phase,
+                hist,
+                episode,
+                event,
+                names,
+                *packed,
+                step,
+                first,
+            )
+        else:
+            task, done = self._v24_heads(
+                b,
+                s,
+                physical,
+                raw,
+                previous,
+                phase,
+                hist,
+                episode,
+                event,
+                poses,
+                physical_poses,
+                step,
+                first,
+            )
+        return physical, physical_poses, task, done
+
+    def v24_physical_step(
+        self,
+        b,
+        s,
+        target,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        poses,
+        pre,
+        step,
+        first,
+    ):
+        # One full graph owns the Physical clock only. External events still
+        # execute afterwards, before the next observation is constructed.
+        physical = self.model.predict_physical(s, target, b["context"], pre)
+        physical_poses = self.bridge.fk(physical)
+        task = self.task.evaluate_step(
+            b,
+            s,
+            physical,
+            raw,
+            previous,
+            phase,
+            hist,
+            episode,
+            event,
+            step,
+            fk_before=poses,
+            fk_after=physical_poses,
+            initial_step=first,
+        )
+        done = self.termination(task.termination_features).sigmoid()
+        return physical, physical_poses, task, done
+
     def transition(
         self,
         b,
@@ -1097,7 +1317,9 @@ class Trainer:
         hist = b.get("task_history")
         episode = b.get("episode_steps")
         event = b.get("next_external_event_seconds")
-        if self._transition is not None and not self._transition_cache_ready:
+        if (
+            self._transition is not None or self._v24_step is not None
+        ) and not self._transition_cache_ready:
             # Original rewards initialize constant body/joint indices and log
             # once. Do that outside fullgraph; discard this local view/history.
             with torch.no_grad():
@@ -1115,7 +1337,28 @@ class Trainer:
             raw = self.actor(obs)
             target, blend = self.targets(b, raw, blend)
             if self.model.state_only:
-                if self._transition is not None:
+                if self._v24_step is not None:
+                    pre = self.event_scheduler.codec.pre_features(
+                        event_state, episode, self.task.dt
+                    )
+                    physical, physical_poses, task, d = self._v24_step(
+                        b,
+                        s,
+                        target,
+                        raw,
+                        previous,
+                        phase,
+                        hist,
+                        episode,
+                        event,
+                        poses,
+                        pre,
+                        torch.tensor(t, device=s.device),
+                        t == 0,
+                    )
+                    ns, next_poses = physical, physical_poses
+                    r, trunc = task.rewards, task.truncated
+                elif self._transition is not None:
                     ns, next_poses, task, d = self._transition(
                         b,
                         s,
@@ -1537,7 +1780,7 @@ class Trainer:
 
         os.replace(temporary, path)
 
-    def load(self, path, migrate_termination_training=False):
+    def load(self, path, migrate_termination_training=False, reinitialize_replay=False):
         state = torch.load(path, map_location=self.device, weights_only=False)
         saved_config = dict(state["config"])
         if state.get("version") == 1:
@@ -1553,9 +1796,15 @@ class Trainer:
             "compile_step",
             "monitor_contacts",
             "minimal_event_view",
+            "compile_v24_step",
+            "v24_fusion_scope",
+            "tf32",
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
+        if reinitialize_replay:
+            loaded_config.pop("capacity_steps", None)
+            requested_config.pop("capacity_steps", None)
         migration = None
         if migrate_termination_training:
             if (
@@ -1598,10 +1847,15 @@ class Trainer:
                 "term_loss_weight",
             ):
                 requested_learning.pop(key, None)
-        if (
-            state.get("version") == 3
-            and state.get("learning_contract") != requested_learning
-        ):
+        import copy
+
+        saved_learning = copy.deepcopy(state.get("learning_contract"))
+        requested_learning = copy.deepcopy(requested_learning)
+        if reinitialize_replay:
+            for contract in (saved_learning, requested_learning):
+                if contract and "event_scheduler" in contract:
+                    contract["event_scheduler"].pop("source_world_envs", None)
+        if state.get("version") == 3 and saved_learning != requested_learning:
             raise ValueError("Checkpoint learning layout mismatch")
         if self.cfg.privileged_critic or self.cfg.learned_termination:
             if state.get("version") != 3 or "critic_norm" not in state:
@@ -1636,7 +1890,16 @@ class Trainer:
                 )
             self.termination.load_state_dict(state["termination"])
             self.termination_opt.load_state_dict(state["termination_opt"])
-        self.replay.load_state_dict(state["replay"])
+        if reinitialize_replay:
+            self.replay = Replay(
+                self.cfg.capacity_steps,
+                self.device,
+                global_fields=("event_pool",)
+                if self.cfg.condition_external_events
+                else (),
+            )
+        else:
+            self.replay.load_state_dict(state["replay"])
         if migration:
             # Old adapter validity included launched, not only finite state.
             count = self.replay.count
@@ -1688,6 +1951,20 @@ class Trainer:
         self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
         if migration:
             self.initialization["training_migration"] = migration
+        if reinitialize_replay:
+            self.initialization["replay_reinitialization"] = {
+                "source": str(path),
+                "source_iteration": self.iteration,
+                "source_world_envs": state.get("learning_contract", {})
+                .get("event_scheduler", {})
+                .get("source_world_envs"),
+                "target_world_envs": self.learning_contract.get(
+                    "event_scheduler", {}
+                ).get("source_world_envs"),
+                "optimizers_preserved": True,
+                "fresh_collection_warmup": True,
+            }
+            self.iteration = 0
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)

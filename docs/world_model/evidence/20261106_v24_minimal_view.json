@@ -1,0 +1,1181 @@
+{
+  "view_benchmark": {
+    "equivalence_passed": true,
+    "gradient_max_abs_error": 0.0,
+    "batch": 2048,
+    "horizon": 32,
+    "optimizer_updates": 0,
+    "reference": {
+      "times": [
+        {
+          "forward_seconds": 6.521123543381691,
+          "backward_seconds": 3.7132062315940857,
+          "total_seconds": 10.234329774975777
+        },
+        {
+          "forward_seconds": 5.3165389485657215,
+          "backward_seconds": 3.6241231486201286,
+          "total_seconds": 8.94066209718585
+        },
+        {
+          "forward_seconds": 5.281071357429028,
+          "backward_seconds": 3.5657435171306133,
+          "total_seconds": 8.84681487455964
+        }
+      ],
+      "instrumented": {
+        "forward_seconds": 5.252113908529282,
+        "backward_seconds": 3.776506632566452,
+        "total_seconds": 9.028620541095734
+      },
+      "host_scopes": {
+        "FK_positions": {
+          "calls": 65,
+          "host_seconds": 0.25299961119890213
+        },
+        "observations": {
+          "calls": 32,
+          "host_seconds": 0.36828359216451645
+        },
+        "action_targets": {
+          "calls": 32,
+          "host_seconds": 0.01119999960064888
+        },
+        "WM": {
+          "calls": 32,
+          "host_seconds": 0.0659211315214634
+        },
+        "body_data_velocity_FK": {
+          "calls": 163,
+          "host_seconds": 2.083113893866539
+        },
+        "reward_termination": {
+          "calls": 32,
+          "host_seconds": 1.3934555388987064
+        },
+        "native_scheduler": {
+          "calls": 32,
+          "host_seconds": 2.819954961538315
+        }
+      }
+    },
+    "minimal_native_view": {
+      "times": [
+        {
+          "forward_seconds": 3.1195228174328804,
+          "backward_seconds": 3.563197985291481,
+          "total_seconds": 6.682720802724361
+        },
+        {
+          "forward_seconds": 4.1942927204072475,
+          "backward_seconds": 3.5174973495304585,
+          "total_seconds": 7.711790069937706
+        },
+        {
+          "forward_seconds": 3.2115193270146847,
+          "backward_seconds": 3.603389900177717,
+          "total_seconds": 6.814909227192402
+        }
+      ],
+      "instrumented": {
+        "forward_seconds": 3.18009452521801,
+        "backward_seconds": 3.6706771440804005,
+        "total_seconds": 6.85077166929841
+      },
+      "host_scopes": {
+        "FK_positions": {
+          "calls": 65,
+          "host_seconds": 0.27853188291192055
+        },
+        "observations": {
+          "calls": 32,
+          "host_seconds": 0.3700844421982765
+        },
+        "action_targets": {
+          "calls": 32,
+          "host_seconds": 0.01193799078464508
+        },
+        "WM": {
+          "calls": 32,
+          "host_seconds": 0.06640370190143585
+        },
+        "body_data_velocity_FK": {
+          "calls": 32,
+          "host_seconds": 0.40506866574287415
+        },
+        "reward_termination": {
+          "calls": 32,
+          "host_seconds": 1.3599074482917786
+        },
+        "native_scheduler": {
+          "calls": 32,
+          "host_seconds": 0.7419754862785339
+        }
+      }
+    },
+    "completed": true
+  },
+  "native_probe": {
+    "passed": true,
+    "optimizer_updates": 0,
+    "steps": 24,
+    "positive_perturb_writes": 10,
+    "launch_velocity_robot_position_gradient_norm": 3.3970093727111816,
+    "actor_imagination_horizon": 32,
+    "actor_waiting_to_launch_transitions": 7,
+    "scheduler": {
+      "source_sha256": {
+        "isaaclab.envs.mdp.events": "07e4f7dace061bf3bca12c0628b8508a97694121a50966ea9c88ead1ad00728c",
+        "reflex.envs.teacher_terms": "423ce37f9ad790e7b758679232272a38ae400997273f069ceeff5ccd94b8f044",
+        "reflex.envs.throw": "c56fe0619f76f4f9ff09b69294f65f4ba9fcaa6b4c8d22b2c366cf06c64aea71",
+        "runtime.py": "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc",
+        "state.py": "ded821b85cab10ce165b621ac31dcc96e56b4271042451401083b17b77e407ad",
+        "writes.py": "092039ca008262c6df974a9af27b5072e07d659765399f2fc2b838641d3a7235",
+        "event_math.py": "907c3e3b78a92dfe35528910036f1d97b7ed0526e73bebd27403bd0c397d5ea8"
+      },
+      "constants": {
+        "isaaclab.envs.mdp.events": {
+          "TYPE_CHECKING": false
+        },
+        "reflex.envs.teacher_terms": {
+          "BOX_LIN_DAMPING": 0.85,
+          "GRAVITY": 9.81,
+          "LAUNCH_SPEED_RANGE": [
+            5.0,
+            7.6
+          ],
+          "LOFTY_SPEED_BONUS": 2.0,
+          "RETHROW_GRACE_STEPS": 30,
+          "RETHROW_ENABLED": true,
+          "V36_WALK_R": 1.5,
+          "V36_WALK_TURN_P": 0.02,
+          "V36_WALK_V_HI": 0.9,
+          "V36_WALK_V_LO": 0.3,
+          "V38_P_OFFSET": 0.4,
+          "V38_P_ABANDON": 0.08,
+          "V38_ABANDON_LO": 1.0,
+          "V38_ABANDON_HI": 2.0,
+          "V38_PERTURB_P": 0.15,
+          "V38_PERTURB_V": 0.5,
+          "V38_PERTURB_W": 3.0,
+          "V38_ANCHOR_SIG": 0.18,
+          "V38_FACE_DEAD": 15.0,
+          "V38_FACE_SIG": 35.0,
+          "V38_ANCHOR_FACE": 0.0,
+          "V38_CHEST_LOCAL": [
+            0.25,
+            0.0,
+            0.35
+          ],
+          "V38_MASS_LO": 0.1,
+          "V38_MASS_HI": 0.7,
+          "V38_MASS_RAMP": 0.0,
+          "V38_MASS_HI_FINAL": 0.55,
+          "V38_BEARING_DEG": 0.0,
+          "V38_DBG_PRINTS": 8,
+          "BOX_LAND_W": 0.0,
+          "BOX_LAND_SIG": 0.6,
+          "BOX_LAND_H": 1.0,
+          "BOX_LAND_ALLFLIGHT": false,
+          "ORI_FACE_H": 1.15,
+          "ORI_YAW_STD_HOVER": 0.0,
+          "V38_ORBIT_DPS": 0.0,
+          "V38_ORBIT_SPAN": 120.0,
+          "LAND_OBS_H": 1.0,
+          "LAND_OBS_TMAX": 2.0,
+          "V38_ARMS_REACTIVE": true,
+          "GATE_AIRBORNE_H": 0.45,
+          "V38_REF_ARMS_REACTIVE": true,
+          "V38_REF_DOWN_LO": 0.0,
+          "V38_REF_DOWN_HI": 5.0,
+          "V38_ARM_EARLY_W": 0.0,
+          "V38_ARM_TWO_STAGE": true,
+          "V38_TS_RAMP": 8,
+          "V38_TS_D_TRIG": 2.5,
+          "V38_TS_LATCH": 75,
+          "V38_TS_CLOSE": 1.0,
+          "V38_TS_DOWN": "",
+          "V38_TS_UP": "",
+          "V38_FLIGHT_RGATE": false,
+          "V38_FLIGHT_RGATE_FAC": 0.2,
+          "V38_FLIGHT_RGATE_TERMS": "motion_body_pos,motion_body_lin_vel,motion_body_ang_vel,low_trust_stillness,hold_still",
+          "V38_TS_DELTA_GATE": true,
+          "V38_TS_DELTA_MIN": 0.15,
+          "V38_TS_BASE_BLEND": true,
+          "V38_TS_USE_SPEED": true,
+          "V38_TS_MISS_MAX": 6,
+          "V38_TS_FROM_PERC": false,
+          "V38_TS_V_LO": 2.5,
+          "V38_TS_SPEED_SUSTAIN": 8,
+          "V38_HANG_W": 1.0,
+          "V38_HANG_SIG": 0.35,
+          "V38_TS_V_HI": 3.0,
+          "V38_TS_FALL": 40,
+          "V38_AB": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "V38_AZ_RATE": 0.0,
+          "V38_AZ_LO": 0.0,
+          "V38_AZ_HI": 0.0,
+          "V38_TGT_CLIP": false,
+          "V38_LEG_EFFORT": 0.0
+        },
+        "reflex.envs.throw": {
+          "TYPE_CHECKING": false,
+          "BOX_MODELS": [
+            {
+              "name": "small",
+              "size": [
+                0.34,
+                0.26,
+                0.22
+              ],
+              "mass": 0.18,
+              "eff_radius": 0.14
+            },
+            {
+              "name": "mini",
+              "size": [
+                0.25,
+                0.19,
+                0.13
+              ],
+              "mass": 0.1,
+              "eff_radius": 0.1
+            },
+            {
+              "name": "large",
+              "size": [
+                0.54,
+                0.42,
+                0.33
+              ],
+              "mass": 0.35,
+              "eff_radius": 0.22
+            },
+            {
+              "name": "largeold",
+              "size": [
+                0.42,
+                0.32,
+                0.27
+              ],
+              "mass": 0.26,
+              "eff_radius": 0.175
+            },
+            {
+              "name": "real_small",
+              "size": [
+                0.22,
+                0.21,
+                0.15
+              ],
+              "mass": 0.18,
+              "eff_radius": 0.095
+            },
+            {
+              "name": "real_regular",
+              "size": [
+                0.31,
+                0.26,
+                0.21
+              ],
+              "mass": 0.18,
+              "eff_radius": 0.128
+            },
+            {
+              "name": "real_large",
+              "size": [
+                0.46,
+                0.41,
+                0.32
+              ],
+              "mass": 0.18,
+              "eff_radius": 0.196
+            }
+          ],
+          "MIX_SETS": {
+            "mix3": [
+              "mini",
+              "small",
+              "largeold"
+            ]
+          },
+          "BOX_SIZE": [
+            0.34,
+            0.26,
+            0.22
+          ],
+          "BOX_MASS": 0.18,
+          "BOX_EFFECTIVE_RADIUS": 0.14,
+          "GRAVITY": 9.81,
+          "BOX_LIN_DAMPING": 0.85,
+          "LAUNCH_SPEED_RANGE": [
+            5.0,
+            7.6
+          ],
+          "DIST_RANGE": [
+            2.5,
+            5.0
+          ],
+          "BEARING_RANGE_DEG": 10.0,
+          "T_MULT_RANGE": [
+            0.75,
+            1.35
+          ],
+          "T_MULT_TRY_RANGES": [
+            [
+              1.15,
+              1.45
+            ],
+            [
+              0.95,
+              1.2
+            ],
+            [
+              0.8,
+              1.0
+            ]
+          ],
+          "LOFTY_SPEED_BONUS": 2.0,
+          "AIM_ERR_STD_DEG": 2.5,
+          "AIM_ERR_MAX_DEG": 5.0,
+          "SPEED_JITTER": 0.08,
+          "THROW_LIB": "",
+          "THROW_LIB_KEY": "all",
+          "THROW_LIB_FRAC": 1.0,
+          "THROW_LIB_MIRROR": true,
+          "THROW_LIB_JITTER": 0.0,
+          "THROW_LIB_ALIGN": "",
+          "THROW_LIB_ALIGN_X": 0.35,
+          "THROW_LIB_REACH_LO": 0.0,
+          "THROW_LIB_REACH_HI": 0.8,
+          "THROW_LIB_BACKTRACK": 0.0,
+          "RELEASE_H_RANGE": [
+            1.1,
+            2.4
+          ],
+          "CATCH_H_RANGE": [
+            0.6,
+            1.4
+          ],
+          "SPIN_MAX_RAD_S": 9.42477796076938,
+          "RELEASE_LEVEL": false,
+          "HOVER_RANGE_S": [
+            1.0,
+            6.0
+          ],
+          "RETHROW_GRACE_STEPS": 30,
+          "RETHROW_ENABLED": true,
+          "INTAKE_GATE_DIST": 0.9,
+          "INTAKE_GATE_SPEED": 1.0,
+          "YIELD_V_CAP": 0.5,
+          "CRADLE_POSE": {
+            "left_shoulder_pitch_joint": -0.85,
+            "right_shoulder_pitch_joint": -0.85,
+            "left_shoulder_roll_joint": 0.179,
+            "right_shoulder_roll_joint": -0.179,
+            "left_shoulder_yaw_joint": -0.25,
+            "right_shoulder_yaw_joint": 0.25,
+            "left_elbow_joint": 0.65,
+            "right_elbow_joint": 0.65
+          }
+        }
+      },
+      "schema": 1,
+      "state": {
+        "version": 1,
+        "fields": [
+          [
+            "_box_p0",
+            [
+              3
+            ],
+            "torch.float32"
+          ],
+          [
+            "_box_q0",
+            [
+              4
+            ],
+            "torch.float32"
+          ],
+          [
+            "_box_v0",
+            [
+              3
+            ],
+            "torch.float32"
+          ],
+          [
+            "_box_omega",
+            [
+              3
+            ],
+            "torch.float32"
+          ],
+          [
+            "_box_launch_step",
+            [],
+            "torch.int64"
+          ],
+          [
+            "_box_launched",
+            [],
+            "torch.bool"
+          ],
+          [
+            "_box_aim_err",
+            [],
+            "torch.float32"
+          ],
+          [
+            "_box_catch_h",
+            [],
+            "torch.float32"
+          ],
+          [
+            "_box_tmult",
+            [],
+            "torch.float32"
+          ],
+          [
+            "_box_jitter",
+            [],
+            "torch.float32"
+          ],
+          [
+            "_box_lib_mask",
+            [],
+            "torch.bool"
+          ],
+          [
+            "_balloon_radius_per_env",
+            [],
+            "torch.float32"
+          ],
+          [
+            "_box_half_extents",
+            [
+              3
+            ],
+            "torch.float32"
+          ],
+          [
+            "_v36_walk_v",
+            [
+              2
+            ],
+            "torch.float32"
+          ],
+          [
+            "_v36_walk_anchor",
+            [
+              2
+            ],
+            "torch.float32"
+          ],
+          [
+            "_v38_aim_off",
+            [
+              2
+            ],
+            "torch.float32"
+          ],
+          [
+            "_box_regrace",
+            [],
+            "torch.int64"
+          ],
+          [
+            "_v38_cradle_ticks",
+            [],
+            "torch.int64"
+          ],
+          [
+            "_hold_init_pending",
+            [],
+            "torch.bool"
+          ],
+          [
+            "_hold_init_active",
+            [],
+            "torch.bool"
+          ]
+        ],
+        "timer_count": 5
+      },
+      "source_world_envs": 8,
+      "terms": [
+        {
+          "name": "push_robot",
+          "function": "isaaclab.envs.mdp.events.push_by_setting_velocity",
+          "parameters": {
+            "velocity_range": {
+              "x": [
+                -0.5,
+                0.5
+              ],
+              "y": [
+                -0.5,
+                0.5
+              ],
+              "z": [
+                -0.2,
+                0.2
+              ],
+              "roll": [
+                -0.52,
+                0.52
+              ],
+              "pitch": [
+                -0.52,
+                0.52
+              ],
+              "yaw": [
+                -0.78,
+                0.78
+              ]
+            }
+          },
+          "interval": [
+            1.0,
+            3.0
+          ],
+          "global_time": false,
+          "ignores_ids": false
+        },
+        {
+          "name": "box_hover_launch",
+          "function": "reflex.envs.teacher_terms.v38_walking_hover_and_launch",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "balloon",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            }
+          },
+          "interval": [
+            0.0,
+            0.0
+          ],
+          "global_time": false,
+          "ignores_ids": true
+        },
+        {
+          "name": "hold_init_apply",
+          "function": "reflex.envs.throw.hold_init_apply",
+          "parameters": {
+            "x_off": 0.28,
+            "z_off": 0.35
+          },
+          "interval": [
+            0.0,
+            0.0
+          ],
+          "global_time": false,
+          "ignores_ids": true
+        },
+        {
+          "name": "first_throw_realign",
+          "function": "reflex.envs.throw.first_throw_realign",
+          "parameters": {},
+          "interval": [
+            0.0,
+            0.0
+          ],
+          "global_time": false,
+          "ignores_ids": true
+        },
+        {
+          "name": "v38_cradle_perturb",
+          "function": "reflex.envs.teacher_terms.v38_cradle_perturb",
+          "parameters": {},
+          "interval": [
+            0.5,
+            1.0
+          ],
+          "global_time": false,
+          "ignores_ids": true
+        }
+      ]
+    },
+    "transitions": [
+      {
+        "step": 0,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 8,
+        "joint_writes": 1,
+        "launched_after": 2
+      },
+      {
+        "step": 1,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 6,
+        "joint_writes": 0,
+        "launched_after": 2
+      },
+      {
+        "step": 2,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 6,
+        "joint_writes": 0,
+        "launched_after": 2
+      },
+      {
+        "step": 3,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 6,
+        "joint_writes": 0,
+        "launched_after": 2
+      },
+      {
+        "step": 4,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 5,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 6,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 7,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 8,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 4,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 9,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 10,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 11,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 12,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 13,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 14,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 15,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 16,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 17,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 18,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 19,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 20,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.1920928955078125e-07,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 21,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 2,
+        "joint_writes": 0,
+        "launched_after": 6
+      },
+      {
+        "step": 22,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 5
+      },
+      {
+        "step": 23,
+        "max_deterministic_post_error": 0.0,
+        "max_command_error": 0.0,
+        "max_event_state_error": 1.4901161193847656e-08,
+        "box_velocity_writes": 3,
+        "joint_writes": 0,
+        "launched_after": 5
+      }
+    ]
+  },
+  "update_equivalence": {
+    "reference": {
+      "actor/loss": 0.017739057540893555,
+      "actor/gradient_norm": 0.5289577841758728,
+      "critic/loss": 0.8562548518180847,
+      "imagination/valid_fraction": 0.993438720703125,
+      "imagination/start_batch": 2048,
+      "time/actor_update_seconds": 58.97073204442859,
+      "time/critic_update_seconds": 0.03988097980618477,
+      "imagination/start_waiting_fraction": 0.7587890625,
+      "imagination/start_launched_fraction": 0.2412109375,
+      "imagination/start_box_stationary_fraction": 0.7666015625,
+      "imagination/start_box_moving_fraction": 0.2333984375,
+      "imagination/start_geometric_stage_0": 1565,
+      "imagination/start_geometric_stage_1": 151,
+      "imagination/start_geometric_stage_2": 76,
+      "imagination/start_geometric_stage_3": 256,
+      "imagination/start_reference_phase_bin_0": 131,
+      "imagination/start_reference_phase_bin_1": 185,
+      "imagination/start_reference_phase_bin_2": 291,
+      "imagination/start_reference_phase_bin_3": 320,
+      "imagination/start_reference_phase_bin_4": 226,
+      "imagination/start_reference_phase_bin_5": 177,
+      "imagination/start_reference_phase_bin_6": 193,
+      "imagination/start_reference_phase_bin_7": 204,
+      "imagination/start_reference_phase_bin_8": 147,
+      "imagination/start_reference_phase_bin_9": 174,
+      "gpu/actor_peak_allocated_bytes": 5082722816,
+      "gpu/actor_peak_reserved_bytes": 5425332224
+    },
+    "minimal_native_view": {
+      "actor/loss": 0.017739057540893555,
+      "actor/gradient_norm": 0.5289577841758728,
+      "critic/loss": 0.8562547862529755,
+      "imagination/valid_fraction": 0.993438720703125,
+      "imagination/start_batch": 2048,
+      "time/actor_update_seconds": 6.871555544435978,
+      "time/critic_update_seconds": 0.04954541102051735,
+      "imagination/start_waiting_fraction": 0.7587890625,
+      "imagination/start_launched_fraction": 0.2412109375,
+      "imagination/start_box_stationary_fraction": 0.7666015625,
+      "imagination/start_box_moving_fraction": 0.2333984375,
+      "imagination/start_geometric_stage_0": 1565,
+      "imagination/start_geometric_stage_1": 151,
+      "imagination/start_geometric_stage_2": 76,
+      "imagination/start_geometric_stage_3": 256,
+      "imagination/start_reference_phase_bin_0": 131,
+      "imagination/start_reference_phase_bin_1": 185,
+      "imagination/start_reference_phase_bin_2": 291,
+      "imagination/start_reference_phase_bin_3": 320,
+      "imagination/start_reference_phase_bin_4": 226,
+      "imagination/start_reference_phase_bin_5": 177,
+      "imagination/start_reference_phase_bin_6": 193,
+      "imagination/start_reference_phase_bin_7": 204,
+      "imagination/start_reference_phase_bin_8": 147,
+      "imagination/start_reference_phase_bin_9": 174,
+      "gpu/actor_peak_allocated_bytes": 5259771392,
+      "gpu/actor_peak_reserved_bytes": 5465178112
+    },
+    "actor_parameter_max_abs_error": 1.6763806343078613e-08,
+    "critic_parameter_max_abs_error": 6.705522537231445e-08,
+    "passed": true,
+    "batch": 2048,
+    "horizon": 32,
+    "diagnostic_optimizer_steps": 2,
+    "initial_state_restored": true
+  },
+  "profile": {
+    "completed": true,
+    "warm_updates": [
+      {
+        "actor/loss": 0.016512306407094002,
+        "actor/gradient_norm": 0.5776641368865967,
+        "critic/loss": 0.8395553439855575,
+        "imagination/valid_fraction": 0.993011474609375,
+        "imagination/start_batch": 2048,
+        "time/actor_update_seconds": 59.01181270554662,
+        "time/critic_update_seconds": 0.03996746614575386,
+        "imagination/start_waiting_fraction": 0.763671875,
+        "imagination/start_launched_fraction": 0.236328125,
+        "imagination/start_box_stationary_fraction": 0.775390625,
+        "imagination/start_box_moving_fraction": 0.224609375,
+        "imagination/start_geometric_stage_0": 1581,
+        "imagination/start_geometric_stage_1": 150,
+        "imagination/start_geometric_stage_2": 71,
+        "imagination/start_geometric_stage_3": 246,
+        "imagination/start_reference_phase_bin_0": 134,
+        "imagination/start_reference_phase_bin_1": 179,
+        "imagination/start_reference_phase_bin_2": 317,
+        "imagination/start_reference_phase_bin_3": 310,
+        "imagination/start_reference_phase_bin_4": 223,
+        "imagination/start_reference_phase_bin_5": 186,
+        "imagination/start_reference_phase_bin_6": 197,
+        "imagination/start_reference_phase_bin_7": 197,
+        "imagination/start_reference_phase_bin_8": 149,
+        "imagination/start_reference_phase_bin_9": 156,
+        "gpu/actor_peak_allocated_bytes": 5080551424,
+        "gpu/actor_peak_reserved_bytes": 5423235072
+      },
+      {
+        "actor/loss": 0.02613828517496586,
+        "actor/gradient_norm": 0.5288214683532715,
+        "critic/loss": 0.9639787167310715,
+        "imagination/valid_fraction": 0.99359130859375,
+        "imagination/start_batch": 2048,
+        "time/actor_update_seconds": 8.544335074722767,
+        "time/critic_update_seconds": 0.05303310602903366,
+        "imagination/start_waiting_fraction": 0.76904296875,
+        "imagination/start_launched_fraction": 0.23095703125,
+        "imagination/start_box_stationary_fraction": 0.78173828125,
+        "imagination/start_box_moving_fraction": 0.21826171875,
+        "imagination/start_geometric_stage_0": 1584,
+        "imagination/start_geometric_stage_1": 131,
+        "imagination/start_geometric_stage_2": 50,
+        "imagination/start_geometric_stage_3": 283,
+        "imagination/start_reference_phase_bin_0": 122,
+        "imagination/start_reference_phase_bin_1": 191,
+        "imagination/start_reference_phase_bin_2": 309,
+        "imagination/start_reference_phase_bin_3": 299,
+        "imagination/start_reference_phase_bin_4": 260,
+        "imagination/start_reference_phase_bin_5": 162,
+        "imagination/start_reference_phase_bin_6": 221,
+        "imagination/start_reference_phase_bin_7": 185,
+        "imagination/start_reference_phase_bin_8": 122,
+        "imagination/start_reference_phase_bin_9": 177,
+        "gpu/actor_peak_allocated_bytes": 5236759552,
+        "gpu/actor_peak_reserved_bytes": 5454692352
+      },
+      {
+        "actor/loss": 0.03054792992770672,
+        "actor/gradient_norm": 0.5142385959625244,
+        "critic/loss": 0.5730623751878738,
+        "imagination/valid_fraction": 0.9942474365234375,
+        "imagination/start_batch": 2048,
+        "time/actor_update_seconds": 8.860906466841698,
+        "time/critic_update_seconds": 0.06308135017752647,
+        "imagination/start_waiting_fraction": 0.76171875,
+        "imagination/start_launched_fraction": 0.23828125,
+        "imagination/start_box_stationary_fraction": 0.77587890625,
+        "imagination/start_box_moving_fraction": 0.22412109375,
+        "imagination/start_geometric_stage_0": 1570,
+        "imagination/start_geometric_stage_1": 138,
+        "imagination/start_geometric_stage_2": 67,
+        "imagination/start_geometric_stage_3": 273,
+        "imagination/start_reference_phase_bin_0": 130,
+        "imagination/start_reference_phase_bin_1": 209,
+        "imagination/start_reference_phase_bin_2": 286,
+        "imagination/start_reference_phase_bin_3": 287,
+        "imagination/start_reference_phase_bin_4": 231,
+        "imagination/start_reference_phase_bin_5": 168,
+        "imagination/start_reference_phase_bin_6": 200,
+        "imagination/start_reference_phase_bin_7": 191,
+        "imagination/start_reference_phase_bin_8": 159,
+        "imagination/start_reference_phase_bin_9": 187,
+        "gpu/actor_peak_allocated_bytes": 5237186560,
+        "gpu/actor_peak_reserved_bytes": 5454692352
+      }
+    ],
+    "profiled_update": {
+      "actor/loss": 0.03215310722589493,
+      "actor/gradient_norm": 0.4483549892902374,
+      "critic/loss": 0.25050985142588617,
+      "imagination/valid_fraction": 0.994171142578125,
+      "imagination/start_batch": 2048,
+      "time/actor_update_seconds": 16.840190786868334,
+      "time/critic_update_seconds": 0.10656775906682014,
+      "imagination/start_waiting_fraction": 0.76513671875,
+      "imagination/start_launched_fraction": 0.23486328125,
+      "imagination/start_box_stationary_fraction": 0.7734375,
+      "imagination/start_box_moving_fraction": 0.2265625,
+      "imagination/start_geometric_stage_0": 1578,
+      "imagination/start_geometric_stage_1": 150,
+      "imagination/start_geometric_stage_2": 62,
+      "imagination/start_geometric_stage_3": 258,
+      "imagination/start_reference_phase_bin_0": 131,
+      "imagination/start_reference_phase_bin_1": 175,
+      "imagination/start_reference_phase_bin_2": 295,
+      "imagination/start_reference_phase_bin_3": 301,
+      "imagination/start_reference_phase_bin_4": 256,
+      "imagination/start_reference_phase_bin_5": 171,
+      "imagination/start_reference_phase_bin_6": 201,
+      "imagination/start_reference_phase_bin_7": 203,
+      "imagination/start_reference_phase_bin_8": 150,
+      "imagination/start_reference_phase_bin_9": 165,
+      "gpu/actor_peak_allocated_bytes": 5230344704,
+      "gpu/actor_peak_reserved_bytes": 5454692352
+    },
+    "batch": 2048,
+    "horizon": 32,
+    "compile_step": false,
+    "compile_dynamics": true,
+    "compile_fk": true,
+    "checkpoint_saved": false,
+    "operators": [
+      {
+        "name": "cudaLaunchKernel",
+        "count": 685003,
+        "cpu_total_ms": 3251.8939409999875,
+        "self_cpu_ms": 3182.063045999984,
+        "device_total_ms": 0.047296000000846106,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/all_FK_calls",
+        "count": 65,
+        "cpu_total_ms": 1138.8367960000005,
+        "self_cpu_ms": 8.506067999996331,
+        "device_total_ms": 9.87699599998308,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/all_FK_calls",
+        "count": 65,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 1001.6546679999957,
+        "self_device_ms": 1001.6546679999957
+      },
+      {
+        "name": "imagine/observation",
+        "count": 32,
+        "cpu_total_ms": 702.1261189999971,
+        "self_cpu_ms": 150.77375999999845,
+        "device_total_ms": 49.780267000030435,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/observation",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 697.4671009999944,
+        "self_device_ms": 697.4671009999944
+      },
+      {
+        "name": "imagine/action_targets",
+        "count": 32,
+        "cpu_total_ms": 23.570548000005992,
+        "self_cpu_ms": 7.3248869999959245,
+        "device_total_ms": 1.2433229999853066,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/action_targets",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 19.86062300000167,
+        "self_device_ms": 19.86062300000167
+      },
+      {
+        "name": "imagine/dynamics",
+        "count": 32,
+        "cpu_total_ms": 102.5416879999982,
+        "self_cpu_ms": 6.483077000002617,
+        "device_total_ms": 22.31284600002029,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/dynamics",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 89.92916300000067,
+        "self_device_ms": 89.92916300000067
+      },
+      {
+        "name": "imagine/FK",
+        "count": 32,
+        "cpu_total_ms": 939.633638,
+        "self_cpu_ms": 7.965989999996141,
+        "device_total_ms": 4.920920999964677,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/reward_and_termination",
+        "count": 32,
+        "cpu_total_ms": 2485.030209999999,
+        "self_cpu_ms": 600.9322740000483,
+        "device_total_ms": 151.47238800002705,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/reward_and_termination",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 2466.9575949999985,
+        "self_device_ms": 2466.9575949999985
+      },
+      {
+        "name": "imagine/native_event_scheduler",
+        "count": 64,
+        "cpu_total_ms": 10893.402023999999,
+        "self_cpu_ms": 1518.3788379997811,
+        "device_total_ms": 665.4281990003844,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/native_event_scheduler",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 5430.776578999999,
+        "self_device_ms": 5430.776578999999
+      },
+      {
+        "name": "imagine/AMP",
+        "count": 32,
+        "cpu_total_ms": 189.684534999999,
+        "self_cpu_ms": 47.76669300004275,
+        "device_total_ms": 11.928762999960862,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "imagine/AMP",
+        "count": 32,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 184.73533500000048,
+        "self_device_ms": 184.73533500000048
+      },
+      {
+        "name": "actor/BPTT",
+        "count": 1,
+        "cpu_total_ms": 6161.7865980000015,
+        "self_cpu_ms": 6107.900232999994,
+        "device_total_ms": 0.0009280000012367964,
+        "self_device_ms": 0.0
+      },
+      {
+        "name": "actor/BPTT",
+        "count": 1,
+        "cpu_total_ms": 0.0,
+        "self_cpu_ms": 0.0,
+        "device_total_ms": 0.0009280000012367964,
+        "self_device_ms": 0.0009280000012367964
+      }
+    ]
+  }
+}
