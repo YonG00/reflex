@@ -1,0 +1,194 @@
+{
+  "baseline": {
+    "update_count": 40,
+    "at_140": {
+      "iteration": 140,
+      "real/task_reward": -0.2547367215156555,
+      "experience/completed_episodes": 15275,
+      "experience/launches": 4028,
+      "experience/completed_strict_successes": 0,
+      "experience/completed_observed_throws": 249,
+      "experience/termination_reasons_measured": 1.0,
+      "experience/episode_return": -0.4812798346747353,
+      "experience/episode_length": 9.279410801963994,
+      "experience/completed_strict_success_rate": 0.0,
+      "experience/clean2_interception_per_completed_throw": 0.40160642570281124,
+      "experience/strict_hold_per_completed_throw": 0.0,
+      "experience/original_loose_catch_per_measured_throw": 0.4859437751004016,
+      "experience/termination_reason_0": 0,
+      "experience/termination_reason_1": 2182,
+      "experience/termination_reason_2": 350,
+      "experience/termination_reason_3": 12824,
+      "time/collect_seconds": 0.26471779495477676,
+      "schedule/update_due": 0.0,
+      "warmup/insufficient_windows": 0.0,
+      "progress/real_transitions": 176128,
+      "progress/probe_transitions": 0,
+      "progress/collect_transitions": 176128,
+      "progress/actor_updates": 43,
+      "progress/wm_gradient_updates": 430,
+      "progress/termination_gradient_updates": 430,
+      "time/replay_sample_seconds_inclusive": 0.0,
+      "progress/wall_seconds": 371.76598754897714,
+      "progress/end_to_end_transitions_per_second": 385.61892295467703
+    },
+    "blocks": [
+      {
+        "updates": [
+          1,
+          10
+        ],
+        "real/task_reward": -0.004235538467764854,
+        "experience/episode_return": 0.6756296244944298,
+        "experience/episode_length": 29.237544630323413,
+        "actor/gradient_norm": 0.5882622510194778,
+        "imagination/valid_fraction": 0.9899139404296875,
+        "time/actor_update_seconds": 5.380616889894009
+      },
+      {
+        "updates": [
+          11,
+          20
+        ],
+        "real/task_reward": -0.033470945060253145,
+        "experience/episode_return": 0.0760461538460712,
+        "experience/episode_length": 21.29898118450189,
+        "actor/gradient_norm": 0.37205235064029696,
+        "imagination/valid_fraction": 0.9371810913085937,
+        "time/actor_update_seconds": 2.878603766486049
+      },
+      {
+        "updates": [
+          21,
+          30
+        ],
+        "real/task_reward": -0.08752345778048039,
+        "experience/episode_return": -0.16471606589201584,
+        "experience/episode_length": 14.816562472478001,
+        "actor/gradient_norm": 0.14894788041710855,
+        "imagination/valid_fraction": 0.7646255493164062,
+        "time/actor_update_seconds": 2.7499782405793667
+      },
+      {
+        "updates": [
+          31,
+          40
+        ],
+        "real/task_reward": -0.2210240438580513,
+        "experience/episode_return": -0.35885959033798825,
+        "experience/episode_length": 10.689030681887667,
+        "actor/gradient_norm": 0.08554897829890251,
+        "imagination/valid_fraction": 0.6395950317382812,
+        "time/actor_update_seconds": 2.2969711512327193
+      }
+    ]
+  },
+  "pure_soft": {
+    "update_count": 40,
+    "at_140": {
+      "iteration": 140,
+      "real/task_reward": 0.05280487984418869,
+      "experience/completed_episodes": 3578,
+      "experience/launches": 1163,
+      "experience/completed_strict_successes": 0,
+      "experience/completed_observed_throws": 255,
+      "experience/termination_reasons_measured": 1.0,
+      "experience/episode_return": 1.4173648560127112,
+      "experience/episode_length": 34.17104527669089,
+      "experience/completed_strict_success_rate": 0.0,
+      "experience/clean2_interception_per_completed_throw": 0.39215686274509803,
+      "experience/strict_hold_per_completed_throw": 0.0,
+      "experience/original_loose_catch_per_measured_throw": 0.4745098039215686,
+      "experience/termination_reason_0": 0,
+      "experience/termination_reason_1": 3115,
+      "experience/termination_reason_2": 438,
+      "experience/termination_reason_3": 105,
+      "time/collect_seconds": 0.2806704230606556,
+      "schedule/update_due": 0.0,
+      "warmup/insufficient_windows": 0.0,
+      "progress/real_transitions": 176128,
+      "progress/probe_transitions": 0,
+      "progress/collect_transitions": 176128,
+      "progress/actor_updates": 43,
+      "progress/wm_gradient_updates": 430,
+      "progress/termination_gradient_updates": 430,
+      "time/replay_sample_seconds_inclusive": 0.0,
+      "progress/wall_seconds": 326.83188703656197,
+      "progress/end_to_end_transitions_per_second": 438.6352899872726
+    },
+    "blocks": [
+      {
+        "updates": [
+          1,
+          10
+        ],
+        "real/task_reward": 0.03901160899549723,
+        "experience/episode_return": 0.7805721882252709,
+        "experience/episode_length": 30.187382911921656,
+        "actor/gradient_norm": 0.16939138993620872,
+        "imagination/valid_fraction": 0.9908096313476562,
+        "time/actor_update_seconds": 5.1938053913414475
+      },
+      {
+        "updates": [
+          11,
+          20
+        ],
+        "real/task_reward": 0.05741253420710564,
+        "experience/episode_return": 0.979606703642742,
+        "experience/episode_length": 31.41175232707399,
+        "actor/gradient_norm": 0.11333930492401123,
+        "imagination/valid_fraction": 0.9196563720703125,
+        "time/actor_update_seconds": 2.827939672395587
+      },
+      {
+        "updates": [
+          21,
+          30
+        ],
+        "real/task_reward": 0.05574167259037495,
+        "experience/episode_return": 1.1725153443949725,
+        "experience/episode_length": 32.51135255474104,
+        "actor/gradient_norm": 0.06846706457436084,
+        "imagination/valid_fraction": 0.8518463134765625,
+        "time/actor_update_seconds": 2.89824010245502
+      },
+      {
+        "updates": [
+          31,
+          40
+        ],
+        "real/task_reward": 0.051419639959931374,
+        "experience/episode_return": 1.3528970320972586,
+        "experience/episode_length": 33.74107922053768,
+        "actor/gradient_norm": 0.06995028220117092,
+        "imagination/valid_fraction": 0.8110488891601563,
+        "time/actor_update_seconds": 2.861178855970502
+      }
+    ]
+  },
+  "checkpoint": {
+    "path": "outputs/world_model/20261106_v24_pure_soft_fix_checks/short_regression/checkpoint_final.pt",
+    "exists": true,
+    "bytes": 1418869325
+  },
+  "soft_gpu_check": {
+    "passed": true,
+    "analytic_terminal_flag_errors": {
+      "reward": 7.450580596923828e-09,
+      "done": 0.0,
+      "obs": 0.0,
+      "valid": 0.0,
+      "predicted_launch_probability": 0.0
+    },
+    "actor_gradient_norm": 2.0376062393188477,
+    "original_terminal_cost": -1.0,
+    "optimizer_updates": 0,
+    "batch": 16,
+    "horizon": 32
+  },
+  "source_sha256": {
+    "source/reflex/reflex/world_model/trainer.py": "1f766c7c8d91aedc618496b21fd14b4495d0fabe0eabca59e7241aa24df1493a",
+    "source/reflex/reflex/world_model/train.py": "25caf5941a16750dc5d687b696e75ef1cf8dc0bf13c4664b4c6986c7d7dfc720"
+  }
+}
