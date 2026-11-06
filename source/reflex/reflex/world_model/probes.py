@@ -30,6 +30,8 @@ def tensor_tree(value):
 def rank_actions(
     adapter, trainer, horizon=4, min_pairs=16, min_agreement=0.6, repeat_tolerance=0.02
 ):
+    if trainer.cfg.condition_external_events and horizon != 1:
+        raise ValueError("Conditioned V24 ranking currently supports physical H1 only")
     e = adapter.env
     sensors = list(e.scene.sensors.values())
     objects = (
@@ -101,6 +103,7 @@ def rank_actions(
     real = []
     predicted = []
     masks = []
+    real_height, predicted_height = [], []
     reset_idx = e._reset_idx
     # Terminal branches are excluded. Avoid their auto-resets changing random
     # masses/materials or curriculum while evaluating alternate actions.
@@ -118,9 +121,9 @@ def rank_actions(
             mb = b["blend"]
             rr = torch.zeros(e.num_envs, device=e.device)
             mr = rr.clone()
-            valid = b["launched"].bool() & (
-                b["phase"] + horizon < b["reference_length"]
-            )
+            valid = b["phase"] + horizon < b["reference_length"]
+            if not trainer.cfg.condition_external_events:
+                valid &= b["launched"].bool()
             for t in range(horizon):
                 rb = adapter.snapshot()
                 target, nb = trainer.targets(rb, candidate)
@@ -142,11 +145,34 @@ def rank_actions(
                         raise RuntimeError(
                             "Ranking pure dynamics requires AnalyticTask"
                         )
-                    ns = trainer.model(s, mt, b["context"])
+                    if trainer.cfg.condition_external_events:
+                        pre = trainer.event_scheduler.codec.pre_features(
+                            b["event_state"], episode, trainer.task.dt
+                        )
+                        ns = trainer.model.predict_physical(s, mt, b["context"], pre)
+                    else:
+                        ns = trainer.model(s, mt, b["context"])
                     predicted_task = trainer.task.evaluate_step(
                         b, s, ns, candidate, previous, phase, history, episode, event, t
                     )
                     reward = predicted_task.rewards
+                    if trainer.cfg.pure_soft_survival:
+                        from .events_v24.soft_survival import expected_terminal_reward
+
+                        probability = trainer.termination(
+                            predicted_task.termination_features
+                        ).sigmoid()
+                        reward = expected_terminal_reward(
+                            reward,
+                            probability,
+                            trainer.terminal_reward_index,
+                            trainer.terminal_reward_cost,
+                        )
+                    if horizon == 1:
+                        real_height.append(-tr["termination_features"][:, 2].square())
+                        predicted_height.append(
+                            -predicted_task.termination_features[:, 2].square()
+                        )
                     history, episode, event, phase = (
                         predicted_task.history,
                         predicted_task.episode_steps,
@@ -187,7 +213,31 @@ def rank_actions(
     valid &= (rd.abs() > 1e-5) & torch.isfinite(rd) & torch.isfinite(md)
     n = int(valid.sum())
     agreement = float(((rd[valid] * md[valid]) > 0).float().mean()) if n else 0.0
+    height_result = {}
+    if len(real_height) == 3:
+        hd = real_height[0] - real_height[2]
+        hp = predicted_height[0] - predicted_height[2]
+        repeat_height = (real_height[0] - real_height[1]).abs()
+        hm = (
+            masks[0]
+            & masks[1]
+            & masks[2]
+            & (hd.abs() > 1e-8)
+            & (repeat_height <= 0.25 * hd.abs())
+            & torch.isfinite(hp)
+        )
+        hn = int(hm.sum())
+        height_result = {
+            "height_valid_pairs": hn,
+            "height_action_agreement": float(((hd[hm] * hp[hm]) > 0).float().mean())
+            if hn
+            else None,
+            "height_repeat_max_error": float(repeat_height.max()),
+            "height_difference_abs_mean": float(hd.abs().mean()),
+            "height_repeat_filter": "repeat difference <=25% of candidate difference",
+        }
     return {
+        **height_result,
         "passed": n >= min_pairs and agreement >= min_agreement,
         "valid_pairs": n,
         "agreement": agreement,

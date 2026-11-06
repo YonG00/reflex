@@ -28,6 +28,11 @@ parser.add_argument(
         "actor_fusion_update_equivalence",
         "imagination_boundary_check",
         "pure_soft_survival_check",
+        "actor_component_timing",
+        "root_tracking_check",
+        "physical_action_ranking",
+        "collect_component_timing",
+        "event_compact_optimization_check",
     ),
     default="preflight",
 )
@@ -50,6 +55,8 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument("--migrate_event_execution", action="store_true")
+parser.add_argument("--migrate_update_rate", action="store_true")
 parser.add_argument("--migrate_soft_survival", action="store_true")
 parser.add_argument("--aggregate_gradient_audit", action="store_true")
 parser.add_argument("--migrate_imagination_boundaries", action="store_true")
@@ -77,8 +84,19 @@ parser.add_argument(
 )
 parser.add_argument("--save_every", type=int, default=25)
 parser.add_argument("--preflight_steps", type=int, default=512)
+parser.add_argument("--benchmark_steps", type=int, default=24)
+parser.add_argument(
+    "--benchmark_no_checkpoint",
+    action="store_true",
+    help="Bounded throughput trials only; discard trial weights, retain metrics",
+)
 parser.add_argument("--play_steps", type=int, default=1500)
 parser.add_argument("--video", action="store_true")
+parser.add_argument(
+    "--no_debug_vis",
+    action="store_true",
+    help="Disable only command/sensor debug drawings",
+)
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 if (
@@ -93,6 +111,15 @@ if args.checkpoint and args.warm_start_actor:
 if args.num_envs < 6 or args.save_every < 1:
     parser.error(
         "Use at least 6 envs for separate holdout environments and save_every >= 1"
+    )
+if args.benchmark_no_checkpoint and (
+    args.mode != "train"
+    or args.max_seconds is None
+    or args.max_seconds > 600
+    or args.max_iterations > 200
+):
+    parser.error(
+        "benchmark_no_checkpoint is restricted to <=600s, <=200-iteration train trials"
     )
 if args.video:
     args.enable_cameras = True
@@ -129,6 +156,10 @@ def main():
     cfg.seed = args.seed
     cfg.sim.device = args.device
     cfg.commands.motion.motion_file = paths.MOTION_FILE
+    if args.no_debug_vis:
+        cfg.commands.motion.debug_vis = False
+        if hasattr(cfg.scene, "contact_forces"):
+            cfg.scene.contact_forces.debug_vis = False
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     # Save config before simulator creation, so failed preflight has evidence.
@@ -182,6 +213,9 @@ def main():
             urdf,
             monitor_contacts=config.monitor_contacts,
             learn_external_events=config.learn_external_events,
+            parity_every=config.real_parity_every,
+            cache_context=config.cache_physical_context,
+            native_collection_inputs=config.native_collection_inputs,
         )
         if (
             not config.monitor_contacts
@@ -230,6 +264,8 @@ def main():
                 reinitialize_replay=args.reinitialize_replay,
                 migrate_imagination_boundaries=args.migrate_imagination_boundaries,
                 migrate_soft_survival=args.migrate_soft_survival,
+                migrate_event_execution=args.migrate_event_execution,
+                migrate_update_rate=args.migrate_update_rate,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)
@@ -279,6 +315,44 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "event_compact_optimization_check":
+            from .events_v24.actor_profile import update_equivalence
+            from .events_v24.component_timing import check
+
+            update_equivalence(trainer, out, compact=True)
+            original_compact = trainer.event_scheduler.compact_inputs
+            try:
+                for enabled, label in ((False, "baseline"), (True, "compact")):
+                    trainer.event_scheduler.compact_inputs = enabled
+                    print(json.dumps(check(trainer, out / label)), flush=True)
+            finally:
+                trainer.event_scheduler.compact_inputs = original_compact
+            return
+        if args.mode == "collect_component_timing":
+            from .events_v24.collect_timing import check
+
+            print(
+                json.dumps(check(trainer, adapter, out, steps=args.benchmark_steps)),
+                flush=True,
+            )
+            return
+        if args.mode == "physical_action_ranking":
+            result = rank_actions(adapter, trainer, horizon=1, min_pairs=64)
+            (out / "physical_action_ranking.json").write_text(
+                json.dumps(result, indent=2)
+            )
+            print(json.dumps(result), flush=True)
+            return
+        if args.mode == "root_tracking_check":
+            from .events_v24.root_tracking import check
+
+            print(json.dumps(check(trainer, out)), flush=True)
+            return
+        if args.mode == "actor_component_timing":
+            from .events_v24.component_timing import check
+
+            print(json.dumps(check(trainer, out)), flush=True)
+            return
         if args.mode == "pure_soft_survival_check":
             from .events_v24.boundary_check import check_soft
 
@@ -399,6 +473,10 @@ def main():
             torch.manual_seed(args.seed)
             np.random.seed(args.seed)
             random.seed(args.seed)
+            from .experience import ExperienceMetrics
+
+            evaluation = ExperienceMetrics(monitor_contacts=config.monitor_contacts)
+            play_started = time.monotonic()
             rewards = []
             terminated = 0
             strict_envs = torch.zeros(
@@ -411,6 +489,7 @@ def main():
                     raw = trainer.act(b)
                     target, blend = trainer.targets(b, raw)
                     tr = adapter.step(raw, target, blend)
+                    evaluation.update(tr)
                     rewards.append(float(tr["reward_terms"].sum(-1).mean()))
                     terminated += int(tr["terminated"].sum())
                     # Original strict success is >=30 consecutive frames (0.6s).
@@ -428,6 +507,9 @@ def main():
                 "evaluation_seed": args.seed,
                 "evaluation_rng_reset": True,
             }
+            summary["wall_seconds"] = time.monotonic() - play_started
+            summary["fresh_episode_metrics"] = evaluation.metrics()
+            summary["termination_names"] = adapter.contract["termination_names"]
             (out / "play_summary.json").write_text(json.dumps(summary, indent=2))
             print(json.dumps(summary), flush=True)
             return
@@ -556,7 +638,10 @@ def main():
                                 )
                             metrics.update(trainer.update_actor())
                 trainer.iteration += 1
-                if trainer.iteration % args.save_every == 0:
+                if (
+                    trainer.iteration % args.save_every == 0
+                    and not args.benchmark_no_checkpoint
+                ):
                     save_start = timestamp(args.device)
                     trainer.save(out / f"checkpoint_{trainer.iteration:05d}.pt")
                     metrics["time/checkpoint_seconds"] = (
@@ -586,7 +671,23 @@ def main():
                 with (out / "metrics.jsonl").open("a") as f:
                     f.write(json.dumps(record) + "\n")
                 print(json.dumps(record), flush=True)
-            trainer.save(out / "checkpoint_final.pt")
+            if args.benchmark_no_checkpoint:
+                (out / "benchmark_end.json").write_text(
+                    json.dumps(
+                        {
+                            "completed": True,
+                            "checkpoint_saved": False,
+                            "trial_weights_discarded": True,
+                            "iteration": trainer.iteration,
+                            "actor_updates": trainer.actor_updates,
+                            "model_updates": trainer.model_updates,
+                            "termination_updates": trainer.termination_updates,
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                trainer.save(out / "checkpoint_final.pt")
         finally:
             writer.close()
     finally:

@@ -55,6 +55,10 @@ class TrainConfig:
     compile_backend: str = "inductor"
     tf32: bool = False
     schedule: str = "guarded"
+    native_collection_inputs: bool = False
+    compact_event_inputs: bool = False
+    real_parity_every: int = 1
+    cache_physical_context: bool = False
     pure_soft_survival: bool = False
     hard_imagination_boundaries: bool = False
     initial_collect_steps: int = 40
@@ -176,6 +180,12 @@ class Trainer:
                 self.terminal_reward_cost = specs[0].weight * task.dt
 
         self.event_scheduler = event_scheduler
+        if event_scheduler is not None:
+            event_scheduler.compact_inputs = c.compact_event_inputs
+        if c.compact_event_inputs and not c.minimal_event_view:
+            raise ValueError(
+                "Compact event inputs require verified minimal native view"
+            )
         if c.minimal_event_view:
             if not c.condition_external_events or event_scheduler is None:
                 raise ValueError(
@@ -520,8 +530,12 @@ class Trainer:
         )
         return self.critic_norm(value)
 
-    def act(self, b, explore=False):
-        raw = self.actor(self.obs_norm(self.observation(b)))
+    def act(self, b, explore=False, raw_observation=None):
+        raw = self.actor(
+            self.obs_norm(
+                self.observation(b) if raw_observation is None else raw_observation
+            )
+        )
         if explore:
             raw = raw + self.cfg.exploration * torch.randn_like(raw)
         return raw
@@ -543,7 +557,13 @@ class Trainer:
         with torch.no_grad():
             for _ in range(self.cfg.collect_steps):
                 before = adapter.snapshot()
-                raw = self.act(before, explore=True)
+                raw = self.act(
+                    before,
+                    explore=True,
+                    raw_observation=adapter._before_observation
+                    if self.cfg.native_collection_inputs
+                    else None,
+                )
                 expected, blend = self.targets(before, raw)
                 tr = adapter.step(raw, expected, blend)
                 # Fail closed: infinities in hard-limit metadata are legal,
@@ -1829,6 +1849,8 @@ class Trainer:
         reinitialize_replay=False,
         migrate_imagination_boundaries=False,
         migrate_soft_survival=False,
+        migrate_event_execution=False,
+        migrate_update_rate=False,
     ):
         state = torch.load(path, map_location=self.device, weights_only=False)
         saved_config = dict(state["config"])
@@ -1839,6 +1861,10 @@ class Trainer:
         # Execution optimizations and optional telemetry do not change weights,
         # optimizers or task semantics. Contact metadata is migrated separately.
         for key in (
+            "native_collection_inputs",
+            "compact_event_inputs",
+            "real_parity_every",
+            "cache_physical_context",
             "compile_dynamics",
             "compile_fk",
             "compile_backend",
@@ -1851,6 +1877,23 @@ class Trainer:
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
+        update_rate_migration = None
+        if migrate_update_rate:
+            if (
+                not reinitialize_replay
+                or self.cfg.schedule != "joint_reproduction"
+                or loaded_config["schedule"] != "joint_reproduction"
+                or not 0 < self.cfg.updates_per_env_step <= 1
+            ):
+                raise ValueError(
+                    "Explicit update-rate trial requires a fresh joint replay and rate in (0,1]"
+                )
+            update_rate_migration = {
+                "from": loaded_config.pop("updates_per_env_step"),
+                "to": requested_config.pop("updates_per_env_step"),
+                "optimizers_preserved": True,
+                "source": str(path),
+            }
         if reinitialize_replay:
             loaded_config.pop("capacity_steps", None)
             requested_config.pop("capacity_steps", None)
@@ -1921,6 +1964,33 @@ class Trainer:
             requested_learning.pop("imagination_boundaries", None)
         saved_learning = copy.deepcopy(state.get("learning_contract"))
         requested_learning = copy.deepcopy(requested_learning)
+        event_migration = None
+        if migrate_event_execution:
+            old_sources = saved_learning.get("event_scheduler", {}).get(
+                "source_sha256", {}
+            )
+            new_sources = requested_learning.get("event_scheduler", {}).get(
+                "source_sha256", {}
+            )
+            old_hash, new_hash = (
+                old_sources.get("runtime.py"),
+                new_sources.get("runtime.py"),
+            )
+            if old_hash != new_hash:
+                approved = (
+                    "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc",
+                    "c69efde1fc6aa47681aa03c69c3aba5ac9df80c6eb211639fe3d97d545f189a0",
+                )
+                if (old_hash, new_hash) != approved:
+                    raise ValueError("Unverified event execution source migration")
+                event_migration = {
+                    "source": str(path),
+                    "from_runtime_sha256": old_hash,
+                    "to_runtime_sha256": new_hash,
+                    "optimizers_preserved": True,
+                }
+                old_sources["runtime.py"] = new_hash
+
         if reinitialize_replay:
             for contract in (saved_learning, requested_learning):
                 if contract and "event_scheduler" in contract:
@@ -2021,6 +2091,10 @@ class Trainer:
         self.initialization = dict(state.get("initialization", {"kind": "scratch"}))
         if migration:
             self.initialization["training_migration"] = migration
+        if update_rate_migration:
+            self.initialization["update_rate_migration"] = update_rate_migration
+        if event_migration:
+            self.initialization["event_execution_migration"] = event_migration
         if migrate_soft_survival:
             self.initialization["soft_survival_migration"] = {
                 "source": str(path),

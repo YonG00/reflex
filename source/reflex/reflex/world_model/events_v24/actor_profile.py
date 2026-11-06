@@ -234,7 +234,7 @@ def benchmark_views(t, output, repeats=3):
         scheduler.rng = event_rng
 
 
-def update_equivalence(t, output, fusion=False):
+def update_equivalence(t, output, fusion=False, compact=False):
     """Compare one complete Actor/Critic Adam update and restore initial state."""
     import copy
     import types
@@ -245,6 +245,7 @@ def update_equivalence(t, output, fusion=False):
     names = ("actor", "critic", "actor_opt", "critic_opt", "obs_norm", "critic_norm")
     initial = {name: copy.deepcopy(getattr(t, name).state_dict()) for name in names}
     original_view = t.event_scheduler._view
+    original_compact = getattr(t.event_scheduler, "compact_inputs", False)
     original_step, original_observations = t._v24_step, t._observations
     if fusion and original_step is None:
         raise ValueError("Fusion update equivalence requires compiled V24 step")
@@ -254,13 +255,19 @@ def update_equivalence(t, output, fusion=False):
     records = {}
     try:
         labels = (
-            ("baseline", "fused") if fusion else ("reference", "minimal_native_view")
+            ("baseline", "compact_inputs")
+            if compact
+            else ("baseline", "fused")
+            if fusion
+            else ("reference", "minimal_native_view")
         )
         for label in labels:
             for name in names:
                 getattr(t, name).load_state_dict(copy.deepcopy(initial[name]))
             t.actor_updates = original_updates
-            if fusion:
+            if compact:
+                t.event_scheduler.compact_inputs = label == "compact_inputs"
+            elif fusion:
                 t._v24_step = original_step if label == "fused" else None
                 t._observations = (
                     original_observations
@@ -321,6 +328,7 @@ def update_equivalence(t, output, fusion=False):
             getattr(t, name).load_state_dict(copy.deepcopy(initial[name]))
         t.actor_updates = original_updates
         t.event_scheduler._view = original_view
+        t.event_scheduler.compact_inputs = original_compact
         t._v24_step, t._observations = original_step, original_observations
         t.event_scheduler.rng = event_rng
     (Path(output) / "actor_update_equivalence.json").write_text(

@@ -192,6 +192,7 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     cfg.condition_external_events = True
     cfg.deterministic_event_apply = deterministic
     cfg.minimal_event_view = deterministic
+    cfg.compact_event_inputs = deterministic
     cfg.joint_predicted_termination = True
     cfg.variable_model_windows = True
     cfg.state_loss_reduction = "sum"
@@ -375,6 +376,30 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         t.cfg.hard_imagination_boundaries = False
         t.load(path)
         checkpoint = torch.load(path, weights_only=False)
+        schedule_trial = copy.deepcopy(checkpoint)
+        schedule_trial["config"]["schedule"] = "joint_reproduction"
+        schedule_path = tmp_path / "schedule_trial.pt"
+        torch.save(schedule_trial, schedule_path)
+        original_schedule, original_rate = t.cfg.schedule, t.cfg.updates_per_env_step
+        t.cfg.schedule, t.cfg.updates_per_env_step = "joint_reproduction", 0.1
+        with pytest.raises(ValueError):
+            t.load(schedule_path, reinitialize_replay=True)
+        t.load(schedule_path, reinitialize_replay=True, migrate_update_rate=True)
+        assert t.initialization["update_rate_migration"]["to"] == 0.1
+        assert t.replay.count == 0 and t.actor_updates == 1
+        t.cfg.schedule, t.cfg.updates_per_env_step = original_schedule, original_rate
+        t.load(path)
+        old_execution = copy.deepcopy(checkpoint)
+        old_execution["learning_contract"]["event_scheduler"]["source_sha256"][
+            "runtime.py"
+        ] = "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc"
+        old_execution_path = tmp_path / "old_event_execution.pt"
+        torch.save(old_execution, old_execution_path)
+        with pytest.raises(ValueError, match="learning layout"):
+            t.load(old_execution_path)
+        t.load(old_execution_path, migrate_event_execution=True)
+        assert t.initialization["event_execution_migration"]["optimizers_preserved"]
+        t.load(path)
         legacy_execution = copy.deepcopy(checkpoint)
         legacy_execution["config"].pop("minimal_event_view")
         legacy_path = tmp_path / "legacy_execution.pt"

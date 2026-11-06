@@ -12,6 +12,7 @@ import torch
 
 from ..task import Scene, primitive
 from .state import EventStateCodec
+from .fast_view import build as minimal_view
 from .writes import PlannedAsset, WritePlan
 
 
@@ -223,13 +224,30 @@ class NativeEventScheduler:
         if not len(selected):
             return values
         if subset:
-            bb = {
-                k: (
-                    v[selected] if torch.is_tensor(v) and len(v) == len(physical) else v
+            if (
+                getattr(self, "compact_inputs", False)
+                and getattr(self._view, "__func__", None) is minimal_view
+            ):
+                # fast_view.build reads exactly these fields and ignores poses.
+                # Do not gather full replay context or every body pose only to
+                # discard them immediately in the minimal event facade.
+                bb = {
+                    k: b[k][selected]
+                    for k in ("event_origins", "task_history", "dimensions")
+                }
+                pp = poses
+            else:
+                bb = {
+                    k: (
+                        v[selected]
+                        if torch.is_tensor(v) and len(v) == len(physical)
+                        else v
+                    )
+                    for k, v in b.items()
+                }
+                pp = tuple(
+                    {k: v[selected] for k, v in group.items()} for group in poses
                 )
-                for k, v in b.items()
-            }
-            pp = tuple({k: v[selected] for k, v in group.items()} for group in poses)
             vv = {k: v[selected] for k, v in values.items()}
             child_plan = plan.select(selected)
             view = self._view(

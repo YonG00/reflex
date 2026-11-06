@@ -9,7 +9,7 @@ import hashlib
 import os
 from pathlib import Path
 import torch
-from .physics import Kinematics, ActionMap, amp_features
+from .physics import Kinematics, ActionMap, amp_features, apply, inverse
 from .observation import OracleObservation
 from .oracle_env import box_dimensions, box_mass
 from .task import HISTORY_FIELDS
@@ -36,13 +36,34 @@ EXPECTED_TERMS = (
 
 
 class IsaacAdapter:
-    def __init__(self, env, urdf, monitor_contacts=False, learn_external_events=False):
+    def __init__(
+        self,
+        env,
+        urdf,
+        monitor_contacts=False,
+        learn_external_events=False,
+        parity_every=1,
+        cache_context=False,
+        native_collection_inputs=False,
+    ):
+        if parity_every < 1:
+            raise ValueError("parity_every must be positive")
+        self.parity_every = parity_every
+        self.native_collection_inputs = native_collection_inputs
+        self._before_observation = self._before_amp = None
+        self.property_cache = None
         self.monitor_contacts = monitor_contacts
         self.learn_external_events = learn_external_events
         self.env = env.unwrapped
         e = self.env
         self.device = e.device
         self.robot, self.box = e.scene["robot"], e.scene["balloon"]
+        if cache_context:
+            from .context_cache import ContextPropertyCache
+
+            self.property_cache = ContextPropertyCache(
+                {"robot": self.robot, "box": self.box}, device=self.device
+            )
         self.command = e.command_manager.get_term("motion")
         self.term = e.action_manager.get_term("joint_pos")
         self.events = torch.zeros(e.num_envs, dtype=torch.bool, device=self.device)
@@ -236,11 +257,15 @@ class IsaacAdapter:
                     device=self.device,
                 ),
             }
-            if not torch.allclose(
+            if self.parity_due() and not torch.allclose(
                 self.pre_reset["reward_terms"].sum(-1), result, atol=1e-5, rtol=1e-5
             ):
                 raise RuntimeError("Isaac reward term weighting/dt contract changed")
             if self.task is not None and self._before is not None:
+                self.pre_reset["termination_features"] = (
+                    self.native_termination_features()
+                )
+            if self.task is not None and self._before is not None and self.parity_due():
                 b = self._before
                 analytic = self.task.evaluate_step(
                     b,
@@ -254,8 +279,11 @@ class IsaacAdapter:
                     b["next_external_event_seconds"],
                     0,
                 )
-                self.pre_reset["termination_features"] = (
-                    analytic.termination_features.detach()
+                torch.testing.assert_close(
+                    self.pre_reset["termination_features"],
+                    analytic.termination_features,
+                    atol=2e-4,
+                    rtol=1e-5,
                 )
                 err = (analytic.rewards - self.pre_reset["reward_terms"]).abs().amax(0)
                 self.task_parity_max = torch.maximum(self.task_parity_max, err.detach())
@@ -338,6 +366,23 @@ class IsaacAdapter:
             device=self.device,
         )
 
+    def parity_due(self):
+        # Always check the startup window, then sample explicitly.
+        return self.real_steps <= 8 or self.real_steps % self.parity_every == 0
+
+    def native_termination_features(self):
+        cmd = self.command
+        gravity = self.robot.data.GRAVITY_VEC_W
+        return torch.cat(
+            (
+                cmd.anchor_pos_w - cmd.robot_anchor_pos_w,
+                apply(inverse(cmd.anchor_quat_w), gravity)
+                - apply(inverse(cmd.robot_anchor_quat_w), gravity),
+                (cmd.body_pos_relative_w - cmd.robot_body_pos_w).flatten(-2),
+            ),
+            -1,
+        ).clone()
+
     def physical(self):
         d, b = self.robot.data, self.box.data
         origins = self.env.scene.env_origins
@@ -398,7 +443,11 @@ class IsaacAdapter:
             view = asset.root_physx_view
             for prop in ("masses", "inertias", "coms", "material_properties"):
                 value = (
-                    getattr(view, "get_" + prop)()
+                    (
+                        self.property_cache.get(name, asset, prop)
+                        if self.property_cache is not None
+                        else getattr(view, "get_" + prop)()
+                    )
                     .to(self.device)
                     .float()
                     .reshape(n, -1)
@@ -498,7 +547,13 @@ class IsaacAdapter:
             "yaw": self.command.yaw_offsets.clone(),
             "launched": e._box_launched.clone(),
             "dimensions": box_dimensions(e).clone(),
-            "mass": box_mass(e).clone(),
+            "mass": (
+                self.property_cache.get("box", self.box, "masses")
+                .to(self.device)
+                .reshape(n, 1)
+                if self.property_cache is not None
+                else box_mass(e)
+            ).clone(),
             "default_q": self.robot.data.default_joint_pos.clone(),
             "default_dq": self.robot.data.default_joint_vel.clone(),
             "blend": blend.clone()[:, None],
@@ -546,6 +601,13 @@ class IsaacAdapter:
         if self.event_scheduler is not None:
             result.update(self.event_scheduler.snapshot(self.env))
         self._before = result
+        if self.native_collection_inputs:
+            self._before_observation = self.env.observation_manager.compute_group(
+                "policy"
+            ).clone()
+            self._before_amp = self.real_amp()
+            if self.parity_due():
+                self.parity(result)
         return result
 
     def parity(self, b, atol=2e-4, critic=False):
@@ -610,11 +672,15 @@ class IsaacAdapter:
         p = self.pre_reset
         if p is None:
             raise RuntimeError("Reward snapshot hook was not called")
-        if not torch.allclose(self.real_target, expected_target, atol=2e-5, rtol=1e-5):
+        if self.parity_due() and not torch.allclose(
+            self.real_target, expected_target, atol=2e-5, rtol=1e-5
+        ):
             raise RuntimeError(
                 f"Action target parity failed: {(self.real_target - expected_target).abs().max()}"
             )
-        if not torch.allclose(self.real_blend, expected_blend, atol=1e-6):
+        if self.parity_due() and not torch.allclose(
+            self.real_blend, expected_blend, atol=1e-6
+        ):
             raise RuntimeError("Two-stage controller state parity failed")
         done = p["terminated"] | p["timeout"]
         # Counters updated by non-physical interval events belong to next memory.
@@ -698,7 +764,11 @@ class IsaacAdapter:
 
     def real_amp_from_state_before(self, b):
         # FK is accepted only after parity() has passed; no hard-coded body IDs.
-        return amp_features(b["state"], self.bridge.fk)
+        return (
+            self._before_amp
+            if self.native_collection_inputs
+            else amp_features(b["state"], self.bridge.fk)
+        )
 
     def manifest(self):
         e = self.env
