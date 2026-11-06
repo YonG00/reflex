@@ -624,6 +624,19 @@ def reset_box_throw(
             env._intake_printed = True
             print(f"[throw] intake drill armed: frac={_ifr} "
                   "(short drop 0.35m ahead @1.55m, seats in ~0.4s)", flush=True)
+    # Imagined launches may have saved these inputs for backward earlier in
+    # this same callback. Copy on write preserves those versions and gradients;
+    # no trigger, sampled value or PhysX command changes.
+    if torch.is_grad_enabled():
+        for name in (
+            "_box_p0", "_box_q0", "_box_v0", "_box_omega",
+            "_box_launch_step", "_box_launched", "_box_aim_err",
+            "_box_catch_h", "_box_tmult", "_box_jitter", "_box_lib_mask",
+            "_box_lib_arrvec_w", "_box_lib_arr_dy", "_box_lib_tgt_x",
+        ):
+            value = getattr(env, name, None)
+            if torch.is_tensor(value):
+                setattr(env, name, value.clone())
     env._box_p0[env_ids] = s["p0"]
     env._box_q0[env_ids] = s["q0"]
     env._box_v0[env_ids] = s["v0"]

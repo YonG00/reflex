@@ -5,7 +5,7 @@ import torch
 from .writes import WritePlan
 
 
-def check(adapter, trainer, steps=12):
+def check(adapter, trainer, steps=24):
     scheduler = adapter.event_scheduler
     if scheduler is None:
         raise ValueError("V24 probe needs the event scheduler")
@@ -13,16 +13,52 @@ def check(adapter, trainer, steps=12):
     n = env.num_envs
     if not hasattr(env, "_box_regrace"):
         env._box_regrace = torch.zeros(n, dtype=torch.long, device=adapter.device)
+    if not hasattr(env, "_v38_cradle_ticks"):
+        env._v38_cradle_ticks = torch.zeros(n, dtype=torch.long, device=adapter.device)
     if n < 8:
         raise ValueError("V24 probe needs at least 8 environments")
     manager = env.event_manager
     original = manager.apply
     traces = []
+    perturb_writes = []
+    perturb_cfgs = []
+    for cfg in manager._mode_term_cfgs["interval"]:
+        if cfg.func.__name__ == "v38_cradle_perturb":
+            original_perturb = cfg.func
+
+            def measured_perturb(e, *args, **kwargs):
+                velocity = adapter.box.data.root_vel_w.clone()
+                result = original_perturb(e, *args, **kwargs)
+                perturb_writes.append(
+                    int((adapter.box.data.root_vel_w - velocity).abs().any(-1).sum())
+                )
+                return result
+
+            perturb_cfgs.append((cfg, cfg.func))
+            cfg.func = measured_perturb
     before = (trainer.model_updates, trainer.actor_updates, trainer.termination_updates)
 
     def interval_checked(mode, *args, **kwargs):
         if mode != "interval":
             return original(mode, *args, **kwargs)
+        # Controlled test prefix at the interval boundary exercises a real
+        # eligible perturb branch without changing its probability or callback.
+        if len(traces) >= 4 and perturb_cfgs:
+            from ...envs.teacher_terms import _chest_w
+
+            ids = torch.arange(4, n, device=adapter.device)
+            pose = torch.cat(
+                (_chest_w(env)[ids], adapter.box.data.root_quat_w[ids]), -1
+            )
+            adapter.box.write_root_pose_to_sim(pose, env_ids=ids)
+            adapter.box.write_root_velocity_to_sim(
+                adapter.robot.data.root_vel_w[ids], env_ids=ids
+            )
+            env._box_launched[ids] = True
+            env._v38_cradle_ticks[ids] = 75
+            for i, term in enumerate(scheduler.terms):
+                if term.name == "v38_cradle_perturb":
+                    manager._interval_term_time_left[i][:] = 0
         physical = adapter.physical()
         clock = scheduler.snapshot(env)
         bb = {
@@ -134,6 +170,10 @@ def check(adapter, trainer, steps=12):
             adapter.step(raw, target, blend)
     finally:
         manager.apply = original
+        for cfg, function in perturb_cfgs:
+            cfg.func = function
+    if perturb_cfgs:
+        assert sum(perturb_writes) > 0, "No positive native perturb branch exercised"
     assert before == (
         trainer.model_updates,
         trainer.actor_updates,
@@ -143,6 +183,7 @@ def check(adapter, trainer, steps=12):
         "passed": True,
         "optimizer_updates": 0,
         "steps": len(traces),
+        "positive_perturb_writes": sum(perturb_writes),
         "scheduler": scheduler.specification(),
         "transitions": traces,
     }

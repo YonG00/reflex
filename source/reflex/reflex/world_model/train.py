@@ -19,6 +19,7 @@ parser.add_argument(
         "event_boundary_probe",
         "event_inventory",
         "event_condition_probe",
+        "v24_short_compare",
     ),
     default="preflight",
 )
@@ -246,6 +247,11 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "v24_short_compare":
+            from .events_v24.compare import run
+
+            run(adapter, trainer, out)
+            return
         if args.mode == "event_condition_probe":
             from .events_v24.probe import check
 

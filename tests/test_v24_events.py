@@ -315,6 +315,14 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
         torch.save(checkpoint, incompatible)
         with pytest.raises(ValueError):
             t.load(incompatible)
+        from reflex.world_model.events_v24.compare import run
+
+        paired_dir = tmp_path / "paired"
+        paired_dir.mkdir()
+        paired = run(None, t, paired_dir, collect_steps=0, rounds=1)
+        assert paired["completed"] and paired["frozen_replay"]
+        assert paired["results"]["learned"]["checkpoint_reload_passed"]
+        assert paired["results"]["deterministic"]["checkpoint_reload_passed"]
 
 
 def test_batch_coupled_timer_uses_foreign_due_clock_without_changing_native_law(
@@ -541,3 +549,70 @@ def test_event_write_preserves_native_arguments_rng_and_restores_metadata():
     assert calls == [1]
     assert asset._reflex_event_write_mask == "outer"
     assert torch.equal(torch.get_rng_state(), rng)
+
+
+def test_native_rethrow_preserves_saved_masks_scalars_and_robot_gradient(tmp_path):
+    """Execute the actual native reset body without importing Isaac on CPU."""
+    import ast
+    import os
+    from pathlib import Path
+
+    trainer, b, runtime, packed = setup(tmp_path)
+    physical = b["state"].clone().requires_grad_()
+    values, _ = runtime.codec.decode(packed)
+    plan = WritePlan(physical)
+    env = runtime._view(
+        b,
+        physical,
+        trainer.bridge.fk(physical),
+        values,
+        torch.ones(4, dtype=torch.long),
+        torch.ones(4, dtype=torch.long),
+        plan,
+    )
+    env._box_lib_mask = torch.ones(4, dtype=torch.bool)
+    env._box_tmult = torch.ones(4)
+    saved = torch.where(
+        env._box_lib_mask[:, None], env._box_v0, env.scene["robot"].data.root_pos_w
+    )
+    saved = saved + env.scene["robot"].data.root_pos_w * env._box_tmult[:, None]
+
+    def samples(n, anchor, fwd, device, step_dt):
+        del fwd, step_dt
+        return {
+            "p0": anchor + 1,
+            "q0": torch.tensor([1.0, 0, 0, 0]).expand(n, 4),
+            "v0": anchor + 2,
+            "omega": torch.zeros(n, 3),
+            "hover_steps": torch.full((n,), 5),
+            "aim_err": torch.zeros(n),
+            "catch_h": torch.ones(n),
+            "t_mult": torch.full((n,), 2.0),
+            "jitter": torch.ones(n),
+            "lib_mask": torch.zeros(n, dtype=torch.bool),
+        }
+
+    path = Path(__file__).parents[1] / "source/reflex/reflex/envs/throw.py"
+    function = next(
+        node
+        for node in ast.parse(path.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name == "reset_box_throw"
+    )
+    namespace = {
+        "torch": torch,
+        "os": os,
+        "SceneEntityCfg": lambda name: NS(name=name),
+        "mix_models": lambda _: None,
+        "BOX_MODELS": [],
+        "sample_throws": samples,
+        "THROW_LIB_ALIGN": False,
+    }
+    exec(
+        compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
+        namespace,
+    )
+    namespace["reset_box_throw"](env, torch.arange(4))
+    gradient = torch.autograd.grad(saved.sum() + plan.targets.sum(), physical)[0]
+    assert torch.isfinite(gradient).all() and gradient[:, :3].abs().sum() > 0
+    assert not env._box_lib_mask.any()
+    assert env._box_tmult.eq(2).all()
