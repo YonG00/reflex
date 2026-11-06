@@ -179,11 +179,66 @@ def check(adapter, trainer, steps=24):
         trainer.actor_updates,
         trainer.termination_updates,
     )
+    # A causal controlled waiting prefix verifies native re-aim derivatives
+    # and an actual Actor H32 launch, without optimizer or simulator updates.
+    from ..diagnostics import eager_diagnostic
+
+    b = adapter.snapshot()
+    event_values, timers = scheduler.codec.decode(b["event_state"])
+    event_values["_box_launched"] = torch.zeros(
+        n, dtype=torch.bool, device=adapter.device
+    )
+    event_values["_box_launch_step"] = b["episode_steps"] + 1
+    event_values["_hold_init_pending"] = torch.zeros(
+        n, dtype=torch.bool, device=adapter.device
+    )
+    event_values["_box_lib_mask"] = torch.zeros(
+        n, dtype=torch.bool, device=adapter.device
+    )
+    for i, term in enumerate(scheduler.terms):
+        if term.interval[1] > 0:
+            timers[:, i] = 100
+    event = scheduler.codec.encode(event_values, timers)
+    pools = b["event_pool"].unsqueeze(0).expand(n, -1, -1).clone().fill_(100)
+    b = {
+        **b,
+        "launched": event_values["_box_launched"],
+        "event_state": event,
+        "event_pool": pools,
+    }
+    physical = b["state"].detach().clone().requires_grad_(True)
+    saved_rng = scheduler.rng.clone()
+    try:
+        plan, _, _ = scheduler.step(
+            b,
+            physical,
+            trainer.bridge.fk(physical),
+            event,
+            pools,
+            b["episode_steps"] + 1,
+            b["common_step"] + 1,
+        )
+        objective = (plan.targets[:, 78] + 0.37 * plan.targets[:, 79]).sum()
+        gradient = torch.autograd.grad(objective, physical)[0][:, :3]
+        assert torch.isfinite(gradient).all() and gradient.norm() > 0
+        with eager_diagnostic(trainer), torch.no_grad():
+            imagined = trainer.imagine(start_batch=b)
+        modes = imagined["predicted_launch_probability"]
+        # imagine returns the mode AFTER each step; include the waiting start
+        # so that a launch on the very first step is counted.
+        before_modes = torch.cat((b["launched"][None].float(), modes[:-1]), 0)
+        launches = int(((modes > 0.5) & (before_modes < 0.5)).sum())
+        assert len(modes) == trainer.cfg.horizon and launches > 0
+    finally:
+        scheduler.rng = saved_rng
     return {
         "passed": True,
         "optimizer_updates": 0,
         "steps": len(traces),
         "positive_perturb_writes": sum(perturb_writes),
+        "launch_velocity_robot_position_gradient_norm": float(gradient.norm()),
+        "actor_imagination_horizon": len(modes),
+        "actor_waiting_to_launch_transitions": launches,
         "scheduler": scheduler.specification(),
         "transitions": traces,
     }
