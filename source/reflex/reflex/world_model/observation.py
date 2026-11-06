@@ -36,7 +36,10 @@ class OracleObservation(nn.Module):
 
     def reference(self, phase, yaw):
         # Resampling/teleportation at reference exhaustion is an external boundary.
-        if bool(((phase < 0) | (phase >= len(self.motion_q))).any()):
+        in_bounds = ((phase >= 0) & (phase < len(self.motion_q))).all()
+        if torch.compiler.is_compiling():
+            torch._assert_async(in_bounds, "Imagination crossed reference resampling")
+        elif not bool(in_bounds):
             raise ValueError("Imagination crossed reference resampling")
         z = torch.zeros_like(yaw)
         yq = torch.stack((torch.cos(yaw / 2), z, z, torch.sin(yaw / 2)), -1)

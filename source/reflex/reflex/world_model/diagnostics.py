@@ -1,6 +1,7 @@
 """Read-only gradient/calibration diagnostics. Never performs an optimizer step."""
 
 import time
+from contextlib import contextmanager
 import torch
 from .trainer import freeze
 
@@ -37,6 +38,28 @@ def reward_return(imagined, reward, gamma, detach_survival=False):
     return result
 
 
+@contextmanager
+def eager_diagnostic(t):
+    """Repeated diagnostic VJPs must not reuse compiled donated buffers.
+
+    Keep compiled training callables intact, including when diagnostics fail.
+    """
+    dynamics, fk = t._dynamics, t._fk
+    transition, observations = (
+        getattr(t, "_transition", None),
+        getattr(t, "_observations", None),
+    )
+    t._dynamics, t._fk = t.model, t.bridge.fk
+    if hasattr(t, "_transition"):
+        t._transition, t._observations = None, t.imagined_observations
+    try:
+        yield
+    finally:
+        t._dynamics, t._fk = dynamics, fk
+        if hasattr(t, "_transition"):
+            t._transition, t._observations = transition, observations
+
+
 def gradient_audit(t):
     from .joint import returns
 
@@ -45,6 +68,7 @@ def gradient_audit(t):
         [torch.device(t.device).index or 0] if str(t.device).startswith("cuda") else []
     )
     with (
+        eager_diagnostic(t),
         torch.random.fork_rng(devices=devices),
         freeze(t.model, t.termination, t.prior._disc, t.critic),
     ):

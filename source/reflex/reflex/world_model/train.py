@@ -9,7 +9,14 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--mode",
-    choices=("preflight", "train", "play", "contact_probe"),
+    choices=(
+        "preflight",
+        "train",
+        "play",
+        "contact_probe",
+        "gradient_audit",
+        "compile_step_check",
+    ),
     default="preflight",
 )
 parser.add_argument("--num_envs", type=int, default=64)
@@ -195,6 +202,29 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "compile_step_check":
+            if not args.checkpoint:
+                raise ValueError("compile_step_check requires --checkpoint")
+            from .compile_benchmark import check
+
+            result = check(trainer)
+            (out / "compile_step_check.json").write_text(json.dumps(result, indent=2))
+            print(json.dumps(result), flush=True)
+            return
+        if args.mode == "gradient_audit":
+            if not args.checkpoint:
+                raise ValueError("gradient_audit requires --checkpoint")
+            from .diagnostics import gradient_audit
+
+            before = (trainer.actor_updates, trainer.model_updates)
+            compiled = (trainer._dynamics, trainer._fk)
+            result = gradient_audit(trainer)
+            assert before == (trainer.actor_updates, trainer.model_updates)
+            assert trainer._dynamics is compiled[0] and trainer._fk is compiled[1]
+            result["optimizer_updates"] = 0
+            (out / "gradient_audit.json").write_text(json.dumps(result, indent=2))
+            print(json.dumps(result), flush=True)
+            return
         if args.mode == "contact_probe":
             if not config.monitor_contacts:
                 raise ValueError(

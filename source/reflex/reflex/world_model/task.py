@@ -287,6 +287,7 @@ class AnalyticTask(nn.Module):
         step,
         fk_before=None,
         fk_after=None,
+        initial_step=None,
     ):
         n = len(after)
         device = after.device
@@ -323,7 +324,8 @@ class AnalyticTask(nn.Module):
         aq = alignment[:, None, :].expand_as(ref_q)
         relative_p = aligned_p[:, None, :] + apply(aq, ref_p - goal_p[:, None, :])
         relative_q = mul(aq, ref_q)
-        if step == 0 and "reference_relative_p" in b:
+        first = step == 0 if initial_step is None else initial_step
+        if first and "reference_relative_p" in b:
             # Manager caches may precede reset writes or interval events. Preserve
             # the actual initial cache, then derive subsequent cache updates.
             relative_p = b["reference_relative_p"]
@@ -406,6 +408,7 @@ class AnalyticTask(nn.Module):
         step=0,
         fk_before=None,
         fk_after=None,
+        initial_step=None,
     ):
         required = (
             "task_history",
@@ -432,6 +435,7 @@ class AnalyticTask(nn.Module):
             step,
             fk_before,
             fk_after,
+            initial_step,
         )
         cmd = view.command_manager.get_term("motion")
         gravity = view.scene["robot"].data.GRAVITY_VEC_W

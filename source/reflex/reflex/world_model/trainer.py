@@ -28,6 +28,7 @@ class TrainConfig:
     diagnostic_batch: int = 16
     compile_dynamics: bool = False
     compile_fk: bool = False
+    compile_step: bool = False
     compile_backend: str = "inductor"
     tf32: bool = False
     schedule: str = "guarded"
@@ -191,6 +192,18 @@ class Trainer:
             torch.compile(self.bridge.fk, fullgraph=True, backend=c.compile_backend)
             if c.compile_fk
             else self.bridge.fk
+        )
+        self._transition = (
+            torch.compile(self.transition, fullgraph=True, backend=c.compile_backend)
+            if c.compile_step
+            else None
+        )
+        self._observations = (
+            torch.compile(
+                self.imagined_observations, fullgraph=True, backend=c.compile_backend
+            )
+            if c.compile_step
+            else self.imagined_observations
         )
         self.model_opt = torch.optim.Adam(
             self.model.parameters(), lr=c.model_lr or c.lr
@@ -625,6 +638,50 @@ class Trainer:
             and self.basic_ready(metrics)
         )
 
+    def imagined_observations(self, b, s, previous, phase, poses):
+        raw = self.observation(b, s, previous, phase, poses)
+        critic = self.critic_observation(b, s, previous, phase, poses, raw)
+        return raw, critic
+
+    def transition(
+        self,
+        b,
+        s,
+        target,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        poses,
+        step,
+        first,
+    ):
+        ns = self.model(s, target, b["context"])
+        next_poses = self.bridge.fk(ns)
+        task = self.task.evaluate_step(
+            b,
+            s,
+            ns,
+            raw,
+            previous,
+            phase,
+            hist,
+            episode,
+            event,
+            step,
+            fk_before=poses,
+            fk_after=next_poses,
+            initial_step=first,
+        )
+        d = (
+            self.termination(task.termination_features).sigmoid()
+            if self.termination is not None
+            else task.terminated.float()
+        )
+        return ns, next_poses, task, d
+
     def imagine(self, start_batch=None):
         b = self.sample(starts=True) if start_batch is None else start_batch
         if self.model.state_only and self.task is None:
@@ -646,48 +703,54 @@ class Trainer:
         poses = self._fk(s)
         for t in range(self.cfg.horizon):
             with torch.profiler.record_function("imagine/observation"):
-                raw_obs = self.bridge(
-                    s,
-                    previous,
-                    phase,
-                    b["yaw"],
-                    b["launched"],
-                    b["dimensions"],
-                    b["mass"],
-                    b.get("default_q"),
-                    b.get("default_dq"),
-                    fk_result=poses,
-                )
-                critic_observations.append(
-                    self.critic_observation(b, s, previous, phase, poses, raw_obs)
-                )
+                raw_obs, critic_obs = self._observations(b, s, previous, phase, poses)
+                critic_observations.append(critic_obs)
             obs = self.obs_norm(raw_obs)
             observations.append(obs)
             raw = self.actor(obs)
             target, blend = self.targets(b, raw, blend)
             if self.model.state_only:
-                with torch.profiler.record_function("imagine/dynamics"):
-                    ns = self._dynamics(s, target, b["context"])
-                with torch.profiler.record_function("imagine/FK"):
-                    next_poses = self._fk(ns)
-                with torch.profiler.record_function("imagine/reward_and_termination"):
-                    task = self.task.evaluate_step(
+                if self._transition is not None:
+                    ns, next_poses, task, d = self._transition(
                         b,
                         s,
-                        ns,
+                        target,
                         raw,
                         previous,
                         phase,
                         hist,
                         episode,
                         event,
-                        t,
-                        fk_before=poses,
-                        fk_after=next_poses,
+                        poses,
+                        torch.tensor(t, device=s.device),
+                        t == 0,
                     )
-                r, d, trunc = task.rewards, task.terminated.float(), task.truncated
-                if self.termination is not None:
-                    d = self.termination(task.termination_features).sigmoid()
+                    r, trunc = task.rewards, task.truncated
+                else:
+                    with torch.profiler.record_function("imagine/dynamics"):
+                        ns = self._dynamics(s, target, b["context"])
+                    with torch.profiler.record_function("imagine/FK"):
+                        next_poses = self._fk(ns)
+                    with torch.profiler.record_function(
+                        "imagine/reward_and_termination"
+                    ):
+                        task = self.task.evaluate_step(
+                            b,
+                            s,
+                            ns,
+                            raw,
+                            previous,
+                            phase,
+                            hist,
+                            episode,
+                            event,
+                            t,
+                            fk_before=poses,
+                            fk_after=next_poses,
+                        )
+                    r, d, trunc = task.rewards, task.terminated.float(), task.truncated
+                    if self.termination is not None:
+                        d = self.termination(task.termination_features).sigmoid()
                 hist = torch.where(valid[:, None], task.history, hist)
                 episode = torch.where(valid, task.episode_steps, episode)
                 event = torch.where(valid, task.event_seconds, event)
@@ -972,6 +1035,7 @@ class Trainer:
             "compile_dynamics",
             "compile_fk",
             "compile_backend",
+            "compile_step",
             "monitor_contacts",
         ):
             loaded_config.pop(key, None)

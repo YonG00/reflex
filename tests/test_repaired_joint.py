@@ -608,3 +608,45 @@ def test_disabled_contact_monitor_has_no_contact_metrics():
     result = metrics.metrics()
     assert not any("contact" in key for key in result)
     assert result["experience/completed_strict_successes"] == 2
+
+
+def test_diagnostic_restores_compiled_callables_on_failure():
+    from reflex.world_model.diagnostics import eager_diagnostic
+
+    compiled_model, compiled_fk = object(), object()
+    eager_model, eager_fk = object(), object()
+    t = NS(
+        _dynamics=compiled_model,
+        _fk=compiled_fk,
+        model=eager_model,
+        bridge=NS(fk=eager_fk),
+    )
+    with pytest.raises(RuntimeError):
+        with eager_diagnostic(t):
+            assert t._dynamics is eager_model and t._fk is eager_fk
+            raise RuntimeError("audit failure")
+    assert t._dynamics is compiled_model and t._fk is compiled_fk
+
+
+def test_expanded_compile_matches_actor_gradients(tmp_path):
+    t = repaired(tmp_path)
+    t.fit_model()
+    b = t.sample(starts=True, n=2)
+
+    def run():
+        v = t.imagine(start_batch=b)
+        g = torch.autograd.grad(
+            -returns(v, t.critic, t.cfg.gamma).mean(), tuple(t.actor.parameters())
+        )
+        return v, g
+
+    eager, eg = run()
+    t._transition = torch.compile(t.transition, backend="aot_eager", fullgraph=True)
+    t._observations = torch.compile(
+        t.imagined_observations, backend="aot_eager", fullgraph=True
+    )
+    actual, ag = run()
+    for key in ("obs", "critic_obs", "reward", "done", "truncated"):
+        torch.testing.assert_close(eager[key], actual[key], atol=1e-6, rtol=1e-4)
+    for x, y in zip(eg, ag):
+        torch.testing.assert_close(x, y, atol=1e-6, rtol=1e-4)
