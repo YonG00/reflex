@@ -94,3 +94,16 @@ CPU全套70项通过（201.56s）；新增1024新世界恢复入口及完整融�
 Replay容量及事件调度器source_world_envs，其他学习/任务契约仍严格校验。
 旧环境索引数据不复用，迭代调度从0重新采集40步，来源及新旧环境数量写入initialization。
 随机事件使用新世界的原生机制；不改变奖励、物理碰撞或事件规则。
+
+## 已启动限时联合试训
+
+运行目录：`outputs/world_model/20261106_v24_fused_1024_joint_30min/`。
+代码版本2b1d61e，真实环境1024，Actor2048/H32，WM H8每轮10次更新；
+输入checkpoint为`20261106_v24_paired_r5/deterministic/checkpoint_final.pt`。
+显式重建Replay后保留Actor3、WM30、Termination30次更新及对应Adam/AMP。
+预算1800秒（训练循环含冷编译，完成当前更新后保存），每500采集迭代存档并最终保存。
+TensorBoard位于运行目录的`tensorboard/`；逐步指标`metrics.jsonl`，终端日志`run.log`。
+
+1024预检40步通过，H8有效窗口28346，想象起点32760；Actor观测误差8.073e-6、
+AMP1.335e-5、Critic1.095e-5。预检不更新模型；不能视为训练后接箱效果。
+正式训练已进入真实采集，后续效果以最终checkpoint与真实play评测为准。
