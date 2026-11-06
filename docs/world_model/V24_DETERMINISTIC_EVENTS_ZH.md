@@ -59,6 +59,9 @@ Critic 292 维或动作执行结构；不增加站立课程。
 
 ## 验证和当前限制
 
+GPU短回归已完成，最新结果、限制及存档见 [GPU验证记录](V24_GPU_REGRESSION_20261106_ZH.md)。
+以下CPU阶段的“待开卡”描述保留为实现时验收清单，当前状态以该GPU记录为准。
+
 2026-11-06 本地最终回归：`PYTHONPATH=source/reflex /tmp/reflex-wm-venv/bin/python -m pytest tests -q`
 **67 passed，83.46秒**。事件/模型模块及原生回调语法检查通过；`git diff --check`通过。
 两轮审查发现并修复了随机分支错标签和透传回灌真值问题。

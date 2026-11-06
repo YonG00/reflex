@@ -914,6 +914,9 @@
     "optimizer_updates": 0,
     "steps": 24,
     "positive_perturb_writes": 10,
+    "launch_velocity_robot_position_gradient_norm": 3.3970093727111816,
+    "actor_imagination_horizon": 32,
+    "actor_waiting_to_launch_transitions": 7,
     "scheduler": {
       "source_sha256": {
         "isaaclab.envs.mdp.events": "07e4f7dace061bf3bca12c0628b8508a97694121a50966ea9c88ead1ad00728c",
