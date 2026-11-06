@@ -107,3 +107,8 @@ TensorBoard位于运行目录的`tensorboard/`；逐步指标`metrics.jsonl`，�
 1024预检40步通过，H8有效窗口28346，想象起点32760；Actor观测误差8.073e-6、
 AMP1.335e-5、Critic1.095e-5。预检不更新模型；不能视为训练后接箱效果。
 正式训练已进入真实采集，后续效果以最终checkpoint与真实play评测为准。
+
+首批联合更新已确认：Actor计数10（来源3）、WM/Termination各100（来源30），
+最新Actor2.6258s、Critic0.04554s，Actor梯度范数0.68657，损失及指标均有限。
+WM state loss10.336、联合BCE0.11185；这些是训练初期指标，不代表真实接箱成功率。
+完整原始GPU验证和耗时数据另存`evidence/20261106_v24_fusion.json`。
