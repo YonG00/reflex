@@ -423,3 +423,22 @@ def test_fresh_full_compact_ablation_smoke_and_policy_invariance(tmp_path):
     )
     assert (out / "full765/checkpoint_final.pt").exists()
     assert (out / "compact/checkpoint_final.pt").exists()
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        "randomize_motion_yaw",
+        "randomize_init_state",
+        "randomize_cmd_time_steps_mixture",
+    ],
+)
+def test_dr_audit_distinguishes_native_reset_state_from_physical_parameters(function):
+    fn = NS(__name__=function, __module__="reflex.envs.base.catch_terms_v2")
+    term = NS(func=fn, params={})
+    manager = NS(active_terms={"reset": [function]}, get_term_cfg=lambda _: term)
+    result = audit_randomization(NS(event_manager=manager))
+    assert result["events"][0]["conditioning"] == "reset_state_or_reference"
+    manager.active_terms = {"interval": [function]}
+    with pytest.raises(ValueError, match="must remain at reset"):
+        audit_randomization(NS(event_manager=manager))

@@ -166,7 +166,9 @@ def check(t, output, repeats=3):
                     "gradient_norm": float(current["gradient"].norm()),
                     "gradient_cosine": float(
                         torch.nn.functional.cosine_similarity(
-                            current["gradient"], expected["gradient"], dim=0
+                            current["gradient"].double(),
+                            expected["gradient"].double(),
+                            dim=0,
                         )
                     ),
                     "median_actor_seconds": statistics.median(

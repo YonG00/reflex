@@ -173,7 +173,7 @@ def check(t, output, repeats=3):
                     "gradient_norm": float(grad.detach().norm()),
                     "gradient_cosine_vs_learned": float(
                         torch.nn.functional.cosine_similarity(
-                            grad_cpu, reference_gradient, dim=0
+                            grad_cpu.double(), reference_gradient.double(), dim=0
                         )
                     ),
                     "gradient_finite": finite,

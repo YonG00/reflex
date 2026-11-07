@@ -321,7 +321,18 @@ def audit_randomization(env):
             term = env.event_manager.get_term_cfg(name)
             function = getattr(term.func, "__name__", type(term.func).__name__)
             params = term.params
-            dr = (
+            reset_state = getattr(
+                term.func, "__module__", ""
+            ) == "reflex.envs.base.catch_terms_v2" and function in {
+                "randomize_motion_yaw",
+                "randomize_init_state",
+                "randomize_cmd_time_steps_mixture",
+            }
+            if reset_state and mode != "reset":
+                raise ValueError(
+                    f"State/reference randomization must remain at reset: {name}"
+                )
+            dr = not reset_state and (
                 function.startswith("randomize_")
                 or "mass_dr" in function
                 or "randomize" in name
@@ -344,7 +355,9 @@ def audit_randomization(env):
                     "mode": mode,
                     "function": function,
                     "parameters": primitive(params),
-                    "conditioning": "wm_context"
+                    "conditioning": "reset_state_or_reference"
+                    if reset_state
+                    else "wm_context"
                     if dr and function != "randomize_joint_default_pos"
                     else "state_target_or_native_event",
                 }
