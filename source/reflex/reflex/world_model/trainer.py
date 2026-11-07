@@ -73,6 +73,7 @@ class TrainConfig:
     actor_batch: int = 0
     actor_microbatch: int = 0
     batch_imagination_amp: bool = False
+    batch_imagination_amp_features: bool = False
     batch_imagination_critic: bool = False
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
@@ -211,6 +212,12 @@ class Trainer:
         ):
             raise ValueError(
                 "Analytic soft termination requires state WM, pelvis reference, pure soft survival, no learned head/BCE or hard boundary"
+            )
+        if c.batch_imagination_amp_features and not (
+            c.batch_imagination_amp and c.wm_kind == "state"
+        ):
+            raise ValueError(
+                "Batched AMP features require state WM and batched AMP discriminator"
             )
         if c.sparse_actor_bootstrap and not c.privileged_critic:
             raise ValueError(
@@ -1832,6 +1839,7 @@ class Trainer:
         terms = []
         styles = []
         amp_pairs = []
+        amp_inputs = []
         trace_rows = []
         physical_trace, reference_trace = [], []
         bootstrap_states, bootstrap_previous, bootstrap_phases, bootstrap_modes = (
@@ -2090,16 +2098,19 @@ class Trainer:
                 trunc = phase + 1 >= b["reference_length"]
                 next_phase = (phase + 1).minimum(b["reference_length"] - 1)
             with torch.profiler.record_function("imagine/AMP"):
-                amp_previous = amp_features(s, self.bridge.fk, poses)
-                amp_current = amp_features(
-                    physical if self.model.state_only else ns,
-                    self.bridge.fk,
-                    physical_poses if self.model.state_only else None,
-                )
-                if self.cfg.batch_imagination_amp:
-                    amp_pairs.append((amp_previous, amp_current))
+                if self.cfg.batch_imagination_amp_features:
+                    amp_inputs.append((s, physical, poses[0], physical_poses[0]))
                 else:
-                    style = self.prior.reward(amp_previous, amp_current)
+                    amp_previous = amp_features(s, self.bridge.fk, poses)
+                    amp_current = amp_features(
+                        physical if self.model.state_only else ns,
+                        self.bridge.fk,
+                        physical_poses if self.model.state_only else None,
+                    )
+                    if self.cfg.batch_imagination_amp:
+                        amp_pairs.append((amp_previous, amp_current))
+                    else:
+                        style = self.prior.reward(amp_previous, amp_current)
             if not self.cfg.batch_imagination_amp:
                 rewards.append(
                     self.prior._w_task * r.sum(-1)
@@ -2143,8 +2154,13 @@ class Trainer:
         )
         if self.cfg.batch_imagination_amp:
             with torch.profiler.record_function("imagine/batched_AMP"):
-                previous_features = torch.stack([pair[0] for pair in amp_pairs])
-                current_features = torch.stack([pair[1] for pair in amp_pairs])
+                if self.cfg.batch_imagination_amp_features:
+                    from .amp_batch import feature_pairs
+
+                    previous_features, current_features = feature_pairs(amp_inputs)
+                else:
+                    previous_features = torch.stack([pair[0] for pair in amp_pairs])
+                    current_features = torch.stack([pair[1] for pair in amp_pairs])
                 batched_style = self.prior.reward(
                     previous_features.flatten(0, 1), current_features.flatten(0, 1)
                 ).reshape(previous_features.shape[:2])
@@ -2501,6 +2517,7 @@ class Trainer:
             "real_parity_every",
             "cache_physical_context",
             "batch_imagination_amp",
+            "batch_imagination_amp_features",
             "batch_imagination_critic",
             "reuse_post_event_fk",
             "compact_event_pool_updates",

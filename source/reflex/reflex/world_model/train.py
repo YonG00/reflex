@@ -78,6 +78,7 @@ parser.add_argument(
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
 parser.add_argument("--wm_stable_heading_trial", action="store_true")
+parser.add_argument("--actor_amp_features_trial", action="store_true")
 parser.add_argument("--actor_graph_trial", action="store_true")
 parser.add_argument("--actor_graph_all_static", action="store_true")
 parser.add_argument("--actor_graph_only", action="store_true")
@@ -452,6 +453,7 @@ def main():
                         graph_all_static=args.actor_graph_all_static,
                         graph_only=args.actor_graph_only,
                         stable_heading=args.wm_stable_heading_trial,
+                        amp_feature_variants=args.actor_amp_features_trial,
                     )
                 ),
                 flush=True,

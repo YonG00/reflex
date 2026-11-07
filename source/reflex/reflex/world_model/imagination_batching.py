@@ -24,6 +24,7 @@ def check(
     graph_all_static=False,
     graph_only=False,
     stable_heading=False,
+    amp_feature_variants=False,
 ):
     if stable_heading:
         from .stable_canonical import trial
@@ -37,6 +38,7 @@ def check(
                 graph_trial,
                 graph_all_static,
                 graph_only,
+                amp_feature_variants,
             )
     return _check(
         t,
@@ -46,11 +48,19 @@ def check(
         graph_trial,
         graph_all_static,
         graph_only,
+        amp_feature_variants,
     )
 
 
 def _check(
-    t, output, repeats, execution_variants, graph_trial, graph_all_static, graph_only
+    t,
+    output,
+    repeats,
+    execution_variants,
+    graph_trial,
+    graph_all_static,
+    graph_only,
+    amp_feature_variants,
 ):
     if t.event_scheduler is None:
         raise ValueError("Batching check requires the native event scheduler")
@@ -71,6 +81,7 @@ def _check(
         for n in ("actor", "critic")
     }
     profile_before = t.profile_next_actor
+    feature_flag = t.cfg.batch_imagination_amp_features
     flags = (
         t.cfg.batch_imagination_amp,
         t.cfg.batch_imagination_critic,
@@ -181,6 +192,25 @@ def _check(
                     ("amp_critic", True, True, *flags[2:], False),
                 ]
             )
+            if amp_feature_variants:
+                if not execution_variants or not flags[0] or graph_trial:
+                    raise ValueError(
+                        "AMP feature trial requires batched AMP execution mode without Graph trial"
+                    )
+                variants = [
+                    variants[0],
+                    ("fk_pool", flags[0], flags[1], True, True, False, False, False),
+                    (
+                        "amp_features",
+                        flags[0],
+                        flags[1],
+                        True,
+                        True,
+                        False,
+                        False,
+                        False,
+                    ),
+                ]
             if graph_only:
                 if not graph_trial:
                     raise ValueError("Graph-only comparison requires graph_trial")
@@ -211,6 +241,9 @@ def _check(
                 graph,
             ) in variants:
                 print(f"[V30 Actor] start {label}", flush=True)
+                t.cfg.batch_imagination_amp_features = (
+                    (label == "amp_features") if amp_feature_variants else feature_flag
+                )
                 t.cfg.sparse_actor_bootstrap = sparse
                 t.cfg.fuse_actor_core = fused
                 t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic = (
@@ -365,6 +398,7 @@ def _check(
                     "cold_diagnostic_includes_compile_and_CPU_snapshot_seconds": cold_seconds,
                     "explicit_fk_calls_per_horizon": fk_count[0],
                     "graph_trial": graph,
+                    "batch_amp_features": t.cfg.batch_imagination_amp_features,
                     "graph_scope": "original_partitions"
                     if graph and graph_all_static
                     else "core"
@@ -420,6 +454,7 @@ def _check(
         restore()
         t.sample = old_sample
         t.profile_next_actor = profile_before
+        t.cfg.batch_imagination_amp_features = feature_flag
         (
             t.cfg.batch_imagination_amp,
             t.cfg.batch_imagination_critic,
