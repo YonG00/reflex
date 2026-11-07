@@ -50,6 +50,12 @@ parser.add_argument(
     help="Training wall-time budget; finish current update then save",
 )
 parser.add_argument(
+    "--joint_max_seconds",
+    type=float,
+    default=None,
+    help="Joint-only wall budget, starting after the first completed Actor update (warmup/cold first update excluded)",
+)
+parser.add_argument(
     "--profile_joint",
     action="store_true",
     help="Profile first Actor update without changing training config",
@@ -194,6 +200,12 @@ def main():
     apply_profile(cfg, config.reward_profile)
     if args.max_seconds is not None and args.max_seconds <= 0:
         raise ValueError("max_seconds must be positive")
+    if args.joint_max_seconds is not None and (
+        args.joint_max_seconds <= 0 or args.mode != "train" or not args.enable_actor
+    ):
+        raise ValueError(
+            "joint_max_seconds requires positive budget and Actor-enabled train mode"
+        )
     if config.monitor_contacts:
         from isaaclab.sensors import ContactSensorCfg
 
@@ -359,7 +371,11 @@ def main():
             json.dumps(manifest, indent=2, ensure_ascii=False)
         )
         b = adapter.snapshot()
-        parity = adapter.parity(b, critic=config.privileged_critic, critic_all_actor=config.critic_include_all_actor)
+        parity = adapter.parity(
+            b,
+            critic=config.privileged_critic,
+            critic_all_actor=config.critic_include_all_actor,
+        )
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
         if args.mode == "soft_termination_check":
             from .soft_termination_check import check
@@ -669,8 +685,23 @@ def main():
         )
         start = time.monotonic()
         initial_steps = trainer.real_transitions
+        from .joint_budget import JointBudget
+
+        joint_budget = JointBudget(args.joint_max_seconds)
+        phase_record = {
+            "joint_budget_seconds": args.joint_max_seconds,
+            "wm_only_rounds": config.wm_only_rounds,
+            "joint_clock_starts_after_first_actor_update": True,
+            "state": "wm_warmup",
+        }
+        if args.joint_max_seconds is not None:
+            (out / "training_phases.json").write_text(
+                json.dumps(phase_record, indent=2)
+            )
         try:
             while trainer.iteration < args.max_iterations:
+                if joint_budget.expired(time.monotonic()):
+                    break
                 if (
                     args.max_seconds is not None
                     and time.monotonic() - start >= args.max_seconds
@@ -704,6 +735,15 @@ def main():
                 else:
                     metrics["schedule/model_lr"] = trainer.schedule_lr()
                     metrics.update(trainer.fit_model())
+                    if (
+                        args.joint_max_seconds is not None
+                        and trainer.wm_rounds_completed == config.wm_only_rounds
+                        and "warmup_completed_wall_seconds" not in phase_record
+                    ):
+                        phase_record["warmup_completed_wall_seconds"] = (
+                            time.monotonic() - start
+                        )
+                        trainer.save(out / "checkpoint_wm_warmup.pt")
                     validation_start = timestamp(args.device)
                     if trainer.validation_due():
                         metrics.update(trainer.validate())
@@ -759,6 +799,19 @@ def main():
                                     trainer.replay.start_indices()
                                 )
                             metrics.update(trainer.update_actor())
+                            if (
+                                joint_budget.actor_completed(time.monotonic())
+                                and args.joint_max_seconds is not None
+                            ):
+                                phase_record.update(
+                                    state="joint_training",
+                                    pre_joint_wall_seconds=time.monotonic() - start,
+                                    actor_updates_at_clock_start=trainer.actor_updates,
+                                    wm_rounds_at_clock_start=trainer.wm_rounds_completed,
+                                )
+                                (out / "training_phases.json").write_text(
+                                    json.dumps(phase_record, indent=2)
+                                )
                 trainer.iteration += 1
                 if (
                     trainer.iteration % args.save_every == 0
@@ -785,6 +838,9 @@ def main():
                             if config.synchronize_replay_timing
                             else "time/replay_sample_host_seconds"
                         ): trainer.replay_seconds,
+                        "progress/joint_wall_seconds": joint_budget.elapsed(
+                            time.monotonic()
+                        ),
                         "progress/wall_seconds": time.monotonic() - start,
                         "progress/end_to_end_transitions_per_second": (
                             trainer.real_transitions - initial_steps
@@ -799,6 +855,16 @@ def main():
                     f.write(json.dumps(record) + "\n")
                 if trainer.iteration % config.console_log_every == 0:
                     print(json.dumps(record), flush=True)
+            if args.joint_max_seconds is not None:
+                phase_record.update(
+                    state="completed",
+                    joint_wall_seconds=joint_budget.elapsed(time.monotonic()),
+                    actor_updates=trainer.actor_updates,
+                    wm_rounds=trainer.wm_rounds_completed,
+                )
+                (out / "training_phases.json").write_text(
+                    json.dumps(phase_record, indent=2)
+                )
             if args.benchmark_no_checkpoint:
                 (out / "benchmark_end.json").write_text(
                     json.dumps(
