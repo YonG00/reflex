@@ -5,6 +5,7 @@ import dataclasses
 import gc
 import json
 import random
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -93,6 +94,17 @@ def run(
             seed(28001, scheduler)
             source.prior.load_amp_state_dict(amp)
             seed(28001, scheduler)
+            trial_contract = copy.deepcopy(source.contract)
+            if mode != "full":
+                trial_contract["wm_context_audit"] = {
+                    **copy.deepcopy(audit),
+                    "context": spec.specification(),
+                }
+            memory_before = (
+                torch.cuda.memory_allocated()
+                if str(source.device).startswith("cuda")
+                else None
+            )
             t = Trainer(
                 source.bridge,
                 source.action_map,
@@ -100,7 +112,7 @@ def run(
                 source.contract["context_dim"],
                 6,
                 source.reward_names,
-                copy.deepcopy(source.contract),
+                trial_contract,
                 source.device,
                 cfg,
                 task=task,
@@ -199,13 +211,36 @@ def run(
                     else None
                 ),
                 "policy_unchanged": True,
+                "device_bytes_before_trial": memory_before,
             }
             report["results"][tag] = result
             (out / "context_ablation.json").write_text(json.dumps(report, indent=2))
+            # Bound compiled methods can keep Trainer/Replay alive through Dynamo
+            # caches. Release them before measuring the following representation.
+            owner = weakref.ref(t)
+            for name in (
+                "_dynamics",
+                "_post",
+                "_fk",
+                "_wm_training_step",
+                "_v24_heads",
+                "_v24_step",
+                "_task_step",
+                "_termination_fn",
+                "_observations",
+                "_transition",
+                "_termination_before_fk",
+                "_termination_after_fk",
+            ):
+                setattr(t, name, None)
             del t, task, scheduler
+            torch._dynamo.reset()
             gc.collect()
+            result["trainer_released"] = owner() is None
             if str(source.device).startswith("cuda"):
                 torch.cuda.empty_cache()
+                result["device_bytes_after_cleanup"] = torch.cuda.memory_allocated()
+                (out / "context_ablation.json").write_text(json.dumps(report, indent=2))
         report["completed"] = True
         (out / "context_ablation.json").write_text(json.dumps(report, indent=2))
         return report

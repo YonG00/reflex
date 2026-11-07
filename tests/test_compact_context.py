@@ -15,7 +15,7 @@ from reflex.world_model.models import (
     DeterministicEventWorldModel,
 )
 from reflex.world_model.replay import Replay
-from reflex.world_model.trainer import Trainer
+from reflex.world_model.trainer import TrainConfig, Trainer
 from test_wm_compute_acceleration import conditional
 from test_world_model import builder, robot_state
 from torch import nn
@@ -404,6 +404,27 @@ def test_fresh_full_compact_ablation_smoke_and_policy_invariance(tmp_path):
         batch=4,
     )
     assert report["completed"] and report["actor_updates"] == 0
+    assert all(v["trainer_released"] for v in report["results"].values())
+    exported = torch.load(out / "compact/checkpoint_final.pt", weights_only=False)
+    assert exported["contract"]["wm_context_audit"]["context"]["wm_dim"] == 127
+    cfg = TrainConfig(**exported["config"])
+    scheduler = copy.deepcopy(source.event_scheduler)
+    task = copy.deepcopy(source.task)
+    scheduler.task = task
+    restored = Trainer(
+        source.bridge,
+        source.action_map,
+        source.prior,
+        765,
+        6,
+        source.reward_names,
+        exported["contract"],
+        cfg=cfg,
+        task=task,
+        event_scheduler=scheduler,
+    )
+    restored.load(out / "compact/checkpoint_final.pt", reinitialize_replay=True)
+    assert restored.model.net[0].in_features == 246
     assert report["results"]["full765"]["wm_input_dim"] == 884
     assert report["results"]["compact"]["wm_input_dim"] == 246
     assert (
