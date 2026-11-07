@@ -308,9 +308,10 @@ def test_sparse_actor_bootstrap_return_gradients_targets_and_adam(tmp_path, trun
         torch.testing.assert_close(a, b)
 
 
+@pytest.mark.parametrize("include_fk", [False, True])
 @pytest.mark.parametrize("sparse", [False, True])
 def test_fused_actor_core_captures_forward_and_backward_without_changing_return(
-    tmp_path, sparse
+    tmp_path, sparse, include_fk
 ):
     source, row = compact_trainer(tmp_path, mode="full")
     fill(source, row)
@@ -331,6 +332,7 @@ def test_fused_actor_core_captures_forward_and_backward_without_changing_return(
             v24_fusion_scope="packed_heads",
             compile_backend="aot_eager",
             fuse_actor_core=fused,
+            actor_core_include_fk=include_fk,
         )
         t.cfg.horizon = 4
         t.event_scheduler.task = t.task
@@ -488,10 +490,9 @@ def test_eager_diagnostic_disables_and_restores_new_compile_handles(tmp_path):
     sentinel = object()
     source._actor_core = sentinel
     bootstrap = source._bootstrap_critic_observation
-    with pytest.raises(RuntimeError, match="probe"):
-        with eager_diagnostic(source):
-            assert source._actor_core is None
-            assert source._bootstrap_critic_observation == source.critic_observation
-            raise RuntimeError("probe")
+    with pytest.raises(RuntimeError, match="probe"), eager_diagnostic(source):
+        assert source._actor_core is None
+        assert source._bootstrap_critic_observation == source.critic_observation
+        raise RuntimeError("probe")
     assert source._actor_core is sentinel
     assert source._bootstrap_critic_observation == bootstrap

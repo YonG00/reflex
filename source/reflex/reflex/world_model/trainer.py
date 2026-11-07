@@ -78,6 +78,7 @@ class TrainConfig:
     compact_event_pool_updates: bool = False
     sparse_actor_bootstrap: bool = False
     fuse_actor_core: bool = False
+    actor_core_include_fk: bool = True
     actor_core_compile_mode: str = "default"
     actor_beta2: float = 0.999
     actor_grad_clip_value: float = 0.0
@@ -1548,7 +1549,9 @@ class Trainer:
         raw = self.actor(obs)
         target, next_blend = self.targets(b, raw, blend)
         physical = self.model.predict_physical(s, target, b["context"], pre)
-        physical_poses = self.bridge.fk(physical)
+        physical_poses = (
+            self.bridge.fk(physical) if self.cfg.actor_core_include_fk else None
+        )
         return (
             raw_obs,
             obs,
@@ -1875,6 +1878,8 @@ class Trainer:
                     physical,
                     physical_poses,
                 ) = self._actor_core(b, s, previous, phase, poses, blend, pre)
+                if physical_poses is None:
+                    physical_poses = self._fk(physical)
             else:
                 with torch.profiler.record_function("imagine/observation"):
                     raw_obs, critic_obs = self._observations(
@@ -2501,6 +2506,7 @@ class Trainer:
             "compact_event_pool_updates",
             "sparse_actor_bootstrap",
             "fuse_actor_core",
+            "actor_core_include_fk",
             "actor_core_compile_mode",
             "compile_dynamics",
             "compile_fk",

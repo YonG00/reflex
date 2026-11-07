@@ -78,6 +78,7 @@ parser.add_argument(
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
 parser.add_argument("--actor_graph_trial", action="store_true")
+parser.add_argument("--actor_core_no_fk", action="store_true")
 parser.add_argument("--context_rounds", type=int, default=500)
 parser.add_argument("--context_collect_steps", type=int, default=256)
 parser.add_argument("--context_validation_every", type=int, default=25)
@@ -352,6 +353,8 @@ def main():
                 "compact_event_pool_updates": config.compact_event_pool_updates,
                 "sparse_actor_bootstrap": config.sparse_actor_bootstrap,
                 "fuse_actor_core": config.fuse_actor_core,
+                "actor_core_include_fk": config.actor_core_include_fk
+                and not args.actor_core_no_fk,
                 "compile_wm_rollout": config.compile_wm_rollout,
                 "actor_core_compile_mode": config.actor_core_compile_mode,
                 "execution_sha256": hashlib.sha256(
@@ -418,6 +421,9 @@ def main():
             return
         if args.mode == "actor_execution_v30_check":
             from .imagination_batching import check
+
+            if args.actor_core_no_fk:
+                trainer.cfg.actor_core_include_fk = False
 
             for _ in range(max(0, 40 - trainer.replay.count)):
                 trainer.collect(adapter)

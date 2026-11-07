@@ -74,6 +74,7 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
     old_sample = t.sample
     report = {
         "completed": False,
+        "actor_core_include_fk": t.cfg.actor_core_include_fk,
         "variants": {},
         "errors": {},
         "tolerance": "torch.testing.assert_close default dtype tolerance",
@@ -165,6 +166,7 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
                 fused,
                 graph,
             ) in variants:
+                print(f"[V30 Actor] start {label}", flush=True)
                 t.cfg.sparse_actor_bootstrap = sparse
                 t.cfg.fuse_actor_core = fused
                 t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic = (
@@ -312,6 +314,10 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
                         row["time/critic_update_seconds"] for row in rows[1:]
                     ),
                 }
+                print(
+                    f"[V30 Actor] done {label}: {report['variants'][label]['median_actor_seconds']:.6f}s",
+                    flush=True,
+                )
                 out.write_text(json.dumps(report, indent=2))
                 if graph:
                     restore()
