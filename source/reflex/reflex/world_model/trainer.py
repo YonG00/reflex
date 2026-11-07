@@ -19,6 +19,7 @@ from .models import (
     ConditionedWorldModel,
     DeterministicEventWorldModel,
     MacroWorldModel,
+    PrecisionMLP,
     Standardizer,
     StateWorldModel,
     TerminationHead,
@@ -87,6 +88,9 @@ class TrainConfig:
     actor_steps: int = 4
     synchronize_replay_timing: bool = True
     replay_index_cache: bool = True
+    compile_wm_training_step: bool = False
+    minimal_termination_fk: bool = False
+    wm_mlp_precision: str = "fp32"
     wm_only_rounds: int = 0
     wm_compile_mode: str = "default"
     tensorboard_flush_seconds: int = 30
@@ -257,6 +261,12 @@ class Trainer:
                 com_indices=contract.get("com_indices"),
             )
         ).to(device)
+        if c.wm_mlp_precision not in ("fp32", "bf16"):
+            raise ValueError("Unknown WM MLP precision")
+        # Preserve Actor/Critic/Termination's exact Sequential classes and export
+        # paths. Only the WM receives the opt-in precision wrapper.
+        self.model.net = PrecisionMLP(*self.model.net.children())
+        self.model.net.precision = c.wm_mlp_precision
         self.obs_norm = Standardizer(179).to(device)
         self.actor = mlp(179, 29, c.hidden, layers=c.actor_hidden_dims).to(device)
         if c.actor_zero_output:
@@ -348,6 +358,58 @@ class Trainer:
             )
             if c.compile_fk
             else self.bridge.fk
+        )
+
+        if c.compile_wm_training_step and not (
+            c.condition_external_events
+            and c.deterministic_event_apply
+            and c.joint_predicted_termination
+            and c.wm_kind == "state"
+        ):
+            raise ValueError(
+                "Fused WM loss requires deterministic V24 and joint predicted termination"
+            )
+        self._wm_training_step = (
+            torch.compile(
+                self.v24_model_training_step,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+                **(
+                    {"mode": c.wm_compile_mode}
+                    if c.compile_backend == "inductor"
+                    else {}
+                ),
+            )
+            if c.compile_wm_training_step
+            else None
+        )
+
+        def termination_before(s):
+            return self.bridge.fk.subset(s, (self.task.anchor_name,))
+
+        def termination_after(s):
+            return self.bridge.fk.subset(s, tuple(self.task.tracked_names))
+
+        self._termination_before_fk = (
+            torch.compile(
+                termination_before,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+            )
+            if c.compile_fk
+            else termination_before
+        )
+        self._termination_after_fk = (
+            torch.compile(
+                termination_after,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+            )
+            if c.compile_fk
+            else termination_after
         )
         if c.compile_v24_step and not c.condition_external_events:
             raise ValueError("V24 fused step requires conditioned external events")
@@ -723,6 +785,52 @@ class Trainer:
             self.model.reward_norm.fit(b["reward_terms"])
         self.normalized = True
 
+    def v24_model_training_step(self, s, row, initial):
+        """One complete supervised transition, including joint BCE gradients.
+
+        No sampling, logging, optimizer step or event scheduler is captured.
+        Recorded commands are the accepted conditional-supervision protocol.
+        """
+        pre = self.event_scheduler.codec.pre_features(
+            row["event_state"], row["episode_steps"], self.task.dt
+        )
+        physical = self.model.predict_physical(s, row["target"], row["context"], pre)
+        ns = self.model.predict_post(physical, row["event_targets"], row["event_mask"])
+        before = (
+            None
+            if initial and "reference_relative_p" in row
+            else self.bridge.fk.subset(s, (self.task.anchor_name,))
+            if self.cfg.minimal_termination_fk
+            else self.bridge.fk(s)
+        )
+        after = (
+            self.bridge.fk.subset(physical, tuple(self.task.tracked_names))
+            if self.cfg.minimal_termination_fk
+            else self.bridge.fk(physical)
+        )
+        features = self.task.predicted_termination_features(
+            row,
+            s,
+            physical,
+            row["phase"],
+            initial=initial,
+            fk_before=before,
+            fk_after=after,
+        )
+        dl = nn.functional.binary_cross_entropy_with_logits(
+            self.termination(features), row["terminated"].float(), reduction="none"
+        )
+        physical_loss = (
+            state_error(physical, row["physical_next_state"]).square().sum(-1)
+        )
+        post_error = state_error(ns, row["next_state"]).square()
+        post_loss = (
+            post_error.sum(-1)
+            if self.cfg.state_loss_reduction == "sum"
+            else post_error.mean(-1)
+        )
+        return ns, physical_loss, dl, post_loss
+
     def fit_model(self):
         start = timestamp(self.device)
         if not self.normalized:
@@ -799,6 +907,31 @@ class Trainer:
                 if self.model.state_only:
                     if mask is not None:
                         s = torch.where(mask[t, :, None], s, seq["state"][t])
+                    if self._wm_training_step is not None:
+                        fields = (
+                            "target",
+                            "context",
+                            "event_state",
+                            "episode_steps",
+                            "event_targets",
+                            "event_mask",
+                            "yaw",
+                            "phase",
+                            "terminated",
+                            "physical_next_state",
+                            "next_state",
+                        )
+                        row = {k: seq[k][t] for k in fields}
+                        if "reference_relative_p" in seq:
+                            row["reference_relative_p"] = seq["reference_relative_p"][t]
+                        s, sl, dl, post_loss = self._wm_training_step(s, row, t == 0)
+                        state_losses.append(sl)
+                        physics_losses.append(sl)
+                        macro_losses.append(post_loss)
+                        termination_losses.append(dl)
+                        mode_losses.append(torch.zeros_like(sl))
+                        losses.append(sl + self.cfg.term_loss_weight * dl)
+                        continue
                     if self.cfg.condition_external_events:
                         # Conditional supervised rollout: recorded event inputs
                         # align the stochastic branch with measured labels.
@@ -857,8 +990,20 @@ class Trainer:
                             physical,
                             row["phase"],
                             initial=t == 0,
-                            fk_before=self._fk(s),
-                            fk_after=self._fk(physical),
+                            fk_before=(
+                                None
+                                if self.cfg.minimal_termination_fk
+                                and t == 0
+                                and "reference_relative_p" in row
+                                else self._termination_before_fk(s)
+                                if self.cfg.minimal_termination_fk
+                                else self._fk(s)
+                            ),
+                            fk_after=(
+                                self._termination_after_fk(physical)
+                                if self.cfg.minimal_termination_fk
+                                else self._fk(physical)
+                            ),
                         )
                         dl = nn.functional.binary_cross_entropy_with_logits(
                             self.termination(features),
@@ -1943,6 +2088,9 @@ class Trainer:
             "tf32",
             "synchronize_replay_timing",
             "replay_index_cache",
+            "compile_wm_training_step",
+            "minimal_termination_fk",
+            "wm_mlp_precision",
             "wm_only_rounds",
             "wm_compile_mode",
             "tensorboard_flush_seconds",

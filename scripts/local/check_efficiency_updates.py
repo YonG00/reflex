@@ -19,6 +19,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-ref", default="63b3ec8")
     parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--minimal-termination-fk",
+        action="store_true",
+        help="Compare the exact FK optimization with joint predicted BCE enabled",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "tests"))
@@ -69,11 +74,16 @@ def main():
             fixture.Trainer = Trainer
             actual = fixture.repaired(tmp)
             actual.cfg.synchronize_replay_timing = False
+            if args.minimal_termination_fk:
+                reference.cfg.joint_predicted_termination = True
+                actual.cfg.joint_predicted_termination = True
+                actual.cfg.minimal_termination_fk = True
         finally:
             fixture.Trainer = Trainer
         report = {
             "baseline_ref": args.baseline_ref,
             "scope": "CPU synthetic; not PhysX/CUDA",
+            "minimal_termination_fk": args.minimal_termination_fk,
         }
         for obj in (reference, actual):
             torch.manual_seed(934)

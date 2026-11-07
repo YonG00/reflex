@@ -216,6 +216,29 @@ class Kinematics(nn.Module):
             quats[child] = q
         return positions, quats
 
+    def subset(self, s, names):
+        """Exact original recursion, restricted to requested links and ancestors."""
+        needed = set(names)
+        for parent, child, _ in reversed(self.nodes):
+            if child in needed:
+                needed.add(parent)
+        positions, quats = {"pelvis": s[..., :3]}, {"pelvis": s[..., 3:7]}
+        for i, (parent, child, jid) in enumerate(self.nodes):
+            if child not in needed:
+                continue
+            xyz, q0, axis = (
+                getattr(self, f"{key}_{i}") for key in ("xyz", "quat", "axis")
+            )
+            qp = quats[parent]
+            positions[child] = positions[parent] + apply(
+                qp, xyz.expand_as(positions[parent])
+            )
+            q = mul(qp, q0.expand_as(qp))
+            if jid >= 0:
+                q = mul(q, expmap(s[..., 7 + jid, None] * axis))
+            quats[child] = q
+        return ({n: positions[n] for n in names}, {n: quats[n] for n in names})
+
     def velocities(self, s, root_com=None, fk_result=None):
         """Link-origin velocities from URDF Jacobian recursion (world frame)."""
         p, q = self(s) if fk_result is None else fk_result

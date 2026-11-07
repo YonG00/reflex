@@ -83,7 +83,12 @@ def run(adapter, source, output, collect_steps=128, rounds=3):
     results = {}
     for tag, deterministic in (("learned", False), ("deterministic", True)):
         seed(24024)
-        cfg = dataclasses.replace(source.cfg, deterministic_event_apply=deterministic)
+        cfg = dataclasses.replace(
+            source.cfg,
+            deterministic_event_apply=deterministic,
+            compile_wm_training_step=source.cfg.compile_wm_training_step
+            and deterministic,
+        )
         task = copy.deepcopy(source.task)
         scheduler = copy.deepcopy(source.event_scheduler)
         scheduler.task = task
@@ -110,6 +115,8 @@ def run(adapter, source, output, collect_steps=128, rounds=3):
         # Explicitly shared frozen real data; no environment interaction below.
         t.replay = copy.deepcopy(source.replay)
         t.normalized = source.normalized
+        t.wm_rounds_completed = source.wm_rounds_completed
+        t.wm_warmup_inherited = source.wm_warmup_inherited or source.actor_updates > 0
         t.real_transitions = source.real_transitions
         folder = out / tag
         folder.mkdir(exist_ok=True)

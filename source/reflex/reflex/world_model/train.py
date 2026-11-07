@@ -33,6 +33,8 @@ parser.add_argument(
         "physical_action_ranking",
         "collect_component_timing",
         "event_compact_optimization_check",
+        "efficiency_benchmark",
+        "efficiency_capacity_check",
     ),
     default="preflight",
 )
@@ -48,6 +50,16 @@ parser.add_argument(
     "--profile_joint",
     action="store_true",
     help="Profile first Actor update without changing training config",
+)
+parser.add_argument(
+    "--efficiency_deterministic",
+    action="store_true",
+    help="Separate deterministic numeric check; cold compile cost can be large",
+)
+parser.add_argument(
+    "--efficiency_include_cudagraph",
+    action="store_true",
+    help="Add isolated reduce-overhead graph trial after the default paired comparison",
 )
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument(
@@ -319,6 +331,41 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "efficiency_capacity_check":
+            from .efficiency_benchmark import capacity_check
+
+            print(json.dumps(capacity_check(trainer, adapter, out)), flush=True)
+            return
+        if args.mode == "efficiency_benchmark":
+            from .efficiency_benchmark import check
+
+            result = check(
+                trainer,
+                out,
+                deterministic=args.efficiency_deterministic,
+                include_cudagraph=args.efficiency_include_cudagraph,
+            )
+            from .events_v24.component_timing import check as component_check
+            from .events_v24.evaluation import evaluate
+
+            result["actor_components"] = component_check(trainer, out)
+            result["initial_checkpoint_validation"] = evaluate(trainer, batch=16)
+            (out / "efficiency_full_report.json").write_text(
+                json.dumps(result, indent=2)
+            )
+            print(
+                json.dumps(
+                    {
+                        "completed": True,
+                        "all_update_equivalence_passed": all(
+                            v.get("passed", False) for v in result["variants"].values()
+                        ),
+                        "report": str(out / "efficiency_full_report.json"),
+                    }
+                ),
+                flush=True,
+            )
+            return
         if args.mode == "event_compact_optimization_check":
             from .events_v24.actor_profile import update_equivalence
             from .events_v24.component_timing import check

@@ -6,6 +6,19 @@ from torch import nn
 from .physics import canonical, integrate
 
 
+class PrecisionMLP(nn.Sequential):
+    """Optional MLP-only autocast; public state and parameters remain FP32."""
+
+    precision = "fp32"
+
+    def forward(self, x):
+        if self.precision == "bf16":
+            with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16):
+                y = super().forward(x)
+            return y.float()
+        return super().forward(x)
+
+
 def mlp(inputs, outputs, hidden=256, layers=None, activation=nn.ELU):
     sizes = [inputs, *(layers or [hidden, hidden]), outputs]
     modules = []

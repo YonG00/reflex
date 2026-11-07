@@ -408,7 +408,6 @@ class AnalyticTask(nn.Module):
         self, b, before, after, phase, initial=True, fk_before=None, fk_after=None
     ):
         """Same 48 features as evaluate_step, differentiable in predicted states."""
-        old_p, old_q = self.fk(before) if fk_before is None else fk_before
         p, q = self.fk(after) if fk_after is None else fk_after
         n = len(after)
         zero = torch.zeros_like(b["yaw"])
@@ -420,14 +419,16 @@ class AnalyticTask(nn.Module):
         ref_q = mul(yq, self.ref_quat[phase])
         ai = self.tracked_names.index(self.anchor_name)
         goal_p, goal_q = ref_p[:, ai], ref_q[:, ai]
-        alignment = heading(mul(old_q[self.anchor_name], inverse(goal_q)))
-        anchor = old_p[self.anchor_name].clone()
-        anchor[:, 2] = goal_p[:, 2]
-        relative = anchor[:, None, :] + apply(
-            alignment[:, None, :].expand_as(ref_q), ref_p - goal_p[:, None, :]
-        )
         if initial and "reference_relative_p" in b:
             relative = b["reference_relative_p"]
+        else:
+            old_p, old_q = self.fk(before) if fk_before is None else fk_before
+            alignment = heading(mul(old_q[self.anchor_name], inverse(goal_q)))
+            anchor = old_p[self.anchor_name].clone()
+            anchor[:, 2] = goal_p[:, 2]
+            relative = anchor[:, None, :] + apply(
+                alignment[:, None, :].expand_as(ref_q), ref_p - goal_p[:, None, :]
+            )
         gravity = after.new_tensor((0.0, 0.0, -1.0)).expand(n, 3)
         bodies = torch.stack([p[name] for name in self.tracked_names], 1)
         return torch.cat(
