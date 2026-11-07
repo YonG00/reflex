@@ -1,0 +1,20 @@
+{
+  "gpu_tested": false,
+  "training_started": false,
+  "python": "3.12.15",
+  "torch": "2.15.0",
+  "suite": {
+    "passed": 151,
+    "warnings": 1,
+    "seconds": 380.55
+  },
+  "supplemental": {
+    "checkpoint_contract": 1,
+    "wm_paired_restore": 1,
+    "actor_paired_full_updates_restore": 1
+  },
+  "new_test_cases": 30,
+  "tolerance": "torch.testing.assert_close default dtype tolerances; exact zero where asserted",
+  "gpu_speedup": null,
+  "target_wm10_actor_critic_seconds": 1.0
+}

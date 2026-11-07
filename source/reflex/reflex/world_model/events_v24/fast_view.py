@@ -26,8 +26,9 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
         root_lin_vel_w=physical[:, 78:81].clone(),
         root_ang_vel_w=physical[:, 81:84].clone(),
     )
+    asset_factory = getattr(scheduler, "event_asset_factory", PlannedAsset)
     scene = Scene(
-        robot=PlannedAsset(
+        robot=asset_factory(
             robot,
             scheduler.task.body_names,
             scheduler.task.joint_names,
@@ -35,7 +36,7 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
             origins,
             True,
         ),
-        balloon=PlannedAsset(box, ["box"], [], plan, origins, False),
+        balloon=asset_factory(box, ["box"], [], plan, origins, False),
     )
     scene.env_origins, scene.sensors = origins, {}
     view = NS(

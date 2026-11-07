@@ -74,6 +74,11 @@ class TrainConfig:
     actor_microbatch: int = 0
     batch_imagination_amp: bool = False
     batch_imagination_critic: bool = False
+    reuse_post_event_fk: bool = False
+    compact_event_pool_updates: bool = False
+    sparse_actor_bootstrap: bool = False
+    fuse_actor_core: bool = False
+    actor_core_compile_mode: str = "default"
     actor_beta2: float = 0.999
     actor_grad_clip_value: float = 0.0
     actor_horizon_scale: bool = False
@@ -94,6 +99,7 @@ class TrainConfig:
     synchronize_replay_timing: bool = True
     replay_index_cache: bool = True
     wm_context_mode: str = "full"
+    compile_wm_rollout: bool = False
     compile_wm_training_step: bool = False
     minimal_termination_fk: bool = False
     wm_mlp_precision: str = "fp32"
@@ -205,6 +211,10 @@ class Trainer:
             raise ValueError(
                 "Analytic soft termination requires state WM, pelvis reference, pure soft survival, no learned head/BCE or hard boundary"
             )
+        if c.sparse_actor_bootstrap and not c.privileged_critic:
+            raise ValueError(
+                "Sparse Actor bootstrap requires the privileged Critic path"
+            )
         if c.critic_include_all_actor and not c.privileged_critic:
             raise ValueError("Complete Actor inputs require privileged Critic")
         self.task = task.to(device) if task is not None else None
@@ -229,6 +239,22 @@ class Trainer:
                 self.terminal_reward_cost = specs[0].weight * task.dt
 
         self.event_scheduler = event_scheduler
+        if c.reuse_post_event_fk or c.compact_event_pool_updates:
+            if (
+                event_scheduler is None
+                or not c.condition_external_events
+                or not c.deterministic_event_apply
+            ):
+                raise ValueError(
+                    "V30 execution changes require deterministic native events"
+                )
+            if c.reuse_post_event_fk and not c.minimal_event_view:
+                raise ValueError("Pose write tracking requires minimal event view")
+            from .events_v24.execution_v30 import configure
+
+            configure(
+                event_scheduler, c.reuse_post_event_fk, c.compact_event_pool_updates
+            )
         if event_scheduler is not None:
             event_scheduler.compact_inputs = c.compact_event_inputs
         if c.compact_event_inputs and not c.minimal_event_view:
@@ -431,6 +457,31 @@ class Trainer:
             else None
         )
 
+        if c.compile_wm_rollout and not (
+            c.condition_external_events
+            and c.deterministic_event_apply
+            and c.analytic_soft_termination
+            and c.wm_kind == "state"
+        ):
+            raise ValueError(
+                "WM rollout fusion requires analytic deterministic state WM"
+            )
+        self._wm_rollout = (
+            torch.compile(
+                self.v30_model_rollout,
+                fullgraph=True,
+                dynamic=False,
+                backend=c.compile_backend,
+                **(
+                    {"mode": c.wm_compile_mode}
+                    if c.compile_backend == "inductor"
+                    else {}
+                ),
+            )
+            if c.compile_wm_rollout
+            else None
+        )
+
         def termination_before(s):
             return self.bridge.fk.subset(s, (self.task.anchor_name,))
 
@@ -518,6 +569,42 @@ class Trainer:
             )
             if c.compile_step or c.compile_v24_step
             else self.imagined_observations
+        )
+        if c.fuse_actor_core and not (
+            c.condition_external_events
+            and c.deterministic_event_apply
+            and c.compile_v24_step
+            and c.v24_fusion_scope == "packed_heads"
+        ):
+            raise ValueError(
+                "Actor core fusion requires deterministic packed-head execution"
+            )
+        if c.actor_core_compile_mode not in ("default", "reduce-overhead"):
+            raise ValueError("Unsupported Actor core compile mode")
+        self._actor_core = (
+            torch.compile(
+                self.actor_physical_core,
+                fullgraph=True,
+                dynamic=False,
+                backend=c.compile_backend,
+                **(
+                    {"mode": c.actor_core_compile_mode}
+                    if c.compile_backend == "inductor"
+                    else {}
+                ),
+            )
+            if c.fuse_actor_core
+            else None
+        )
+        self._bootstrap_critic_observation = (
+            torch.compile(
+                self.critic_observation,
+                fullgraph=True,
+                dynamic=False,
+                backend=c.compile_backend,
+            )
+            if c.sparse_actor_bootstrap and (c.compile_step or c.compile_v24_step)
+            else self.critic_observation
         )
         self.model_opt = torch.optim.Adam(
             self.model.parameters(), lr=c.model_lr or c.lr
@@ -904,6 +991,42 @@ class Trainer:
         )
         return ns, physical_loss, dl, post_loss
 
+    def v30_model_rollout(self, seq):
+        """Fixed H8 conditional physical supervision; native commands stay exact.
+
+        No random scheduler, replay sampling, optimizer or scalar logging inside.
+        Invalid padded transitions reset the recurrent input exactly as baseline.
+        """
+        state = seq["state"][0]
+        physical_losses, termination_losses, post_losses = [], [], []
+        fields = (
+            "target",
+            "context",
+            "event_state",
+            "episode_steps",
+            "event_targets",
+            "event_mask",
+            "physical_next_state",
+            "next_state",
+        )
+        mask = seq.get("loss_mask")
+        for index in range(self.cfg.model_window):
+            if mask is not None:
+                state = torch.where(mask[index, :, None], state, seq["state"][index])
+            row = {key: seq[key][index] for key in fields}
+            state, physical_loss, term_loss, post_loss = self.v24_model_training_step(
+                state, row, index == 0
+            )
+            physical_losses.append(physical_loss)
+            termination_losses.append(term_loss)
+            post_losses.append(post_loss)
+        return (
+            state,
+            torch.stack(physical_losses),
+            torch.stack(termination_losses),
+            torch.stack(post_losses),
+        )
+
     def fit_model(self):
         start = timestamp(self.device)
         if not self.normalized:
@@ -976,7 +1099,20 @@ class Trainer:
                     ).mean()
                 return values.mean()
 
-            for t in range(self.cfg.model_window):
+            if self._wm_rollout is not None:
+                _, physical_seq, term_seq, post_seq = self._wm_rollout(seq)
+                state_losses = list(physical_seq.unbind())
+                physics_losses = list(physical_seq.unbind())
+                macro_losses = list(post_seq.unbind())
+                mode_losses = list(torch.zeros_like(physical_seq).unbind())
+                losses = list(
+                    (physical_seq + self.cfg.term_loss_weight * term_seq).unbind()
+                )
+                sl = physical_seq[-1]
+
+            for t in range(
+                0 if self._wm_rollout is not None else self.cfg.model_window
+            ):
                 if self.model.state_only:
                     if mask is not None:
                         s = torch.where(mask[t, :, None], s, seq["state"][t])
@@ -1397,8 +1533,32 @@ class Trainer:
 
     def imagined_observations(self, b, s, previous, phase, poses):
         raw = self.observation(b, s, previous, phase, poses)
-        critic = self.critic_observation(b, s, previous, phase, poses, raw)
+        if self.cfg.sparse_actor_bootstrap:
+            # Only lambda-target features are computed here. Actor bootstrap
+            # features are rebuilt below from their differentiable states.
+            with torch.no_grad():
+                critic = self.critic_observation(b, s, previous, phase, poses, raw)
+        else:
+            critic = self.critic_observation(b, s, previous, phase, poses, raw)
         return raw, critic
+
+    def actor_physical_core(self, b, s, previous, phase, poses, blend, pre):
+        raw_obs, critic_obs = self.imagined_observations(b, s, previous, phase, poses)
+        obs = self.obs_norm(raw_obs)
+        raw = self.actor(obs)
+        target, next_blend = self.targets(b, raw, blend)
+        physical = self.model.predict_physical(s, target, b["context"], pre)
+        physical_poses = self.bridge.fk(physical)
+        return (
+            raw_obs,
+            obs,
+            critic_obs,
+            raw,
+            target,
+            next_blend,
+            physical,
+            physical_poses,
+        )
 
     def imagination_termination(self, physical, task):
         if self.cfg.analytic_soft_termination:
@@ -1503,6 +1663,39 @@ class Trainer:
     ):
         physical = self._dynamics(s, target, b["context"], pre)
         physical_poses = self._fk(physical)
+        task, done = self.reward_heads_from_poses(
+            b,
+            s,
+            physical,
+            raw,
+            previous,
+            phase,
+            hist,
+            episode,
+            event,
+            poses,
+            physical_poses,
+            step,
+            first,
+        )
+        return physical, physical_poses, task, done
+
+    def reward_heads_from_poses(
+        self,
+        b,
+        s,
+        physical,
+        raw,
+        previous,
+        phase,
+        hist,
+        episode,
+        event,
+        poses,
+        physical_poses,
+        step,
+        first,
+    ):
         if self.cfg.v24_fusion_scope == "packed_heads":
             names = tuple(poses[0])
             packed = [
@@ -1540,7 +1733,7 @@ class Trainer:
                 step,
                 first,
             )
-        return physical, physical_poses, task, done
+        return task, done
 
     def v24_physical_step(
         self,
@@ -1638,6 +1831,12 @@ class Trainer:
         amp_pairs = []
         trace_rows = []
         physical_trace, reference_trace = [], []
+        bootstrap_states, bootstrap_previous, bootstrap_phases, bootstrap_modes = (
+            [],
+            [],
+            [],
+            [],
+        )
         validity = []
         truncations = []
         predicted_modes = []
@@ -1657,15 +1856,55 @@ class Trainer:
             self._transition_cache_ready = True
         poses = self._fk(s)
         for t in range(self.cfg.horizon):
-            with torch.profiler.record_function("imagine/observation"):
-                raw_obs, critic_obs = self._observations(b, s, previous, phase, poses)
-                critic_observations.append(critic_obs)
-            obs = self.obs_norm(raw_obs)
+            if self.cfg.sparse_actor_bootstrap:
+                bootstrap_states.append(s)
+                bootstrap_previous.append(previous)
+                bootstrap_phases.append(phase)
+                bootstrap_modes.append(b["launched"])
+            if self._actor_core is not None:
+                pre = self.event_scheduler.codec.pre_features(
+                    event_state, episode, self.task.dt
+                )
+                (
+                    raw_obs,
+                    obs,
+                    critic_obs,
+                    raw,
+                    target,
+                    blend,
+                    physical,
+                    physical_poses,
+                ) = self._actor_core(b, s, previous, phase, poses, blend, pre)
+            else:
+                with torch.profiler.record_function("imagine/observation"):
+                    raw_obs, critic_obs = self._observations(
+                        b, s, previous, phase, poses
+                    )
+                obs = self.obs_norm(raw_obs)
+                raw = self.actor(obs)
+                target, blend = self.targets(b, raw, blend)
+            critic_observations.append(critic_obs)
             observations.append(obs)
-            raw = self.actor(obs)
-            target, blend = self.targets(b, raw, blend)
             if self.model.state_only:
-                if self._v24_step is not None:
+                if self._actor_core is not None:
+                    task, d = self.reward_heads_from_poses(
+                        b,
+                        s,
+                        physical,
+                        raw,
+                        previous,
+                        phase,
+                        hist,
+                        episode,
+                        event,
+                        poses,
+                        physical_poses,
+                        torch.tensor(t, device=s.device),
+                        t == 0,
+                    )
+                    ns, next_poses = physical, physical_poses
+                    r, trunc = task.rewards, task.truncated
+                elif self._v24_step is not None:
                     pre = self.event_scheduler.codec.pre_features(
                         event_state, episode, self.task.dt
                     )
@@ -1767,6 +2006,8 @@ class Trainer:
                     ids = active.nonzero().flatten()
                     plan = WritePlan(physical)
                     next_event, next_pool = event_state, event_pool
+                    if self.cfg.reuse_post_event_fk:
+                        self.event_scheduler.robot_pose_write_issued = False
                     if len(ids):
                         event_b = {
                             **b,
@@ -1812,7 +2053,12 @@ class Trainer:
                                 -1,
                             )
                         )
-                    next_poses = self._fk(ns)
+                    next_poses = (
+                        physical_poses
+                        if self.cfg.reuse_post_event_fk
+                        and not self.event_scheduler.robot_pose_write_issued
+                        else self._fk(ns)
+                    )
                     event_state = torch.where(valid[:, None], next_event, event_state)
                     event_pool = torch.where(
                         valid[:, None, None], next_pool, event_pool
@@ -1903,7 +2149,27 @@ class Trainer:
                     + self.prior._w_style * self.prior.ramp * style
                     for reward, style in zip(terms, styles)
                 ]
+        actor_values = None
+        if self.cfg.sparse_actor_bootstrap:
+            from .actor_bootstrap import sparse_values
+
+            bootstrap_states.append(s)
+            bootstrap_previous.append(previous)
+            bootstrap_phases.append(phase)
+            bootstrap_modes.append(b["launched"])
+            actor_values = sparse_values(
+                self,
+                b,
+                bootstrap_states,
+                bootstrap_previous,
+                bootstrap_phases,
+                bootstrap_modes,
+                torch.stack(truncations),
+                torch.stack(validity),
+                critic_observations[-1],
+            )
         return {
+            **({"actor_values": actor_values} if actor_values is not None else {}),
             **({"event_trace": torch.stack(trace_rows)} if trace_rows else {}),
             **(
                 {
@@ -2231,6 +2497,11 @@ class Trainer:
             "cache_physical_context",
             "batch_imagination_amp",
             "batch_imagination_critic",
+            "reuse_post_event_fk",
+            "compact_event_pool_updates",
+            "sparse_actor_bootstrap",
+            "fuse_actor_core",
+            "actor_core_compile_mode",
             "compile_dynamics",
             "compile_fk",
             "compile_backend",
@@ -2242,6 +2513,7 @@ class Trainer:
             "tf32",
             "synchronize_replay_timing",
             "replay_index_cache",
+            "compile_wm_rollout",
             "compile_wm_training_step",
             "minimal_termination_fk",
             "wm_mlp_precision",

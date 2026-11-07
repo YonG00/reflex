@@ -15,10 +15,14 @@ from .timing import timestamp
 from .trainer import freeze
 
 
-def check(t, output, repeats=3):
+def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
     if t.event_scheduler is None:
         raise ValueError("Batching check requires the native event scheduler")
-    out = Path(output) / "imagination_batching.json"
+    out = Path(output) / (
+        "actor_execution_v30.json"
+        if execution_variants
+        else "imagination_batching.json"
+    )
     if out.exists():
         raise FileExistsError(out)
     names = ("actor", "critic", "actor_opt", "critic_opt", "obs_norm", "critic_norm")
@@ -31,7 +35,35 @@ def check(t, output, repeats=3):
         for n in ("actor", "critic")
     }
     profile_before = t.profile_next_actor
-    flags = t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic
+    flags = (
+        t.cfg.batch_imagination_amp,
+        t.cfg.batch_imagination_critic,
+        t.cfg.reuse_post_event_fk,
+        t.cfg.compact_event_pool_updates,
+        t.cfg.sparse_actor_bootstrap,
+        t.cfg.fuse_actor_core,
+    )
+    scheduler_attrs = {
+        k: (k in t.event_scheduler.__dict__, t.event_scheduler.__dict__.get(k))
+        for k in (
+            "step",
+            "_v30_original_step",
+            "event_asset_factory",
+            "robot_pose_write_issued",
+        )
+    }
+    compiled_handles = {
+        k: getattr(t, k)
+        for k in (
+            "_dynamics",
+            "_fk",
+            "_v24_heads",
+            "_actor_core",
+            "_bootstrap_critic_observation",
+        )
+    }
+    if graph_trial and (not execution_variants or not str(t.device).startswith("cuda")):
+        raise ValueError("Graph trial requires CUDA execution comparison")
     rng = t.event_scheduler.rng.clone()
     python_rng, numpy_rng = random.getstate(), np.random.get_state()
     cpu_rng = torch.get_rng_state()
@@ -77,24 +109,118 @@ def check(t, output, repeats=3):
             starts = old_sample(starts=True, n=t.cfg.actor_batch or t.cfg.batch)
             # Force exactly the same sampled starts for the complete update as the trajectory check.
             t.sample = lambda *args, **kwargs: {k: v.clone() for k, v in starts.items()}
-            for label, amp, critic in [
-                ("reference", False, False),
-                ("amp", True, False),
-                ("amp_critic", True, True),
-            ]:
+            variants = (
+                [
+                    (
+                        "reference",
+                        flags[0],
+                        flags[1],
+                        False,
+                        False,
+                        False,
+                        False,
+                        False,
+                    ),
+                    ("fk_reuse", flags[0], flags[1], True, False, False, False, False),
+                    ("fk_pool", flags[0], flags[1], True, True, False, False, False),
+                    (
+                        "sparse_bootstrap",
+                        flags[0],
+                        flags[1],
+                        True,
+                        True,
+                        True,
+                        False,
+                        False,
+                    ),
+                    ("fused_core", flags[0], flags[1], True, True, True, True, False),
+                ]
+                if execution_variants
+                else [
+                    ("reference", False, False, *flags[2:], False),
+                    ("amp", True, False, *flags[2:], False),
+                    ("amp_critic", True, True, *flags[2:], False),
+                ]
+            )
+            if graph_trial:
+                variants.append(
+                    (
+                        "fused_core_graph_trial",
+                        flags[0],
+                        flags[1],
+                        True,
+                        True,
+                        True,
+                        True,
+                        True,
+                    )
+                )
+            for (
+                label,
+                amp,
+                critic,
+                reuse_fk,
+                compact_pool,
+                sparse,
+                fused,
+                graph,
+            ) in variants:
+                t.cfg.sparse_actor_bootstrap = sparse
+                t.cfg.fuse_actor_core = fused
                 t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic = (
                     amp,
                     critic,
                 )
+                t.cfg.reuse_post_event_fk, t.cfg.compact_event_pool_updates = (
+                    reuse_fk,
+                    compact_pool,
+                )
+                if execution_variants:
+                    from .events_v24.execution_v30 import configure
+
+                    configure(t.event_scheduler, reuse_fk, compact_pool)
+                for name, handle in compiled_handles.items():
+                    setattr(t, name, handle)
+                if fused:
+                    t._actor_core = torch.compile(
+                        t.actor_physical_core,
+                        fullgraph=True,
+                        dynamic=False,
+                        backend=t.cfg.compile_backend,
+                        **(
+                            {"mode": "reduce-overhead" if graph else "default"}
+                            if t.cfg.compile_backend == "inductor"
+                            else {}
+                        ),
+                    )
+                elif execution_variants:
+                    t._actor_core = None
+                if sparse:
+                    t._bootstrap_critic_observation = torch.compile(
+                        t.critic_observation,
+                        fullgraph=True,
+                        dynamic=False,
+                        backend=t.cfg.compile_backend,
+                    )
                 restore()
                 current = {}
                 if devices:
                     torch.cuda.reset_peak_memory_stats(t.device)
                 cold_begin = timestamp(t.device)
+                if graph:
+                    torch.compiler.cudagraph_mark_step_begin()
+                fk_count = [0]
+                original_fk = t._fk
+
+                def counted_fk(*args, _counter=fk_count, _fk=original_fk, **kwargs):
+                    _counter[0] += 1
+                    return _fk(*args, **kwargs)
+
+                t._fk = counted_fk
                 with freeze(t.model, t.termination, t.prior._disc, t.critic):
                     imagined = t.imagine(t.sample(), trace=True)
-                    values = None
-                    if critic:
+                    values = imagined.get("actor_values")
+                    if values is None and critic:
                         obs = imagined["critic_obs"]
                         values = t.critic(obs.flatten(0, 1)).reshape(obs.shape[:2])
                         del obs
@@ -109,6 +235,7 @@ def check(t, output, repeats=3):
                         {k: v.detach().cpu().clone() for k, v in imagined.items()}
                     )
                 cold_seconds = timestamp(t.device) - cold_begin
+                t._fk = original_fk
                 mode = current.get("predicted_launch_probability")
                 coverage = {"truncations": int(current["truncated"].sum())}
                 if mode is not None and mode.numel():
@@ -122,11 +249,13 @@ def check(t, output, repeats=3):
                 rows = []
                 for j in range(repeats + 1):
                     restore()
+                    if graph:
+                        torch.compiler.cudagraph_mark_step_begin()
                     with freeze(t.model, t.termination, t.prior._disc, t.critic):
                         begin = timestamp(t.device)
                         imag = t.imagine(t.sample())
-                        values = None
-                        if critic:
+                        values = imag.get("actor_values")
+                        if values is None and critic:
                             obs = imag["critic_obs"]
                             values = t.critic(obs.flatten(0, 1)).reshape(obs.shape[:2])
                             del obs
@@ -138,6 +267,8 @@ def check(t, output, repeats=3):
                         end = timestamp(t.device)
                     del imag, objective, values
                     restore()
+                    if graph:
+                        torch.compiler.cudagraph_mark_step_begin()
                     metrics = t.update_actor()
                     rows.append(
                         {
@@ -157,9 +288,12 @@ def check(t, output, repeats=3):
                     expected = current
                 else:
                     for k, value in current.items():
-                        compare(f"{label}/{k}", value, expected[k])
+                        if k != "actor_values":
+                            compare(f"{label}/{k}", value, expected[k])
                 report["variants"][label] = {
                     "cold_diagnostic_includes_compile_and_CPU_snapshot_seconds": cold_seconds,
+                    "explicit_fk_calls_per_horizon": fk_count[0],
+                    "graph_trial": graph,
                     "warmup_update": rows[0],
                     "steady": rows[1:],
                     "coverage": coverage,
@@ -179,6 +313,24 @@ def check(t, output, repeats=3):
                     ),
                 }
                 out.write_text(json.dumps(report, indent=2))
+                if graph:
+                    restore()
+                    torch.compiler.cudagraph_mark_step_begin()
+                    with torch.profiler.profile(
+                        activities=[
+                            torch.profiler.ProfilerActivity.CPU,
+                            torch.profiler.ProfilerActivity.CUDA,
+                        ]
+                    ) as profiler:
+                        t.update_actor()
+                    events = profiler.key_averages()
+                    report["variants"][label]["cuda_graph_launch_events"] = sum(
+                        e.count for e in events if "cudagraphlaunch" in e.key.lower()
+                    )
+                    profiler.export_chrome_trace(
+                        str(Path(output) / "actor_graph_trial_trace.json")
+                    )
+                    out.write_text(json.dumps(report, indent=2))
             report["completed"] = True
             report["numeric_passed"] = not report.get("failed_checks")
             report["coverage_note"] = (
@@ -188,7 +340,21 @@ def check(t, output, repeats=3):
         restore()
         t.sample = old_sample
         t.profile_next_actor = profile_before
-        t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic = flags
+        (
+            t.cfg.batch_imagination_amp,
+            t.cfg.batch_imagination_critic,
+            t.cfg.reuse_post_event_fk,
+            t.cfg.compact_event_pool_updates,
+            t.cfg.sparse_actor_bootstrap,
+            t.cfg.fuse_actor_core,
+        ) = flags
+        for key, (present, value) in scheduler_attrs.items():
+            if present:
+                setattr(t.event_scheduler, key, value)
+            elif key in t.event_scheduler.__dict__:
+                delattr(t.event_scheduler, key)
+        for key, value in compiled_handles.items():
+            setattr(t, key, value)
         t.event_scheduler.rng = rng
         random.setstate(python_rng)
         np.random.set_state(numpy_rng)
