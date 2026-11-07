@@ -321,12 +321,14 @@ def audit_randomization(env):
             term = env.event_manager.get_term_cfg(name)
             function = getattr(term.func, "__name__", type(term.func).__name__)
             params = term.params
-            reset_state = getattr(
-                term.func, "__module__", ""
-            ) == "reflex.envs.base.catch_terms_v2" and function in {
-                "randomize_motion_yaw",
-                "randomize_init_state",
-                "randomize_cmd_time_steps_mixture",
+            reset_state = (getattr(term.func, "__module__", ""), function) in {
+                ("reflex.envs.base.catch_terms_v2", "randomize_motion_yaw"),
+                ("reflex.envs.base.catch_terms_v2", "randomize_init_state"),
+                ("reflex.envs.base.catch_terms_v2", "randomize_cmd_time_steps_mixture"),
+                (
+                    "whole_body_tracking.tasks.tracking.mdp.catch_extras",
+                    "randomize_motion_yaw",
+                ),
             }
             if reset_state and mode != "reset":
                 raise ValueError(
@@ -338,7 +340,9 @@ def audit_randomization(env):
                 or "randomize" in name
             )
             if dr and function not in allowed:
-                raise ValueError(f"Uncovered domain randomization: {name}/{function}")
+                raise ValueError(
+                    f"Uncovered domain randomization: {name}/{getattr(term.func, '__module__', '')}.{function}"
+                )
             asset = params.get("asset_cfg")
             asset_name = getattr(asset, "name", None)
             if dr and asset_name not in ("robot", "balloon"):

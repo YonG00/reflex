@@ -442,3 +442,19 @@ def test_dr_audit_distinguishes_native_reset_state_from_physical_parameters(func
     manager.active_terms = {"interval": [function]}
     with pytest.raises(ValueError, match="must remain at reset"):
         audit_randomization(NS(event_manager=manager))
+
+
+def test_dr_audit_inherited_motion_yaw_source():
+    fn = NS(
+        __name__="randomize_motion_yaw",
+        __module__="whole_body_tracking.tasks.tracking.mdp.catch_extras",
+    )
+    term = NS(func=fn, params={})
+    manager = NS(
+        active_terms={"reset": ["randomize_motion_yaw"]}, get_term_cfg=lambda _: term
+    )
+    result = audit_randomization(NS(event_manager=manager))
+    assert result["events"][0]["conditioning"] == "reset_state_or_reference"
+    fn.__module__ = "unknown.custom_module"
+    with pytest.raises(ValueError, match="Uncovered"):
+        audit_randomization(NS(event_manager=manager))
