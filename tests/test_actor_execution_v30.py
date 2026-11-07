@@ -479,3 +479,19 @@ def test_actor_execution_probe_full_updates_and_restore(tmp_path):
     assert not trainer.cfg.sparse_actor_bootstrap
     assert not trainer.cfg.compact_event_pool_updates
     torch._dynamo.reset()
+
+
+def test_eager_diagnostic_disables_and_restores_new_compile_handles(tmp_path):
+    from reflex.world_model.diagnostics import eager_diagnostic
+
+    source, _ = compact_trainer(tmp_path, mode="full")
+    sentinel = object()
+    source._actor_core = sentinel
+    bootstrap = source._bootstrap_critic_observation
+    with pytest.raises(RuntimeError, match="probe"):
+        with eager_diagnostic(source):
+            assert source._actor_core is None
+            assert source._bootstrap_critic_observation == source.critic_observation
+            raise RuntimeError("probe")
+    assert source._actor_core is sentinel
+    assert source._bootstrap_critic_observation == bootstrap
