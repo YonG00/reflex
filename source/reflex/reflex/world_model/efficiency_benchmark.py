@@ -9,6 +9,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -211,11 +212,19 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                     "initial_checkpoint_forecasts"
                 ] = forecasts
                 rows = []
+                variant_reference = None
+                records["variants"][label].update(rows=rows, stage="running")
                 numerical_failures = []
                 try:
                     for trial in range(repeats + 2):
                         torch.use_deterministic_algorithms(deterministic and trial == 0)
                         restore()
+                        records["variants"][label].update(
+                            last_trial=trial, trial_started_unix=time.time()
+                        )
+                        (out / "efficiency_benchmark.json").write_text(
+                            json.dumps(records, indent=2)
+                        )
                         torch.cuda.reset_peak_memory_stats()
                         start = timestamp(t.device)
                         wm = fit()
@@ -234,6 +243,9 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                             "peak_reserved_bytes": torch.cuda.max_memory_reserved(),
                         }
                         rows.append(row)
+                        (out / "efficiency_benchmark.json").write_text(
+                            json.dumps(records, indent=2)
+                        )
                         print(
                             json.dumps(
                                 {
@@ -247,6 +259,10 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                         if trial == 0:
                             current = {
                                 n: cpu(getattr(t, n).state_dict()) for n in names
+                            }
+                            variant_reference = {
+                                n: current[n]
+                                for n in ("model", "termination", "actor", "critic")
                             }
                             for n in ("model", "termination", "actor", "critic"):
                                 current[n + "_gradients"] = tuple(
@@ -266,12 +282,12 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                                                 torch.testing.assert_close(
                                                     a, b, atol=2e-5, rtol=3e-3
                                                 )
-                                            except AssertionError as e:
+                                            except AssertionError as difference_error:
                                                 if len(failures) < 30:
                                                     failures.append(
                                                         {
                                                             "component": component,
-                                                            "error": str(e),
+                                                            "error": str(difference_error),
                                                         }
                                                     )
                                             return (
@@ -326,8 +342,53 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                                 records["variants"][label]["gradient_comparison"] = (
                                     gradient_metrics
                                 )
+                        elif variant_reference is not None:
+                            row["within_variant_parameter_max_abs_noise"] = {
+                                n: max(
+                                    float(
+                                        (v.detach().cpu() - variant_reference[n][key])
+                                        .abs()
+                                        .max()
+                                    )
+                                    for key, v in getattr(t, n).state_dict().items()
+                                    if v.numel()
+                                )
+                                for n in variant_reference
+                            }
+                        (out / "efficiency_benchmark.json").write_text(
+                            json.dumps(records, indent=2)
+                        )
+                    if label == "cudagraph_trial":
+                        restore()
+                        with torch.profiler.profile(
+                            activities=[
+                                torch.profiler.ProfilerActivity.CPU,
+                                torch.profiler.ProfilerActivity.CUDA,
+                            ]
+                        ) as profiler:
+                            fit()
+                            update()
+                            timestamp(t.device)
+                        events = profiler.events()
+                        launches = sum("graphlaunch" in e.name.lower() for e in events)
+                        records["variants"][label]["cuda_graph_launch_events"] = (
+                            launches
+                        )
+                        records["variants"][label]["profiler_extra_updates"] = {
+                            "wm": cfg.model_steps,
+                            "actor": 1,
+                        }
+                        profiler.export_chrome_trace(
+                            str(out / "cudagraph_update_trace.json")
+                        )
+                        (out / "cudagraph_update_profile.txt").write_text(
+                            profiler.key_averages().table(
+                                sort_by="self_cpu_time_total", row_limit=50
+                            )
+                        )
                     records["variants"].setdefault(label, {}).update(
                         {
+                            "stage": "completed",
                             "completed": True,
                             "passed": not numerical_failures,
                             "update_equivalence_passed": not numerical_failures,
@@ -339,6 +400,17 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                             "rows": rows,
                         }
                     )
+                except (KeyboardInterrupt, SystemExit) as e:
+                    records["variants"][label].update(
+                        stage="interrupted",
+                        completed=False,
+                        passed=False,
+                        error=repr(e),
+                    )
+                    (out / "efficiency_benchmark.json").write_text(
+                        json.dumps(records, indent=2)
+                    )
+                    raise
                 except Exception as e:
                     records["variants"].setdefault(label, {}).update(
                         passed=False, error=repr(e), rows=rows
