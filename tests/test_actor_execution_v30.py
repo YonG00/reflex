@@ -48,7 +48,7 @@ def test_pool_update_state_rng_gradient_and_input_immutability(
     before_pool, before_event = pool.clone(), event.clone()
     outputs = []
     for opt in (False, True):
-        configure(runtime, compact_pools=opt)
+        configure(runtime, compact_pools=opt, collapse_full_subsets=opt)
         physical = b["state"].clone().requires_grad_()
         pp = pool.clone().requires_grad_()
         ee = event.clone().requires_grad_()
@@ -199,6 +199,7 @@ def test_h32_fk_reuse_trajectory_gradient_and_optimizer_equivalence(
             compact_event_inputs=True,
             reuse_post_event_fk=opt,
             compact_event_pool_updates=opt,
+            collapse_full_event_subsets=opt,
             batch_imagination_amp=True,
             batch_imagination_critic=True,
         )
@@ -496,3 +497,40 @@ def test_eager_diagnostic_disables_and_restores_new_compile_handles(tmp_path):
         raise RuntimeError("probe")
     assert source._actor_core is sentinel
     assert source._bootstrap_critic_observation == bootstrap
+
+
+def test_full_subsets_and_amp_features_combined_full_update_probe(tmp_path):
+    from reflex.world_model.imagination_batching import check
+
+    source, row = compact_trainer(tmp_path, mode="full")
+    trainer = new_trainer(
+        source,
+        minimal_event_view=True,
+        compact_event_inputs=True,
+        batch_imagination_amp=True,
+        batch_imagination_critic=True,
+    )
+    fill(trainer, row)
+    trainer.cfg.horizon = 4
+    trainer.cfg.actor_steps = 1
+    trainer.cfg.gradient_audit_every = 0
+    report = check(
+        trainer,
+        tmp_path,
+        repeats=1,
+        execution_variants=True,
+        subset_variants=True,
+        amp_feature_variants=True,
+    )
+    assert report["completed"] and report["numeric_passed"], report.get(
+        "failure_details"
+    )
+    assert set(report["variants"]) == {
+        "reference",
+        "fk_pool",
+        "full_subsets",
+        "full_subsets_amp_features",
+    }
+    assert not trainer.cfg.collapse_full_event_subsets
+    assert not trainer.cfg.batch_imagination_amp_features
+    assert "_invoke" not in trainer.event_scheduler.__dict__

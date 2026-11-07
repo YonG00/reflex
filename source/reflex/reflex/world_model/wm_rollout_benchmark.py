@@ -10,18 +10,18 @@ import torch
 from .timing import timestamp
 
 
-def check(t, output, repeats=3, stable_heading=False):
+def check(t, output, repeats=3, stable_heading=False, graph_trial=False):
     if stable_heading:
         from .stable_canonical import trial
 
         if not t.normalized:
             t.fit_normalizers()
         with trial(t):
-            return _check(t, output, repeats)
-    return _check(t, output, repeats)
+            return _check(t, output, repeats, graph_trial)
+    return _check(t, output, repeats, graph_trial)
 
 
-def _check(t, output, repeats):
+def _check(t, output, repeats, graph_trial):
     if not t.cfg.analytic_soft_termination or not t.cfg.deterministic_event_apply:
         raise ValueError("Requires analytic deterministic WM")
     path = Path(output) / "wm_rollout_v30.json"
@@ -34,6 +34,11 @@ def _check(t, output, repeats):
     gradients = [
         None if p.grad is None else p.grad.clone() for p in t.model.parameters()
     ]
+    if graph_trial and (
+        not str(t.device).startswith("cuda") or t.cfg.compile_backend != "inductor"
+    ):
+        raise ValueError("WM Graph trial requires CUDA Inductor")
+    compile_mode = t.cfg.wm_compile_mode
     count, rounds = t.model_updates, t.wm_rounds_completed
     amp_state = copy.deepcopy(t.prior.amp_state_dict())
     amp_previous = {
@@ -66,7 +71,15 @@ def _check(t, output, repeats):
     try:
         sequences = [old_sample(t.cfg.model_window) for _ in range(t.cfg.model_steps)]
         reference = None
-        for label in ("baseline", "single_step", "h8_fused"):
+        labels = (
+            ("baseline", "single_step", "h8_fused", "h8_graph")
+            if graph_trial
+            else ("baseline", "single_step", "h8_fused")
+        )
+        for label in labels:
+            t.cfg.wm_compile_mode = (
+                "reduce-overhead" if label == "h8_graph" else compile_mode
+            )
             t._wm_training_step = (
                 None
                 if label == "baseline"
@@ -81,10 +94,11 @@ def _check(t, output, repeats):
                 torch.compile(
                     t.v30_model_rollout,
                     backend=t.cfg.compile_backend,
+                    **({"mode": "reduce-overhead"} if label == "h8_graph" else {}),
                     fullgraph=True,
                     dynamic=False,
                 )
-                if label == "h8_fused"
+                if label in ("h8_fused", "h8_graph")
                 else None
             )
             print(f"[V30 WM] start {label}", flush=True)
@@ -150,12 +164,30 @@ def _check(t, output, repeats):
                 f"[V30 WM] done {label}: {result['variants'][label]['median_seconds']:.6f}s",
                 flush=True,
             )
+            if label == "h8_graph":
+                restore()
+                index[0] = 0
+                t.sample = sample
+                with torch.profiler.profile(
+                    activities=[
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ]
+                ) as profiler:
+                    t.fit_model()
+                result["variants"][label]["cuda_graph_launch_events"] = sum(
+                    e.count
+                    for e in profiler.key_averages()
+                    if "cudagraphlaunch" in e.key.lower()
+                )
+                profiler.export_chrome_trace(str(Path(output) / "wm_graph_trace.json"))
             path.write_text(json.dumps(result, indent=2))
         result["completed"] = True
         result["numeric_passed"] = not result.get("failed_checks")
     finally:
         restore()
         t.sample, t._wm_training_step, t._wm_rollout = old_sample, old_step, old_rollout
+        t.cfg.wm_compile_mode = compile_mode
         torch.set_rng_state(cpu_rng)
         if cuda_rng is not None:
             torch.cuda.set_rng_state_all(cuda_rng)

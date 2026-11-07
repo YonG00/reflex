@@ -78,7 +78,9 @@ parser.add_argument(
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
 parser.add_argument("--wm_stable_heading_trial", action="store_true")
+parser.add_argument("--wm_graph_trial", action="store_true")
 parser.add_argument("--actor_amp_features_trial", action="store_true")
+parser.add_argument("--actor_full_subset_trial", action="store_true")
 parser.add_argument("--actor_graph_trial", action="store_true")
 parser.add_argument("--actor_graph_all_static", action="store_true")
 parser.add_argument("--actor_graph_only", action="store_true")
@@ -430,7 +432,12 @@ def main():
                 trainer.collect(adapter)
             print(
                 json.dumps(
-                    check(trainer, out, stable_heading=args.wm_stable_heading_trial)
+                    check(
+                        trainer,
+                        out,
+                        stable_heading=args.wm_stable_heading_trial,
+                        graph_trial=args.wm_graph_trial,
+                    )
                 ),
                 flush=True,
             )
@@ -454,6 +461,7 @@ def main():
                         graph_only=args.actor_graph_only,
                         stable_heading=args.wm_stable_heading_trial,
                         amp_feature_variants=args.actor_amp_features_trial,
+                        subset_variants=args.actor_full_subset_trial,
                     )
                 ),
                 flush=True,

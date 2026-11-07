@@ -77,6 +77,7 @@ class TrainConfig:
     batch_imagination_critic: bool = False
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
+    collapse_full_event_subsets: bool = False
     sparse_actor_bootstrap: bool = False
     fuse_actor_core: bool = False
     actor_core_include_fk: bool = True
@@ -247,7 +248,11 @@ class Trainer:
                 self.terminal_reward_cost = specs[0].weight * task.dt
 
         self.event_scheduler = event_scheduler
-        if c.reuse_post_event_fk or c.compact_event_pool_updates:
+        if (
+            c.reuse_post_event_fk
+            or c.compact_event_pool_updates
+            or c.collapse_full_event_subsets
+        ):
             if (
                 event_scheduler is None
                 or not c.condition_external_events
@@ -256,12 +261,17 @@ class Trainer:
                 raise ValueError(
                     "V30 execution changes require deterministic native events"
                 )
-            if c.reuse_post_event_fk and not c.minimal_event_view:
+            if (
+                c.reuse_post_event_fk or c.collapse_full_event_subsets
+            ) and not c.minimal_event_view:
                 raise ValueError("Pose write tracking requires minimal event view")
             from .events_v24.execution_v30 import configure
 
             configure(
-                event_scheduler, c.reuse_post_event_fk, c.compact_event_pool_updates
+                event_scheduler,
+                c.reuse_post_event_fk,
+                c.compact_event_pool_updates,
+                c.collapse_full_event_subsets,
             )
         if event_scheduler is not None:
             event_scheduler.compact_inputs = c.compact_event_inputs
@@ -1089,6 +1099,13 @@ class Trainer:
             self._termination_probe_due = False
         last = {}
         for update_index in range(self.cfg.model_steps):
+            if (
+                self._wm_rollout is not None
+                and self.cfg.wm_compile_mode == "reduce-overhead"
+            ):
+                # One complete forward/backward finishes before the next WM update.
+                # No previous graph output is consumed by the next iteration.
+                torch.compiler.cudagraph_mark_step_begin()
             seq = self.sample(self.cfg.model_window)
             s, m = seq["state"][0], seq["memory"][0]
             losses = []
@@ -2521,6 +2538,7 @@ class Trainer:
             "batch_imagination_critic",
             "reuse_post_event_fk",
             "compact_event_pool_updates",
+            "collapse_full_event_subsets",
             "sparse_actor_bootstrap",
             "fuse_actor_core",
             "actor_core_include_fk",

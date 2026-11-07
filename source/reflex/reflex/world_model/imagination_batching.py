@@ -25,6 +25,7 @@ def check(
     graph_only=False,
     stable_heading=False,
     amp_feature_variants=False,
+    subset_variants=False,
 ):
     if stable_heading:
         from .stable_canonical import trial
@@ -39,6 +40,7 @@ def check(
                 graph_all_static,
                 graph_only,
                 amp_feature_variants,
+                subset_variants,
             )
     return _check(
         t,
@@ -49,6 +51,7 @@ def check(
         graph_all_static,
         graph_only,
         amp_feature_variants,
+        subset_variants,
     )
 
 
@@ -61,6 +64,7 @@ def _check(
     graph_all_static,
     graph_only,
     amp_feature_variants,
+    subset_variants,
 ):
     if t.event_scheduler is None:
         raise ValueError("Batching check requires the native event scheduler")
@@ -82,6 +86,7 @@ def _check(
     }
     profile_before = t.profile_next_actor
     feature_flag = t.cfg.batch_imagination_amp_features
+    subset_flag = t.cfg.collapse_full_event_subsets
     flags = (
         t.cfg.batch_imagination_amp,
         t.cfg.batch_imagination_critic,
@@ -95,6 +100,8 @@ def _check(
         for k in (
             "step",
             "_v30_original_step",
+            "_invoke",
+            "_v30_original_invoke",
             "event_asset_factory",
             "robot_pose_write_issued",
         )
@@ -211,6 +218,38 @@ def _check(
                         False,
                     ),
                 ]
+            if subset_variants:
+                if not execution_variants or graph_trial:
+                    raise ValueError(
+                        "Subset trial requires execution mode without Graph trial"
+                    )
+                variants = [
+                    variants[0],
+                    ("fk_pool", flags[0], flags[1], True, True, False, False, False),
+                    (
+                        "full_subsets",
+                        flags[0],
+                        flags[1],
+                        True,
+                        True,
+                        False,
+                        False,
+                        False,
+                    ),
+                ]
+                if amp_feature_variants:
+                    variants.append(
+                        (
+                            "full_subsets_amp_features",
+                            flags[0],
+                            flags[1],
+                            True,
+                            True,
+                            False,
+                            False,
+                            False,
+                        )
+                    )
             if graph_only:
                 if not graph_trial:
                     raise ValueError("Graph-only comparison requires graph_trial")
@@ -242,7 +281,14 @@ def _check(
             ) in variants:
                 print(f"[V30 Actor] start {label}", flush=True)
                 t.cfg.batch_imagination_amp_features = (
-                    (label == "amp_features") if amp_feature_variants else feature_flag
+                    (label in ("amp_features", "full_subsets_amp_features"))
+                    if amp_feature_variants
+                    else feature_flag
+                )
+                t.cfg.collapse_full_event_subsets = (
+                    (label in ("full_subsets", "full_subsets_amp_features"))
+                    if subset_variants
+                    else subset_flag
                 )
                 t.cfg.sparse_actor_bootstrap = sparse
                 t.cfg.fuse_actor_core = fused
@@ -257,7 +303,12 @@ def _check(
                 if execution_variants:
                     from .events_v24.execution_v30 import configure
 
-                    configure(t.event_scheduler, reuse_fk, compact_pool)
+                    configure(
+                        t.event_scheduler,
+                        reuse_fk,
+                        compact_pool,
+                        t.cfg.collapse_full_event_subsets,
+                    )
                 for name, handle in compiled_handles.items():
                     setattr(t, name, handle)
                 if fused:
@@ -399,6 +450,7 @@ def _check(
                     "explicit_fk_calls_per_horizon": fk_count[0],
                     "graph_trial": graph,
                     "batch_amp_features": t.cfg.batch_imagination_amp_features,
+                    "collapse_full_event_subsets": t.cfg.collapse_full_event_subsets,
                     "graph_scope": "original_partitions"
                     if graph and graph_all_static
                     else "core"
@@ -455,6 +507,7 @@ def _check(
         t.sample = old_sample
         t.profile_next_actor = profile_before
         t.cfg.batch_imagination_amp_features = feature_flag
+        t.cfg.collapse_full_event_subsets = subset_flag
         (
             t.cfg.batch_imagination_amp,
             t.cfg.batch_imagination_critic,

@@ -1,5 +1,6 @@
 """Opt-in execution changes; native callbacks, clocks and RNG order stay intact."""
 
+import copy
 import functools
 import types
 
@@ -30,9 +31,18 @@ class PoseTrackedAsset(PlannedAsset):
         )
 
 
-def configure(scheduler, track_pose=False, compact_pools=False):
+def configure(
+    scheduler, track_pose=False, compact_pools=False, collapse_full_subsets=False
+):
     if not hasattr(scheduler, "_v30_original_step"):
         scheduler._v30_original_step = scheduler.step
+    if not hasattr(scheduler, "_v30_original_invoke"):
+        scheduler._v30_original_invoke = scheduler._invoke
+    scheduler._invoke = (
+        types.MethodType(full_subset_invoke, scheduler)
+        if collapse_full_subsets
+        else scheduler._v30_original_invoke
+    )
     if track_pose:
         scheduler.event_asset_factory = functools.partial(
             PoseTrackedAsset, tracker=scheduler
@@ -44,6 +54,27 @@ def configure(scheduler, track_pose=False, compact_pools=False):
         types.MethodType(compact_pool_step, scheduler)
         if compact_pools
         else scheduler._v30_original_step
+    )
+
+
+def full_subset_invoke(
+    self, term, b, physical, poses, values, episode, common, plan, selected, subset
+):
+    """Elide identity gathers/copies for a full ascending nonzero selection.
+
+    Native step constructs selected with nonzero(), hence length N proves
+    selected == arange(N). Callbacks marked ignores_ids still receive None,
+    exactly as the original subset path. RNG and every callback are retained.
+    """
+    if subset and len(physical) and len(selected) == len(physical):
+        view = self._view(b, physical, poses, values, episode, common, plan)
+        term.function(view, None, **term.params)
+        result = {name: getattr(view, name) for name in values}
+        if hasattr(view, "_box_posture_ids"):
+            self.static["_box_posture_ids"] = copy.deepcopy(view._box_posture_ids)
+        return result
+    return self._v30_original_invoke(
+        term, b, physical, poses, values, episode, common, plan, selected, subset
     )
 
 
