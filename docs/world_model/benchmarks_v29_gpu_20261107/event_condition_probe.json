@@ -1,0 +1,723 @@
+{
+  "passed": true,
+  "optimizer_updates": 0,
+  "steps": 24,
+  "positive_perturb_writes": 175,
+  "launch_velocity_robot_position_gradient_norm": 9.510807037353516,
+  "actor_imagination_horizon": 32,
+  "actor_waiting_to_launch_transitions": 64,
+  "scheduler": {
+    "source_sha256": {
+      "isaaclab.envs.mdp.events": "07e4f7dace061bf3bca12c0628b8508a97694121a50966ea9c88ead1ad00728c",
+      "reflex.envs.teacher_terms": "423ce37f9ad790e7b758679232272a38ae400997273f069ceeff5ccd94b8f044",
+      "reflex.envs.throw": "c56fe0619f76f4f9ff09b69294f65f4ba9fcaa6b4c8d22b2c366cf06c64aea71",
+      "runtime.py": "c69efde1fc6aa47681aa03c69c3aba5ac9df80c6eb211639fe3d97d545f189a0",
+      "state.py": "ded821b85cab10ce165b621ac31dcc96e56b4271042451401083b17b77e407ad",
+      "writes.py": "092039ca008262c6df974a9af27b5072e07d659765399f2fc2b838641d3a7235",
+      "event_math.py": "907c3e3b78a92dfe35528910036f1d97b7ed0526e73bebd27403bd0c397d5ea8"
+    },
+    "constants": {
+      "isaaclab.envs.mdp.events": {
+        "TYPE_CHECKING": false
+      },
+      "reflex.envs.teacher_terms": {
+        "BOX_LIN_DAMPING": 0.85,
+        "GRAVITY": 9.81,
+        "LAUNCH_SPEED_RANGE": [
+          5.0,
+          7.6
+        ],
+        "LOFTY_SPEED_BONUS": 2.0,
+        "RETHROW_GRACE_STEPS": 30,
+        "RETHROW_ENABLED": true,
+        "V36_WALK_R": 1.5,
+        "V36_WALK_TURN_P": 0.02,
+        "V36_WALK_V_HI": 0.9,
+        "V36_WALK_V_LO": 0.3,
+        "V38_P_OFFSET": 0.4,
+        "V38_P_ABANDON": 0.08,
+        "V38_ABANDON_LO": 1.0,
+        "V38_ABANDON_HI": 2.0,
+        "V38_PERTURB_P": 0.15,
+        "V38_PERTURB_V": 0.5,
+        "V38_PERTURB_W": 3.0,
+        "V38_ANCHOR_SIG": 0.18,
+        "V38_FACE_DEAD": 15.0,
+        "V38_FACE_SIG": 35.0,
+        "V38_ANCHOR_FACE": 0.0,
+        "V38_CHEST_LOCAL": [
+          0.25,
+          0.0,
+          0.35
+        ],
+        "V38_MASS_LO": 0.1,
+        "V38_MASS_HI": 0.7,
+        "V38_MASS_RAMP": 0.0,
+        "V38_MASS_HI_FINAL": 0.55,
+        "V38_BEARING_DEG": 0.0,
+        "V38_DBG_PRINTS": 8,
+        "BOX_LAND_W": 0.0,
+        "BOX_LAND_SIG": 0.6,
+        "BOX_LAND_H": 1.0,
+        "BOX_LAND_ALLFLIGHT": false,
+        "ORI_FACE_H": 1.15,
+        "ORI_YAW_STD_HOVER": 0.0,
+        "V38_ORBIT_DPS": 0.0,
+        "V38_ORBIT_SPAN": 120.0,
+        "LAND_OBS_H": 1.0,
+        "LAND_OBS_TMAX": 2.0,
+        "V38_ARMS_REACTIVE": true,
+        "GATE_AIRBORNE_H": 0.45,
+        "V38_REF_ARMS_REACTIVE": true,
+        "V38_REF_DOWN_LO": 0.0,
+        "V38_REF_DOWN_HI": 5.0,
+        "V38_ARM_EARLY_W": 0.0,
+        "V38_ARM_TWO_STAGE": true,
+        "V38_TS_RAMP": 8,
+        "V38_TS_D_TRIG": 2.5,
+        "V38_TS_LATCH": 75,
+        "V38_TS_CLOSE": 1.0,
+        "V38_TS_DOWN": "",
+        "V38_TS_UP": "",
+        "V38_FLIGHT_RGATE": false,
+        "V38_FLIGHT_RGATE_FAC": 0.2,
+        "V38_FLIGHT_RGATE_TERMS": "motion_body_pos,motion_body_lin_vel,motion_body_ang_vel,low_trust_stillness,hold_still",
+        "V38_TS_DELTA_GATE": true,
+        "V38_TS_DELTA_MIN": 0.15,
+        "V38_TS_BASE_BLEND": true,
+        "V38_TS_USE_SPEED": true,
+        "V38_TS_MISS_MAX": 6,
+        "V38_TS_FROM_PERC": false,
+        "V38_TS_V_LO": 2.5,
+        "V38_TS_SPEED_SUSTAIN": 8,
+        "V38_HANG_W": 1.0,
+        "V38_HANG_SIG": 0.35,
+        "V38_TS_V_HI": 3.0,
+        "V38_TS_FALL": 40,
+        "V38_AB": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "V38_AZ_RATE": 0.0,
+        "V38_AZ_LO": 0.0,
+        "V38_AZ_HI": 0.0,
+        "V38_TGT_CLIP": false,
+        "V38_LEG_EFFORT": 0.0
+      },
+      "reflex.envs.throw": {
+        "TYPE_CHECKING": false,
+        "BOX_MODELS": [
+          {
+            "name": "small",
+            "size": [
+              0.34,
+              0.26,
+              0.22
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.14
+          },
+          {
+            "name": "mini",
+            "size": [
+              0.25,
+              0.19,
+              0.13
+            ],
+            "mass": 0.1,
+            "eff_radius": 0.1
+          },
+          {
+            "name": "large",
+            "size": [
+              0.54,
+              0.42,
+              0.33
+            ],
+            "mass": 0.35,
+            "eff_radius": 0.22
+          },
+          {
+            "name": "largeold",
+            "size": [
+              0.42,
+              0.32,
+              0.27
+            ],
+            "mass": 0.26,
+            "eff_radius": 0.175
+          },
+          {
+            "name": "real_small",
+            "size": [
+              0.22,
+              0.21,
+              0.15
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.095
+          },
+          {
+            "name": "real_regular",
+            "size": [
+              0.31,
+              0.26,
+              0.21
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.128
+          },
+          {
+            "name": "real_large",
+            "size": [
+              0.46,
+              0.41,
+              0.32
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.196
+          }
+        ],
+        "MIX_SETS": {
+          "mix3": [
+            "mini",
+            "small",
+            "largeold"
+          ]
+        },
+        "BOX_SIZE": [
+          0.34,
+          0.26,
+          0.22
+        ],
+        "BOX_MASS": 0.18,
+        "BOX_EFFECTIVE_RADIUS": 0.14,
+        "GRAVITY": 9.81,
+        "BOX_LIN_DAMPING": 0.85,
+        "LAUNCH_SPEED_RANGE": [
+          5.0,
+          7.6
+        ],
+        "DIST_RANGE": [
+          2.5,
+          5.0
+        ],
+        "BEARING_RANGE_DEG": 10.0,
+        "T_MULT_RANGE": [
+          0.75,
+          1.35
+        ],
+        "T_MULT_TRY_RANGES": [
+          [
+            1.15,
+            1.45
+          ],
+          [
+            0.95,
+            1.2
+          ],
+          [
+            0.8,
+            1.0
+          ]
+        ],
+        "LOFTY_SPEED_BONUS": 2.0,
+        "AIM_ERR_STD_DEG": 2.5,
+        "AIM_ERR_MAX_DEG": 5.0,
+        "SPEED_JITTER": 0.08,
+        "THROW_LIB": "",
+        "THROW_LIB_KEY": "all",
+        "THROW_LIB_FRAC": 1.0,
+        "THROW_LIB_MIRROR": true,
+        "THROW_LIB_JITTER": 0.0,
+        "THROW_LIB_ALIGN": "",
+        "THROW_LIB_ALIGN_X": 0.35,
+        "THROW_LIB_REACH_LO": 0.0,
+        "THROW_LIB_REACH_HI": 0.8,
+        "THROW_LIB_BACKTRACK": 0.0,
+        "RELEASE_H_RANGE": [
+          1.1,
+          2.4
+        ],
+        "CATCH_H_RANGE": [
+          0.6,
+          1.4
+        ],
+        "SPIN_MAX_RAD_S": 9.42477796076938,
+        "RELEASE_LEVEL": false,
+        "HOVER_RANGE_S": [
+          1.0,
+          6.0
+        ],
+        "RETHROW_GRACE_STEPS": 30,
+        "RETHROW_ENABLED": true,
+        "INTAKE_GATE_DIST": 0.9,
+        "INTAKE_GATE_SPEED": 1.0,
+        "YIELD_V_CAP": 0.5,
+        "CRADLE_POSE": {
+          "left_shoulder_pitch_joint": -0.85,
+          "right_shoulder_pitch_joint": -0.85,
+          "left_shoulder_roll_joint": 0.179,
+          "right_shoulder_roll_joint": -0.179,
+          "left_shoulder_yaw_joint": -0.25,
+          "right_shoulder_yaw_joint": 0.25,
+          "left_elbow_joint": 0.65,
+          "right_elbow_joint": 0.65
+        }
+      }
+    },
+    "schema": 1,
+    "state": {
+      "version": 1,
+      "fields": [
+        [
+          "_box_p0",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_q0",
+          [
+            4
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_v0",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_omega",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_launch_step",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_box_launched",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_box_aim_err",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_catch_h",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_tmult",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_jitter",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_lib_mask",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_balloon_radius_per_env",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_half_extents",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v36_walk_v",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v36_walk_anchor",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v38_aim_off",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_regrace",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_v38_cradle_ticks",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_hold_init_pending",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_hold_init_active",
+          [],
+          "torch.bool"
+        ]
+      ],
+      "timer_count": 5
+    },
+    "source_world_envs": 64,
+    "terms": [
+      {
+        "name": "push_robot",
+        "function": "isaaclab.envs.mdp.events.push_by_setting_velocity",
+        "parameters": {
+          "velocity_range": {
+            "x": [
+              -0.5,
+              0.5
+            ],
+            "y": [
+              -0.5,
+              0.5
+            ],
+            "z": [
+              -0.2,
+              0.2
+            ],
+            "roll": [
+              -0.52,
+              0.52
+            ],
+            "pitch": [
+              -0.52,
+              0.52
+            ],
+            "yaw": [
+              -0.78,
+              0.78
+            ]
+          }
+        },
+        "interval": [
+          1.0,
+          3.0
+        ],
+        "global_time": false,
+        "ignores_ids": false
+      },
+      {
+        "name": "box_hover_launch",
+        "function": "reflex.envs.teacher_terms.v38_walking_hover_and_launch",
+        "parameters": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "hold_init_apply",
+        "function": "reflex.envs.throw.hold_init_apply",
+        "parameters": {
+          "x_off": 0.28,
+          "z_off": 0.35
+        },
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "first_throw_realign",
+        "function": "reflex.envs.throw.first_throw_realign",
+        "parameters": {},
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "v38_cradle_perturb",
+        "function": "reflex.envs.teacher_terms.v38_cradle_perturb",
+        "parameters": {},
+        "interval": [
+          0.5,
+          1.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "step": 0,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 64,
+      "joint_writes": 1,
+      "launched_after": 2
+    },
+    {
+      "step": 1,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 62,
+      "joint_writes": 0,
+      "launched_after": 2
+    },
+    {
+      "step": 2,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 62,
+      "joint_writes": 0,
+      "launched_after": 2
+    },
+    {
+      "step": 3,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 62,
+      "joint_writes": 0,
+      "launched_after": 2
+    },
+    {
+      "step": 4,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 12,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 5,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 12,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 6,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 12,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 7,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 6,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 8,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 14,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 9,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 11,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 10,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 15,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 11,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 9,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 12,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 9,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 13,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 7,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 14,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 14,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 15,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 8,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 16,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 6,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 17,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 11,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 18,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 9,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 19,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 15,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 20,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 12,
+      "joint_writes": 0,
+      "launched_after": 63
+    },
+    {
+      "step": 21,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 8,
+      "joint_writes": 0,
+      "launched_after": 63
+    },
+    {
+      "step": 22,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 10,
+      "joint_writes": 0,
+      "launched_after": 62
+    },
+    {
+      "step": 23,
+      "max_deterministic_post_error": 0.0,
+      "max_command_error": 0.0,
+      "max_event_state_error": 1.4901161193847656e-08,
+      "box_velocity_writes": 14,
+      "joint_writes": 1,
+      "launched_after": 62
+    }
+  ]
+}

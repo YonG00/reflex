@@ -233,6 +233,25 @@ def run(
                 "_termination_after_fk",
             ):
                 setattr(t, name, None)
+            # CUDA compiler guards may still retain the Python owner. Drop its
+            # private device payload explicitly; shared source bridge/prior stay alive.
+            for name in (
+                "replay",
+                "model_opt",
+                "actor_opt",
+                "critic_opt",
+                "termination_opt",
+                "model",
+                "actor",
+                "critic",
+                "obs_norm",
+                "critic_norm",
+                "privileged_bridge",
+                "termination",
+                "task",
+                "event_scheduler",
+            ):
+                setattr(t, name, None)
             del t, task, scheduler
             torch._dynamo.reset()
             gc.collect()
