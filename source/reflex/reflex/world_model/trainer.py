@@ -16,6 +16,7 @@ import torch
 from torch import nn
 
 from .models import (
+    CompactContextWorldModel,
     ConditionedWorldModel,
     DeterministicEventWorldModel,
     MacroWorldModel,
@@ -88,6 +89,7 @@ class TrainConfig:
     actor_steps: int = 4
     synchronize_replay_timing: bool = True
     replay_index_cache: bool = True
+    wm_context_mode: str = "full"
     compile_wm_training_step: bool = False
     minimal_termination_fk: bool = False
     wm_mlp_precision: str = "fp32"
@@ -238,29 +240,51 @@ class Trainer:
             raise ValueError("V24 needs a verified native event scheduler")
         if c.wm_kind not in ("state", "multitask"):
             raise ValueError("Unknown WM kind")
-        self.model = (
-            (
-                DeterministicEventWorldModel
-                if c.deterministic_event_apply
-                else ConditionedWorldModel
-                if c.condition_external_events
-                else MacroWorldModel
-                if c.learn_external_events
-                else StateWorldModel
-            )(
-                context_dim,
+        self.context_spec = None
+        if c.wm_context_mode != "full":
+            if c.wm_context_mode != "stage1_dr_v1" or not (
+                c.wm_kind == "state"
+                and c.condition_external_events
+                and c.deterministic_event_apply
+            ):
+                raise ValueError(
+                    "Compact context requires independent deterministic V24 architecture"
+                )
+            from .compact_context import ContextSpec
+
+            self.context_spec = ContextSpec.from_contract(contract)
+            if context_dim != self.context_spec.full_dim:
+                raise ValueError("Analytical physical context dimension mismatch")
+        if self.context_spec is not None:
+            self.model = CompactContextWorldModel(
+                self.context_spec,
                 hidden_layers=c.wm_hidden_dims or [2048] * 3,
                 com_indices=contract.get("com_indices"),
-            )
-            if c.wm_kind == "state"
-            else WorldModel(
-                context_dim,
-                memory_dim,
-                len(reward_names),
-                hidden=c.hidden,
-                com_indices=contract.get("com_indices"),
-            )
-        ).to(device)
+            ).to(device)
+        else:
+            self.model = (
+                (
+                    DeterministicEventWorldModel
+                    if c.deterministic_event_apply
+                    else ConditionedWorldModel
+                    if c.condition_external_events
+                    else MacroWorldModel
+                    if c.learn_external_events
+                    else StateWorldModel
+                )(
+                    context_dim,
+                    hidden_layers=c.wm_hidden_dims or [2048] * 3,
+                    com_indices=contract.get("com_indices"),
+                )
+                if c.wm_kind == "state"
+                else WorldModel(
+                    context_dim,
+                    memory_dim,
+                    len(reward_names),
+                    hidden=c.hidden,
+                    com_indices=contract.get("com_indices"),
+                )
+            ).to(device)
         if c.wm_mlp_precision not in ("fp32", "bf16"):
             raise ValueError("Unknown WM MLP precision")
         # Preserve Actor/Critic/Termination's exact Sequential classes and export
@@ -480,11 +504,7 @@ class Trainer:
             self.actor.parameters(), lr=c.lr, betas=(0.9, c.actor_beta2)
         )
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=c.lr)
-        self.replay = Replay(
-            c.capacity_steps,
-            device,
-            global_fields=("event_pool",) if c.condition_external_events else (),
-        )
+        self.replay = self.new_replay()
         self.replay.cache_indices = c.replay_index_cache
         self.iteration, self.real_transitions = 0, 0
         self.probe_transitions = 0
@@ -500,7 +520,30 @@ class Trainer:
 
         self.experience = ExperienceMetrics(monitor_contacts=self.cfg.monitor_contacts)
 
+    def new_replay(self):
+        fields = ("event_pool",) if self.cfg.condition_external_events else ()
+        if self.context_spec is not None:
+            from .compact_context import CompactContextReplay
+
+            return CompactContextReplay(
+                self.cfg.capacity_steps,
+                self.context_spec,
+                self.device,
+                fields,
+                self.cfg.replay_index_cache,
+            )
+        return Replay(
+            self.cfg.capacity_steps,
+            self.device,
+            global_fields=fields,
+            cache_indices=self.cfg.replay_index_cache,
+        )
+
     def warm_start_macro(self, path):
+        if self.context_spec is not None:
+            raise ValueError(
+                "Compact WM requires fresh initialization, not old WM migration"
+            )
         if not self.cfg.learn_external_events:
             raise ValueError("Macro warm start requires learn_external_events")
         state = torch.load(path, map_location=self.device, weights_only=False)
@@ -1938,6 +1981,8 @@ class Trainer:
             else None,
         }
 
+        if self.context_spec is not None:
+            result["wm_context"] = self.context_spec.specification()
         if self.cfg.condition_external_events:
             result["event_scheduler"] = self.event_scheduler.specification()
         if self.cfg.learn_external_events:
@@ -2268,13 +2313,7 @@ class Trainer:
             self.termination.load_state_dict(state["termination"])
             self.termination_opt.load_state_dict(state["termination_opt"])
         if reinitialize_replay:
-            self.replay = Replay(
-                self.cfg.capacity_steps,
-                self.device,
-                global_fields=("event_pool",)
-                if self.cfg.condition_external_events
-                else (),
-            )
+            self.replay = self.new_replay()
         else:
             self.replay.load_state_dict(state["replay"])
         if migration:

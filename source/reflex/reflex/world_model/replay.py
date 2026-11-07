@@ -267,6 +267,10 @@ class Replay:
         }
 
     def load_state_dict(self, state):
+        if "physical_context_codec" in state and not getattr(
+            self, "supports_physical_codec", False
+        ):
+            raise ValueError("Encoded physical context requires CompactContextReplay")
         if state["capacity"] != self.capacity:
             raise ValueError("Replay capacity mismatch")
         if set(state.get("global_fields", [])) != self.global_fields:

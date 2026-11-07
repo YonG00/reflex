@@ -35,6 +35,7 @@ parser.add_argument(
         "event_compact_optimization_check",
         "efficiency_benchmark",
         "efficiency_capacity_check",
+        "wm_context_ablation",
     ),
     default="preflight",
 )
@@ -66,6 +67,9 @@ parser.add_argument(
     action="store_true",
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
+parser.add_argument("--context_rounds", type=int, default=500)
+parser.add_argument("--context_collect_steps", type=int, default=256)
+parser.add_argument("--context_validation_every", type=int, default=25)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument(
     "--config",
@@ -259,6 +263,21 @@ def main():
             args.device,
             batch=min(1024, config.batch * 4),
         )
+        if config.wm_context_mode != "full":
+            from .compact_context import (
+                ContextSpec,
+                FixedContextGuard,
+                audit_randomization,
+            )
+
+            adapter.wm_context_spec = ContextSpec.from_contract(adapter.contract)
+            adapter.wm_context_guard = FixedContextGuard(adapter.wm_context_spec)
+            audit = audit_randomization(adapter.env)
+            audit["context"] = adapter.wm_context_spec.specification()
+            adapter.contract["wm_context_audit"] = audit
+            (out / "wm_context_audit.json").write_text(
+                json.dumps(audit, indent=2, ensure_ascii=False)
+            )
         trainer = Trainer(
             adapter.bridge,
             adapter.action_map,
@@ -336,6 +355,23 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "wm_context_ablation":
+            from .context_ablation import run
+
+            print(
+                json.dumps(
+                    run(
+                        trainer,
+                        adapter,
+                        out,
+                        rounds=args.context_rounds,
+                        collect_steps=args.context_collect_steps,
+                        validate_every=args.context_validation_every,
+                    )
+                ),
+                flush=True,
+            )
+            return
         if args.mode == "efficiency_capacity_check":
             from .efficiency_benchmark import capacity_check
 

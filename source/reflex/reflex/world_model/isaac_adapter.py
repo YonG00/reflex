@@ -608,6 +608,9 @@ class IsaacAdapter:
             self._before_amp = self.real_amp()
             if self.parity_due():
                 self.parity(result)
+        if getattr(self, "wm_context_spec", None) is not None:
+            self.wm_context_guard.check(result["context"])
+            result["wm_context"] = self.wm_context_spec.select(result["context"])
         return result
 
     def parity(self, b, atol=2e-4, critic=False):

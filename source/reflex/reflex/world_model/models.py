@@ -331,3 +331,28 @@ class DeterministicEventWorldModel(ConditionedWorldModel):
         # Native plans already use local positions and world-frame velocities.
         # Do not integrate/normalize untouched quaternion or velocity components.
         return torch.where(mask, targets, physical)
+
+
+class CompactContextWorldModel(DeterministicEventWorldModel):
+    """Independent V28 encoder; full physical context is an analytical sidecar."""
+
+    def __init__(self, spec, **kwargs):
+        super().__init__(spec.wm_dim, **kwargs)
+        self.full_context_dim = spec.full_dim
+        self.wm_context_spec = spec.specification()
+        self.register_buffer(
+            "wm_context_columns", torch.tensor(spec.columns, dtype=torch.long)
+        )
+
+    def features(self, state, target, physical_context, event):
+        if physical_context.shape[-1] != self.full_context_dim:
+            raise ValueError(
+                "Full analytical context must remain available for integration"
+            )
+        wm_context = physical_context.index_select(-1, self.wm_context_columns)
+        return torch.cat((canonical(state), target, wm_context, event), -1)
+
+    def warm_start_physical(self, old):
+        raise ValueError(
+            "Compact WM is trained from scratch; old WM weights are not migrated"
+        )

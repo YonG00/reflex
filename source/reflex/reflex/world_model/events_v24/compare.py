@@ -23,6 +23,8 @@ def seed(value):
 
 
 def run(adapter, source, output, collect_steps=128, rounds=3):
+    if source.context_spec is not None:
+        raise ValueError("Use the dedicated context ablation for compact WM, not the learned-post baseline")
     if not source.cfg.deterministic_event_apply:
         raise ValueError(
             "Paired V24 comparison requires the deterministic source config"
@@ -96,7 +98,7 @@ def run(adapter, source, output, collect_steps=128, rounds=3):
             source.bridge,
             source.action_map,
             copy.deepcopy(source.prior),
-            source.replay.data["context"].shape[-1],
+            source.contract["context_dim"],
             6,
             source.reward_names,
             source.contract,

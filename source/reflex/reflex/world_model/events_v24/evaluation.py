@@ -25,6 +25,16 @@ def evaluate(trainer, batch=64):
                 b = {k: v[0] for k, v in seq.items()}
                 physical_errors, post_errors, launch_errors = [], [], []
                 phase_errors = {"waiting": [], "launched": [], "launch_write": []}
+                contact_physics = {"pre_contact": [], "contact": [], "post_contact": []}
+                contact_velocity = {k: [] for k in contact_physics}
+                has_contact = (
+                    "contact_known" in seq
+                    and "contact_phase" in seq
+                    and bool(seq["contact_known"].any())
+                )
+                metrics[f"validation_v24/{h}/contact_labels_available"] = float(
+                    has_contact
+                )
                 for j in range(h):
                     if protocol == "conditioned":
                         event = seq["event_state"][j]
@@ -57,6 +67,19 @@ def evaluate(trainer, batch=64):
                     se = state_error(ns, seq["next_state"][j]).square()
                     physical_errors.append(pe)
                     post_errors.append(se)
+                    if has_contact:
+                        for phase_id, label in enumerate(contact_physics):
+                            selected = seq["contact_known"][j].bool() & (
+                                seq["contact_phase"][j] == phase_id
+                            )
+                            if selected.any():
+                                contact_physics[label].append(pe[selected])
+                                contact_velocity[label].append(
+                                    (
+                                        physical[selected, 78:81]
+                                        - seq["physical_next_state"][j, selected, 78:81]
+                                    ).square()
+                                )
                     waiting = ~seq["launched"][j].bool()
                     launch = (
                         waiting
@@ -86,6 +109,17 @@ def evaluate(trainer, batch=64):
                         )
                     s = ns
                 prefix = f"validation_v24/{protocol}/{h}"
+                for label, values in contact_physics.items():
+                    metrics[prefix + "/" + label + "_samples"] = sum(
+                        len(v) for v in values
+                    )
+                    if values:
+                        metrics[prefix + "/" + label + "_physical_rmse"] = float(
+                            torch.cat(values).mean().sqrt()
+                        )
+                        metrics[prefix + "/" + label + "_box_velocity_rmse_mps"] = (
+                            float(torch.cat(contact_velocity[label]).mean().sqrt())
+                        )
                 metrics[prefix + "/physical_rmse"] = float(
                     torch.stack(physical_errors).mean().sqrt()
                 )
