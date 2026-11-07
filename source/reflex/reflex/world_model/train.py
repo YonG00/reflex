@@ -36,6 +36,7 @@ parser.add_argument(
         "efficiency_benchmark",
         "efficiency_capacity_check",
         "wm_context_ablation",
+        "imagination_batching_check",
     ),
     default="preflight",
 )
@@ -355,6 +356,11 @@ def main():
         b = adapter.snapshot()
         parity = adapter.parity(b, critic=config.privileged_critic)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "imagination_batching_check":
+            from .imagination_batching import check
+
+            print(json.dumps(check(trainer, out)), flush=True)
+            return
         if args.mode == "wm_context_ablation":
             from .context_ablation import run
 

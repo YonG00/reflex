@@ -6,7 +6,7 @@ from torch import nn
 from .timing import timestamp
 
 
-def returns(imagined, critic, gamma):
+def returns(imagined, critic, gamma, values=None):
     reward, done, obs = (
         imagined["reward"],
         imagined["done"],
@@ -17,16 +17,23 @@ def returns(imagined, critic, gamma):
     for t in range(len(reward)):
         result = result + gamma**t * survival * reward[t]
         continuation = survival * (1 - done[t])
-        result = result + gamma ** (t + 1) * continuation * imagined["truncated"][
-            t
-        ] * critic(obs[t + 1]).squeeze(-1)
+        result = result + gamma ** (t + 1) * continuation * imagined["truncated"][t] * (
+            critic(obs[t + 1]).squeeze(-1) if values is None else values[t + 1]
+        )
         survival = continuation * ~imagined["truncated"][t]
-    return result + gamma ** len(reward) * survival * critic(obs[-1]).squeeze(-1)
+    return result + gamma ** len(reward) * survival * (
+        critic(obs[-1]).squeeze(-1) if values is None else values[-1]
+    )
 
 
 @torch.no_grad()
-def critic_targets(t, imagined):
-    values = t.critic(imagined.get("critic_obs", imagined["obs"]).detach()).squeeze(-1)
+def critic_targets(t, imagined, values=None):
+    if values is None:
+        values = t.critic(imagined.get("critic_obs", imagined["obs"]).detach()).squeeze(
+            -1
+        )
+    else:
+        values = values.detach()
     ret = values[-1]
     targets = []
     for j in reversed(range(t.cfg.horizon)):
@@ -65,14 +72,20 @@ def _update_actor(t):
         }
         with freeze(t.model, t.termination, t.prior._disc, t.critic):
             imagined = t.imagine(start_batch=b)
-            loss = -returns(imagined, t.critic, c.gamma).mean()
+            values = None
+            if c.batch_imagination_critic:
+                observation = imagined.get("critic_obs", imagined["obs"])
+                values = t.critic(observation.flatten(0, 1)).reshape(
+                    observation.shape[:2]
+                )
+            loss = -returns(imagined, t.critic, c.gamma, values).mean()
             if c.actor_horizon_scale:
                 loss = loss / c.horizon
             scaled = loss * len(b["state"]) / n
             with torch.profiler.record_function("actor/BPTT"):
                 scaled.backward()
             loss_total += float(scaled.detach())
-            target = critic_targets(t, imagined)
+            target = critic_targets(t, imagined, values)
             mask = imagined["valid"].reshape(-1)
             x.append(
                 imagined.get("critic_obs", imagined["obs"])[:-1]
@@ -81,7 +94,7 @@ def _update_actor(t):
             )
             y.append(target.reshape(-1)[mask])
             valid_steps += int(mask.sum())
-        del imagined, scaled, loss, target
+        del imagined, scaled, loss, target, values
         if (offset + len(b["state"])) % 1024 == 0:
             print(
                 f"Actor gradient trajectories {offset + len(b['state'])}/{n}",

@@ -297,7 +297,24 @@ def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, determini
     start["event_pool"] = (
         t.replay.data["event_pool"][0].unsqueeze(0).expand(len(s), -1, -1).clone()
     )
-    imagined = t.imagine(start)
+    event_rng = runtime.rng.clone()
+    cpu_rng = torch.get_rng_state()
+    imagined = t.imagine(start, trace=True)
+    if deterministic:
+        runtime.rng = event_rng.clone()
+        torch.set_rng_state(cpu_rng)
+        t.cfg.batch_imagination_amp = True
+        batched = t.imagine(start, trace=True)
+        for key in imagined:
+            torch.testing.assert_close(imagined[key], batched[key])
+        parameters = tuple(t.actor.parameters())
+        old_grad = torch.autograd.grad(
+            imagined["reward"].sum(), parameters, retain_graph=True
+        )
+        new_grad = torch.autograd.grad(batched["reward"].sum(), parameters)
+        for old_value, new_value in zip(old_grad, new_grad):
+            torch.testing.assert_close(old_value, new_value)
+        t.cfg.batch_imagination_amp = False
     assert not imagined["predicted_launch_probability"][0].bool().any()
     assert imagined["predicted_launch_probability"][1].bool().all()
     if deterministic:

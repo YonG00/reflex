@@ -70,6 +70,8 @@ class TrainConfig:
     updates_per_env_step: float = 0.4
     actor_batch: int = 0
     actor_microbatch: int = 0
+    batch_imagination_amp: bool = False
+    batch_imagination_critic: bool = False
     actor_beta2: float = 0.999
     actor_grad_clip_value: float = 0.0
     actor_horizon_scale: bool = False
@@ -1579,7 +1581,7 @@ class Trainer:
         )
         return ns, next_poses, task, d
 
-    def imagine(self, start_batch=None):
+    def imagine(self, start_batch=None, trace=False):
         b = self.sample(starts=True) if start_batch is None else start_batch
         if self.model.state_only and self.task is None:
             raise RuntimeError("Pure dynamics needs an AnalyticTask for imagination")
@@ -1599,6 +1601,8 @@ class Trainer:
         dones = []
         terms = []
         styles = []
+        amp_pairs = []
+        trace_rows = []
         validity = []
         truncations = []
         predicted_modes = []
@@ -1757,6 +1761,20 @@ class Trainer:
                         next_event = event_state.index_copy(0, ids, ce)
                         next_pool = event_pool.index_copy(0, ids, cp)
                     ns = self._post(physical, plan.targets, plan.mask)
+                    if trace:
+                        trace_rows.append(
+                            torch.cat(
+                                (
+                                    physical,
+                                    ns,
+                                    plan.targets,
+                                    plan.mask.float(),
+                                    next_event,
+                                    task.history,
+                                ),
+                                -1,
+                            )
+                        )
                     next_poses = self._fk(ns)
                     event_state = torch.where(valid[:, None], next_event, event_state)
                     event_pool = torch.where(
@@ -1784,21 +1802,24 @@ class Trainer:
                 trunc = phase + 1 >= b["reference_length"]
                 next_phase = (phase + 1).minimum(b["reference_length"] - 1)
             with torch.profiler.record_function("imagine/AMP"):
-                style = self.prior.reward(
-                    amp_features(s, self.bridge.fk, poses),
-                    amp_features(
-                        physical if self.model.state_only else ns,
-                        self.bridge.fk,
-                        physical_poses if self.model.state_only else None,
-                    ),
+                amp_previous = amp_features(s, self.bridge.fk, poses)
+                amp_current = amp_features(
+                    physical if self.model.state_only else ns,
+                    self.bridge.fk,
+                    physical_poses if self.model.state_only else None,
                 )
-            rewards.append(
-                self.prior._w_task * r.sum(-1)
-                + self.prior._w_style * self.prior.ramp * style
-            )
+                if self.cfg.batch_imagination_amp:
+                    amp_pairs.append((amp_previous, amp_current))
+                else:
+                    style = self.prior.reward(amp_previous, amp_current)
+            if not self.cfg.batch_imagination_amp:
+                rewards.append(
+                    self.prior._w_task * r.sum(-1)
+                    + self.prior._w_style * self.prior.ramp * style
+                )
+                styles.append(style)
             dones.append(d)
             terms.append(r)
-            styles.append(style)
             validity.append(valid)
             truncations.append(trunc)
             if self.model.state_only:
@@ -1830,7 +1851,21 @@ class Trainer:
         critic_observations.append(
             self.critic_observation(b, s, previous, phase, poses, final_obs)
         )
+        if self.cfg.batch_imagination_amp:
+            with torch.profiler.record_function("imagine/batched_AMP"):
+                previous_features = torch.stack([pair[0] for pair in amp_pairs])
+                current_features = torch.stack([pair[1] for pair in amp_pairs])
+                batched_style = self.prior.reward(
+                    previous_features.flatten(0, 1), current_features.flatten(0, 1)
+                ).reshape(previous_features.shape[:2])
+                styles = list(batched_style.unbind(0))
+                rewards = [
+                    self.prior._w_task * reward.sum(-1)
+                    + self.prior._w_style * self.prior.ramp * style
+                    for reward, style in zip(terms, styles)
+                ]
         return {
+            **({"event_trace": torch.stack(trace_rows)} if trace_rows else {}),
             "predicted_launch_probability": torch.stack(predicted_modes)
             if predicted_modes
             else torch.empty(0, device=self.device),
@@ -2122,6 +2157,8 @@ class Trainer:
             "compact_event_inputs",
             "real_parity_every",
             "cache_physical_context",
+            "batch_imagination_amp",
+            "batch_imagination_critic",
             "compile_dynamics",
             "compile_fk",
             "compile_backend",

@@ -335,7 +335,7 @@ def fill(t, b, steps=40):
             reward_terms=result.rewards,
             termination_features=result.termination_features,
             contact_known=torch.ones(4, dtype=torch.bool),
-            contact_phase=torch.full((4,), 1 if j == 10 else 2 if j > 10 else 0),
+            contact_phase=torch.full((4,), 1 if 10 <= j <= 20 else 2 if j > 20 else 0),
         )
         t.replay.add(tr)
         state, event = post, ce

@@ -98,7 +98,7 @@ def run(adapter, source, output, collect_steps=128, rounds=3):
             source.bridge,
             source.action_map,
             copy.deepcopy(source.prior),
-            source.contract["context_dim"],
+            source.contract.get("context_dim", source.replay.ordered("context").shape[-1]),
             6,
             source.reward_names,
             source.contract,

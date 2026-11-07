@@ -188,10 +188,12 @@ def run(
                 "model_updates": t.model_updates,
                 "records": records,
                 "cold_first_round_seconds": records[1]["wm_round_wall_seconds"],
-                "mean_warm_round_seconds": sum(
-                    r["wm_round_wall_seconds"] for r in records[2:]
-                )
-                / max(1, len(records) - 2),
+                "mean_warm_round_seconds": (
+                    sum(r["wm_round_wall_seconds"] for r in records[2:])
+                    / (len(records) - 2)
+                    if len(records) > 2
+                    else None
+                ),
                 "policy_unchanged": True,
             }
             report["results"][tag] = result
