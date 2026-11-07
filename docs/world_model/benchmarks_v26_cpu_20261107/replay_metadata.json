@@ -1,0 +1,15 @@
+{
+  "device": "cpu",
+  "steps": 1000,
+  "envs": 4096,
+  "threads": 1,
+  "legacy_h8_median_seconds": 0.04438158345874399,
+  "uncached_h8_median_seconds": 0.035179249942302704,
+  "cached_h8_median_seconds": 9.585637599229813e-07,
+  "uncached_variable_pool_median_seconds": 0.044105646025855094,
+  "cached_variable_pool_median_seconds": 9.999494068324566e-07,
+  "cache_rebuild_seconds": 0.03746549994684756,
+  "indices_exact_equal": true,
+  "valid_h8_windows": 3621516,
+  "synthetic_metadata_only": true
+}

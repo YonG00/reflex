@@ -559,7 +559,9 @@ def main():
                 )
             print(json.dumps(result), flush=True)
             return
-        writer = SummaryWriter(str(out / "tensorboard"))
+        writer = SummaryWriter(
+            str(out / "tensorboard"), flush_secs=config.tensorboard_flush_seconds
+        )
         start = time.monotonic()
         initial_steps = trainer.real_transitions
         try:
@@ -572,6 +574,17 @@ def main():
                 trainer.replay_seconds = 0.0
                 collect_start = timestamp(args.device)
                 metrics = trainer.collect(adapter)
+                if not (out / "replay_memory.json").exists():
+                    (out / "replay_memory.json").write_text(
+                        json.dumps(
+                            {
+                                "actual_schema": trainer.replay.memory_report(),
+                                "target_1000_steps": trainer.replay.memory_report(1000),
+                                "note": "Payload only; add PhysX, models, optimizer, BPTT, caches and allocator headroom.",
+                            },
+                            indent=2,
+                        )
+                    )
                 metrics["time/collect_seconds"] = timestamp(args.device) - collect_start
                 metrics["schedule/update_due"] = float(trainer.updates_due())
                 try:
@@ -659,8 +672,14 @@ def main():
                         - trainer.probe_transitions,
                         "progress/actor_updates": trainer.actor_updates,
                         "progress/wm_gradient_updates": trainer.model_updates,
+                        "progress/wm_rounds_completed": trainer.wm_rounds_completed,
+                        "schedule/wm_only": float(not trainer.actor_warmup_complete()),
                         "progress/termination_gradient_updates": trainer.termination_updates,
-                        "time/replay_sample_seconds_inclusive": trainer.replay_seconds,
+                        (
+                            "time/replay_sample_seconds_inclusive"
+                            if config.synchronize_replay_timing
+                            else "time/replay_sample_host_seconds"
+                        ): trainer.replay_seconds,
                         "progress/wall_seconds": time.monotonic() - start,
                         "progress/end_to_end_transitions_per_second": (
                             trainer.real_transitions - initial_steps
@@ -670,11 +689,11 @@ def main():
                 )
                 for k, v in metrics.items():
                     writer.add_scalar(k, v, trainer.iteration)
-                writer.flush()
                 record = {"iteration": trainer.iteration, **metrics}
                 with (out / "metrics.jsonl").open("a") as f:
                     f.write(json.dumps(record) + "\n")
-                print(json.dumps(record), flush=True)
+                if trainer.iteration % config.console_log_every == 0:
+                    print(json.dumps(record), flush=True)
             if args.benchmark_no_checkpoint:
                 (out / "benchmark_end.json").write_text(
                     json.dumps(

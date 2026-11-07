@@ -1,8 +1,9 @@
 """Memory-bounded Actor update with one optimizer step over the full start batch."""
 
-import time
 import torch
 from torch import nn
+
+from .timing import timestamp
 
 
 def returns(imagined, critic, gamma):
@@ -41,13 +42,15 @@ def _update_actor(t):
     from .trainer import freeze
 
     c = t.cfg
+    if not t.actor_warmup_complete():
+        raise RuntimeError("Actor/Critic update blocked during WM-only warmup")
     if c.actor_steps != 1:
         raise ValueError("Chunked joint update requires actor_steps=1")
     if c.gradient_audit_every:
         raise ValueError(
             "Chunked Actor uses aggregate gradient norm; configure gradient_audit_every=0 explicitly"
         )
-    begin = time.monotonic()
+    begin = timestamp(t.device)
     if str(t.device).startswith("cuda"):
         torch.cuda.reset_peak_memory_stats()
     n = c.actor_batch or c.batch
@@ -90,7 +93,7 @@ def _update_actor(t):
         nn.utils.clip_grad_value_(params, c.actor_grad_clip_value)
     t.actor_opt.step()
     t.actor_updates += 1
-    actor_seconds = time.monotonic() - begin
+    actor_seconds = timestamp(t.device) - begin
     x, y = torch.cat(x), torch.cat(y)
     if not len(y):
         raise RuntimeError("Imagination has no valid critic targets")
@@ -108,15 +111,16 @@ def _update_actor(t):
                 t.critic.parameters(), 1.0, error_if_nonfinite=True
             )
             t.critic_opt.step()
-            losses.append(float(loss.detach()))
+            losses.append(loss.detach().double())
+    critic_end = timestamp(t.device)
     result = {
         "actor/loss": loss_total,
         "actor/gradient_norm": float(norm),
-        "critic/loss": sum(losses) / len(losses),
+        "critic/loss": float(torch.stack(losses).mean()),
         "imagination/valid_fraction": valid_steps / (n * c.horizon),
         "imagination/start_batch": n,
         "time/actor_update_seconds": actor_seconds,
-        "time/critic_update_seconds": time.monotonic() - begin - actor_seconds,
+        "time/critic_update_seconds": critic_end - begin - actor_seconds,
     }
 
     if "launched" in starts:

@@ -7,6 +7,7 @@ during actor backprop; their derivatives with respect to inputs remain enabled.
 from __future__ import annotations
 
 import random
+import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 
@@ -84,6 +85,12 @@ class TrainConfig:
     batch: int = 256
     horizon: int = 32
     actor_steps: int = 4
+    synchronize_replay_timing: bool = True
+    replay_index_cache: bool = True
+    wm_only_rounds: int = 0
+    wm_compile_mode: str = "default"
+    tensorboard_flush_seconds: int = 30
+    console_log_every: int = 10
     warmup_iterations: int = 24
     gamma: float = 0.99
     lam: float = 0.95
@@ -160,6 +167,22 @@ class Trainer:
         torch.backends.cuda.matmul.allow_tf32 = c.tf32
         torch.backends.cudnn.allow_tf32 = c.tf32
         torch.set_float32_matmul_precision("high" if c.tf32 else "highest")
+        if (
+            c.wm_only_rounds < 0
+            or c.console_log_every < 1
+            or c.tensorboard_flush_seconds < 1
+        ):
+            raise ValueError("Invalid WM warmup or logging interval")
+        if c.wm_compile_mode not in (
+            "default",
+            "reduce-overhead",
+            "max-autotune-no-cudagraphs",
+        ):
+            raise ValueError("Unknown WM compile mode")
+        if c.wm_compile_mode != "default" and (
+            not c.compile_dynamics or c.compile_backend != "inductor"
+        ):
+            raise ValueError("WM compile mode requires compile_dynamics with Inductor")
         self.task = task.to(device) if task is not None else None
         self.terminal_reward_index = None
         self.terminal_reward_cost = 0.0
@@ -294,7 +317,15 @@ class Trainer:
         )
         self._dynamics = (
             torch.compile(
-                dynamics_call, fullgraph=True, backend=c.compile_backend, dynamic=False
+                dynamics_call,
+                fullgraph=True,
+                backend=c.compile_backend,
+                dynamic=False,
+                **(
+                    {"mode": c.wm_compile_mode}
+                    if c.compile_backend == "inductor"
+                    else {}
+                ),
             )
             if c.compile_dynamics
             else dynamics_call
@@ -392,10 +423,13 @@ class Trainer:
             device,
             global_fields=("event_pool",) if c.condition_external_events else (),
         )
+        self.replay.cache_indices = c.replay_index_cache
         self.iteration, self.real_transitions = 0, 0
         self.probe_transitions = 0
         self.actor_updates = 0
         self.model_updates = 0
+        self.wm_rounds_completed = 0
+        self.wm_warmup_inherited = False
         self.termination_updates = 0
         self.replay_seconds = 0.0
         self.normalized = False
@@ -596,7 +630,14 @@ class Trainer:
         }
 
     def sample(self, horizon=1, starts=False, validation=False, n=None):
-        start = timestamp(self.device)
+        # Profiling may request synchronized timings; normal candidate execution
+        # relies on CUDA stream ordering instead of fencing every Replay gather.
+        clock = (
+            (lambda: timestamp(self.device))
+            if self.cfg.synchronize_replay_timing
+            else time.monotonic
+        )
+        start = clock()
         try:
             if starts:
                 return self.replay.sample_starts(n or self.cfg.batch, validation)
@@ -612,7 +653,7 @@ class Trainer:
                 stage_balanced=self.cfg.stage_balanced,
             )
         finally:
-            self.replay_seconds += timestamp(self.device) - start
+            self.replay_seconds += clock() - start
 
     def fit_normalizers(self):
         b = {k: v[0] for k, v in self.sample(n=self.cfg.normalizer_samples).items()}
@@ -735,7 +776,7 @@ class Trainer:
                 }
             self._termination_probe_due = False
         last = {}
-        for _ in range(self.cfg.model_steps):
+        for update_index in range(self.cfg.model_steps):
             seq = self.sample(self.cfg.model_window)
             s, m = seq["state"][0], seq["memory"][0]
             losses = []
@@ -878,6 +919,10 @@ class Trainer:
                 self.termination_opt.step()
                 self.termination_updates += 1
             self.model_updates += 1
+            # Only the last update was ever returned. Avoid scalar D2H copies
+            # and monitoring reductions for the nine discarded metric sets.
+            if update_index != self.cfg.model_steps - 1:
+                continue
             last = {
                 "wm/loss": float(loss.detach()),
                 "wm/state_loss": float(window_mean(state_losses).detach()),
@@ -935,6 +980,7 @@ class Trainer:
                 self.termination_opt.step()
                 self.termination_updates += 1
             last["termination/train_bce"] = float(loss.detach())
+        self.wm_rounds_completed += 1
         last.update(probe)
         end_model = timestamp(self.device)
         last["time/model_fit_seconds"] = end_model - start
@@ -1109,7 +1155,18 @@ class Trainer:
         rate = self.cfg.updates_per_env_step
         return math.floor((j + 1) * rate + 1e-9) - math.floor(j * rate + 1e-9)
 
+    def actor_warmup_complete(self):
+        # fit_model has just completed: round 500 remains WM-only; Actor starts
+        # on round 501. A legacy checkpoint with trained Actor is exempt.
+        return (
+            self.wm_warmup_inherited
+            or self.cfg.wm_only_rounds == 0
+            or self.wm_rounds_completed > self.cfg.wm_only_rounds
+        )
+
     def ready(self, metrics, ranking_approved=False):
+        if not self.actor_warmup_complete():
+            return False
         if self.cfg.schedule == "joint_reproduction":
             return True
         # A real-simulator action-ranking report is a separate required gate.
@@ -1600,6 +1657,8 @@ class Trainer:
         }
 
     def update_actor(self):
+        if not self.actor_warmup_complete():
+            raise RuntimeError("Actor/Critic update blocked during WM-only warmup")
         if (
             self.cfg.actor_microbatch
             or self.cfg.privileged_critic
@@ -1802,6 +1861,10 @@ class Trainer:
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
             "model_updates": self.model_updates,
+            "wm_warmup": {
+                "rounds_completed": self.wm_rounds_completed,
+                "inherited_trained_actor": self.wm_warmup_inherited,
+            },
             "last_diagnostic_seconds": self.last_diagnostic_seconds,
             "termination_updates": self.termination_updates,
             "initialization": self.initialization,
@@ -1878,6 +1941,12 @@ class Trainer:
             "compile_v24_step",
             "v24_fusion_scope",
             "tf32",
+            "synchronize_replay_timing",
+            "replay_index_cache",
+            "wm_only_rounds",
+            "wm_compile_mode",
+            "tensorboard_flush_seconds",
+            "console_log_every",
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
@@ -2143,9 +2212,22 @@ class Trainer:
                 "fresh_collection_warmup": True,
             }
             self.iteration = 0
+        self.replay.cache_indices = self.cfg.replay_index_cache
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)
+        progress = state.get("wm_warmup")
+        if progress is None:
+            # Old trained policies must not silently repeat initialization.
+            self.wm_warmup_inherited = self.actor_updates > 0
+            self.wm_rounds_completed = self.model_updates // self.cfg.model_steps
+        else:
+            self.wm_rounds_completed = progress["rounds_completed"]
+            self.wm_warmup_inherited = (
+                self.actor_updates > 0 or progress["inherited_trained_actor"]
+            )
+            if self.wm_rounds_completed < 0:
+                raise ValueError("Invalid WM warmup progress")
         self.termination_updates = state.get("termination_updates", 0)
         random.setstate(state["python_rng"])
         np.random.set_state(state["numpy_rng"])
