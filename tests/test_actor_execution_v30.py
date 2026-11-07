@@ -438,7 +438,7 @@ def test_wm_benchmark_restores_parameters_adam_and_rng(tmp_path):
     rng = torch.get_rng_state()
     report = check(trainer, tmp_path, repeats=1)
     assert report["completed"]
-    assert trainer.model_updates == 0
+    assert trainer.model_updates == 0 and trainer.wm_rounds_completed == 0
     assert trainer._wm_rollout is None
     torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)
     for key, value in trainer.model.state_dict().items():

@@ -23,7 +23,13 @@ def check(t, output, repeats=3):
     gradients = [
         None if p.grad is None else p.grad.clone() for p in t.model.parameters()
     ]
-    count = t.model_updates
+    count, rounds = t.model_updates, t.wm_rounds_completed
+    amp_state = copy.deepcopy(t.prior.amp_state_dict())
+    amp_previous = {
+        k: getattr(t.prior, k).clone()
+        for k in ("_prev", "_prev_valid")
+        if hasattr(t.prior, k)
+    }
     old_sample, old_step, old_rollout = t.sample, t._wm_training_step, t._wm_rollout
     cpu_rng = torch.get_rng_state()
     cuda_rng = (
@@ -34,19 +40,26 @@ def check(t, output, repeats=3):
     def restore():
         t.model.load_state_dict(copy.deepcopy(initial))
         t.model_opt.load_state_dict(copy.deepcopy(optimizer))
-        t.model_updates = count
+        t.model_updates, t.wm_rounds_completed = count, rounds
+        t.prior.load_amp_state_dict(copy.deepcopy(amp_state))
+        for name, value in amp_previous.items():
+            getattr(t.prior, name).copy_(value)
         for p, grad in zip(t.model.parameters(), gradients):
             p.grad = None if grad is None else grad.clone()
 
     try:
         sequences = [old_sample(t.cfg.model_window) for _ in range(t.cfg.model_steps)]
         reference = None
-        for label in ("single_step", "h8_fused"):
-            t._wm_training_step = torch.compile(
-                t.v24_model_training_step,
-                backend=t.cfg.compile_backend,
-                fullgraph=True,
-                dynamic=False,
+        for label in ("baseline", "single_step", "h8_fused"):
+            t._wm_training_step = (
+                None
+                if label == "baseline"
+                else torch.compile(
+                    t.v24_model_training_step,
+                    backend=t.cfg.compile_backend,
+                    fullgraph=True,
+                    dynamic=False,
+                )
             )
             t._wm_rollout = (
                 torch.compile(
@@ -58,6 +71,7 @@ def check(t, output, repeats=3):
                 if label == "h8_fused"
                 else None
             )
+            print(f"[V30 WM] start {label}", flush=True)
             rows = []
             for _ in range(repeats + 1):
                 restore()
@@ -98,14 +112,31 @@ def check(t, output, repeats=3):
                 reference = actual
             else:
                 for key, value in actual.items():
-                    result["errors"][key] = float((value - reference[key]).abs().max())
-                    torch.testing.assert_close(value, reference[key])
+                    result["errors"][f"{label}/{key}"] = float(
+                        (value - reference[key]).abs().max()
+                    )
+                    try:
+                        torch.testing.assert_close(value, reference[key])
+                    except AssertionError as exc:
+                        result.setdefault("failed_checks", []).append(f"{label}/{key}")
+                        result.setdefault("failure_details", {})[f"{label}/{key}"] = (
+                            str(exc)
+                        )
             result["variants"][label] = {
                 "cold": rows[0],
                 "steady": rows[1:],
                 "median_seconds": statistics.median(r["seconds"] for r in rows[1:]),
             }
+            result["variants"][label]["numeric_passed"] = not any(
+                k.startswith(label + "/") for k in result.get("failed_checks", [])
+            )
+            print(
+                f"[V30 WM] done {label}: {result['variants'][label]['median_seconds']:.6f}s",
+                flush=True,
+            )
+            path.write_text(json.dumps(result, indent=2))
         result["completed"] = True
+        result["numeric_passed"] = not result.get("failed_checks")
     finally:
         restore()
         t.sample, t._wm_training_step, t._wm_rollout = old_sample, old_step, old_rollout
