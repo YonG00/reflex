@@ -18,7 +18,9 @@ import torch
 from .timing import timestamp
 
 
-def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
+def check(
+    t, output, repeats=3, deterministic=False, include_cudagraph=False, graph_only=False
+):
     out = Path(output)
     if not t.actor_warmup_complete():
         raise ValueError(
@@ -147,7 +149,9 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                 baseline(n) for n in ("trainer", "joint", "replay", "task")
             )
             labels = (
-                ("baseline", "optimized", "cudagraph_trial")
+                ("baseline", "cudagraph_trial")
+                if graph_only
+                else ("baseline", "optimized", "cudagraph_trial")
                 if include_cudagraph
                 else ("baseline", "optimized")
             )
@@ -229,6 +233,19 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                         start = timestamp(t.device)
                         wm = fit()
                         after_wm = timestamp(t.device)
+                        # Validation snapshots must precede the next graph phase:
+                        # CUDA Graph backward outputs may own the leaf grad storage.
+                        saved_wm_gradients = (
+                            {
+                                n: tuple(
+                                    None if p.grad is None else p.grad.detach().clone()
+                                    for p in getattr(t, n).parameters()
+                                )
+                                for n in ("model", "termination")
+                            }
+                            if trial == 0
+                            else None
+                        )
                         actor = update()
                         end = timestamp(t.device)
                         row = {
@@ -265,8 +282,12 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                                 for n in ("model", "termination", "actor", "critic")
                             }
                             for n in ("model", "termination", "actor", "critic"):
-                                current[n + "_gradients"] = tuple(
-                                    cpu(p.grad) for p in getattr(t, n).parameters()
+                                current[n + "_gradients"] = (
+                                    cpu(saved_wm_gradients[n])
+                                    if n in ("model", "termination")
+                                    else tuple(
+                                        cpu(p.grad) for p in getattr(t, n).parameters()
+                                    )
                                 )
                             if expected is None:
                                 expected = current
@@ -287,7 +308,9 @@ def check(t, output, repeats=3, deterministic=False, include_cudagraph=False):
                                                     failures.append(
                                                         {
                                                             "component": component,
-                                                            "error": str(difference_error),
+                                                            "error": str(
+                                                                difference_error
+                                                            ),
                                                         }
                                                     )
                                             return (

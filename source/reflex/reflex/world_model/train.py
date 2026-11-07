@@ -61,6 +61,11 @@ parser.add_argument(
     action="store_true",
     help="Add isolated reduce-overhead graph trial after the default paired comparison",
 )
+parser.add_argument(
+    "--efficiency_graph_only",
+    action="store_true",
+    help="Compare reference versus Graph candidate without repeating the default-mode candidate",
+)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument(
     "--config",
@@ -344,6 +349,7 @@ def main():
                 out,
                 deterministic=args.efficiency_deterministic,
                 include_cudagraph=args.efficiency_include_cudagraph,
+                graph_only=args.efficiency_graph_only,
             )
             from .events_v24.component_timing import check as component_check
             from .events_v24.evaluation import evaluate
