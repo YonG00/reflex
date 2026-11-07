@@ -37,6 +37,8 @@ parser.add_argument(
         "efficiency_capacity_check",
         "wm_context_ablation",
         "imagination_batching_check",
+        "actor_execution_v30_check",
+        "wm_rollout_v30_check",
         "soft_termination_check",
     ),
     default="preflight",
@@ -75,6 +77,15 @@ parser.add_argument(
     action="store_true",
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
+parser.add_argument("--wm_stable_heading_trial", action="store_true")
+parser.add_argument("--wm_graph_trial", action="store_true")
+parser.add_argument("--actor_amp_features_trial", action="store_true")
+parser.add_argument("--actor_full_subset_trial", action="store_true")
+parser.add_argument("--actor_event_tensor_trial", action="store_true")
+parser.add_argument("--actor_graph_trial", action="store_true")
+parser.add_argument("--actor_graph_all_static", action="store_true")
+parser.add_argument("--actor_graph_only", action="store_true")
+parser.add_argument("--actor_core_no_fk", action="store_true")
 parser.add_argument("--context_rounds", type=int, default=500)
 parser.add_argument("--context_collect_steps", type=int, default=256)
 parser.add_argument("--context_validation_every", type=int, default=25)
@@ -140,6 +151,13 @@ if (
     parser.error("Choose exactly one resume/warm-start source")
 if args.checkpoint and args.warm_start_actor:
     parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
+if args.wm_stable_heading_trial and args.mode not in (
+    "wm_rollout_v30_check",
+    "actor_execution_v30_check",
+):
+    parser.error(
+        "Stable heading trial is benchmark-only; no implicit checkpoint migration"
+    )
 minimum_envs = 1 if args.mode == "play" else 6
 if args.num_envs < minimum_envs or args.save_every < 1:
     parser.error(f"Use at least {minimum_envs} envs for this mode and save_every >= 1")
@@ -331,6 +349,35 @@ def main():
             trainer.warm_start_actor(args.warm_start_actor)
         manifest = adapter.manifest()
         manifest["actor_initialization"] = trainer.initialization
+        if (
+            config.reuse_post_event_fk
+            or config.compact_event_pool_updates
+            or config.sparse_actor_bootstrap
+            or config.fuse_actor_core
+            or config.compile_wm_rollout
+            or args.mode == "actor_execution_v30_check"
+        ):
+            import hashlib
+
+            execution_source = (
+                Path(__file__).with_name("events_v24") / "execution_v30.py"
+            )
+            manifest["actor_execution_v30"] = {
+                "reuse_post_event_fk": config.reuse_post_event_fk,
+                "compact_event_pool_updates": config.compact_event_pool_updates,
+                "collapse_full_event_subsets": config.collapse_full_event_subsets,
+                "compile_event_tensors": config.compile_event_tensors,
+                "batch_imagination_amp_features": config.batch_imagination_amp_features,
+                "sparse_actor_bootstrap": config.sparse_actor_bootstrap,
+                "fuse_actor_core": config.fuse_actor_core,
+                "actor_core_include_fk": config.actor_core_include_fk
+                and not args.actor_core_no_fk,
+                "compile_wm_rollout": config.compile_wm_rollout,
+                "actor_core_compile_mode": config.actor_core_compile_mode,
+                "execution_sha256": hashlib.sha256(
+                    execution_source.read_bytes()
+                ).hexdigest(),
+            }
         manifest["imagination_start_policy"] = (
             "all_valid_states_uniform_with_replacement_v2"
         )
@@ -381,6 +428,49 @@ def main():
             from .soft_termination_check import check
 
             print(json.dumps(check(trainer, out)), flush=True)
+            return
+        if args.mode == "wm_rollout_v30_check":
+            from .wm_rollout_benchmark import check
+
+            for _ in range(max(0, 40 - trainer.replay.count)):
+                trainer.collect(adapter)
+            print(
+                json.dumps(
+                    check(
+                        trainer,
+                        out,
+                        stable_heading=args.wm_stable_heading_trial,
+                        graph_trial=args.wm_graph_trial,
+                    )
+                ),
+                flush=True,
+            )
+            return
+        if args.mode == "actor_execution_v30_check":
+            from .imagination_batching import check
+
+            if args.actor_core_no_fk:
+                trainer.cfg.actor_core_include_fk = False
+
+            for _ in range(max(0, 40 - trainer.replay.count)):
+                trainer.collect(adapter)
+            print(
+                json.dumps(
+                    check(
+                        trainer,
+                        out,
+                        execution_variants=True,
+                        graph_trial=args.actor_graph_trial,
+                        graph_all_static=args.actor_graph_all_static,
+                        graph_only=args.actor_graph_only,
+                        stable_heading=args.wm_stable_heading_trial,
+                        amp_feature_variants=args.actor_amp_features_trial,
+                        subset_variants=args.actor_full_subset_trial,
+                        event_tensor_variants=args.actor_event_tensor_trial,
+                    )
+                ),
+                flush=True,
+            )
             return
         if args.mode == "imagination_batching_check":
             from .imagination_batching import check

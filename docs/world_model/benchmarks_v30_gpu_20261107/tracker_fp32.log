@@ -1,0 +1,11 @@
+device=cuda:0 cuda=True amp=none compile=True
+batch: wm 10x2048 window 8 | actor 2048 horizon 32 | critic 5x4
+motion frames=1996 clips=4 obs_dim=99 state_dim=71 critic_in=914
+/opt/conda/envs/isaaclab/lib/python3.11/site-packages/torch/_inductor/compile_fx.py:236: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+warmup (incl. torch.compile) 145.4 s
+
+WORLD MODEL  :    262.5 ms / iteration (26.25 ms x 10 batches)
+ACTOR+CRITIC :    291.9 ms / iteration
+WM + ACTOR   :    554.4 ms / iteration (optimizer only, excludes simulator collection)
+  imagine fwd 90.5 ms | actor bwd 152.0 ms

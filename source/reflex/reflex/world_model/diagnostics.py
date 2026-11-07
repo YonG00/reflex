@@ -45,6 +45,15 @@ def eager_diagnostic(t):
     Keep compiled training callables intact, including when diagnostics fail.
     """
     dynamics, fk = t._dynamics, t._fk
+    extra = {
+        name: getattr(t, name)
+        for name in ("_actor_core", "_bootstrap_critic_observation")
+        if hasattr(t, name)
+    }
+    if "_actor_core" in extra:
+        t._actor_core = None
+    if "_bootstrap_critic_observation" in extra:
+        t._bootstrap_critic_observation = t.critic_observation
     v24_step = getattr(t, "_v24_step", None)
     t._v24_step = None
     transition, observations = (
@@ -74,6 +83,8 @@ def eager_diagnostic(t):
         yield
     finally:
         t._dynamics, t._fk = dynamics, fk
+        for name, value in extra.items():
+            setattr(t, name, value)
         t._v24_step = v24_step
         if conditioned:
             t._post = post

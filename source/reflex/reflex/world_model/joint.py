@@ -12,6 +12,8 @@ def returns(imagined, critic, gamma, values=None):
         imagined["done"],
         imagined.get("critic_obs", imagined["obs"]),
     )
+    if values is None:
+        values = imagined.get("actor_values")
     survival = torch.ones_like(reward[0])
     result = torch.zeros_like(survival)
     for t in range(len(reward)):
@@ -72,8 +74,8 @@ def _update_actor(t):
         }
         with freeze(t.model, t.termination, t.prior._disc, t.critic):
             imagined = t.imagine(start_batch=b)
-            values = None
-            if c.batch_imagination_critic:
+            values = imagined.get("actor_values")
+            if values is None and c.batch_imagination_critic:
                 observation = imagined.get("critic_obs", imagined["obs"])
                 values = t.critic(observation.flatten(0, 1)).reshape(
                     observation.shape[:2]
@@ -85,7 +87,9 @@ def _update_actor(t):
             with torch.profiler.record_function("actor/BPTT"):
                 scaled.backward()
             loss_total += float(scaled.detach())
-            target = critic_targets(t, imagined, values)
+            target = critic_targets(
+                t, imagined, None if c.sparse_actor_bootstrap else values
+            )
             mask = imagined["valid"].reshape(-1)
             x.append(
                 imagined.get("critic_obs", imagined["obs"])[:-1]

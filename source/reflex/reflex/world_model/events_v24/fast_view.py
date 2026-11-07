@@ -10,24 +10,55 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
     del poses  # Supported native events use root/joint data, never body FK.
     import torch
 
-    physical = torch.where(plan.mask.clone(), plan.targets, physical)
     origins = b["event_origins"]
+    preparer = getattr(scheduler, "tensor_preparer", None)
+    if preparer is None:
+        physical = torch.where(plan.mask.clone(), plan.targets, physical)
+        r = (
+            physical[:, :3] + origins,
+            physical[:, 3:7].clone(),
+            physical[:, 36:39].clone(),
+            physical[:, 39:42].clone(),
+            physical[:, 7:36].clone(),
+            physical[:, 42:71].clone(),
+        )
+        x = (
+            physical[:, 71:74] + origins,
+            physical[:, 74:78].clone(),
+            physical[:, 78:81].clone(),
+            physical[:, 81:84].clone(),
+        )
+        counters = tuple(
+            b["task_history"][:, i].round().long() for i in range(len(HISTORY_FIELDS))
+        )
+        copied_values = {name: value.clone() for name, value in values.items()}
+    else:
+        r, x, counters, copied_values = preparer(
+            physical, plan.targets, plan.mask.clone(), origins, b["task_history"], values
+        )
     robot = NS(
-        root_pos_w=physical[:, :3] + origins,
-        root_quat_w=physical[:, 3:7].clone(),
-        root_lin_vel_w=physical[:, 36:39].clone(),
-        root_ang_vel_w=physical[:, 39:42].clone(),
-        joint_pos=physical[:, 7:36].clone(),
-        joint_vel=physical[:, 42:71].clone(),
+        **dict(
+            zip(
+                (
+                    "root_pos_w",
+                    "root_quat_w",
+                    "root_lin_vel_w",
+                    "root_ang_vel_w",
+                    "joint_pos",
+                    "joint_vel",
+                ),
+                r,
+            )
+        )
     )
     box = NS(
-        root_pos_w=physical[:, 71:74] + origins,
-        root_quat_w=physical[:, 74:78].clone(),
-        root_lin_vel_w=physical[:, 78:81].clone(),
-        root_ang_vel_w=physical[:, 81:84].clone(),
+        **dict(
+            zip(("root_pos_w", "root_quat_w", "root_lin_vel_w", "root_ang_vel_w"), x)
+        )
     )
+    asset_factory = getattr(scheduler, "event_asset_factory", PlannedAsset)
     scene = Scene(
-        robot=PlannedAsset(
+        robot=asset_factory(
             robot,
             scheduler.task.body_names,
             scheduler.task.joint_names,
@@ -35,7 +66,7 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
             origins,
             True,
         ),
-        balloon=PlannedAsset(box, ["box"], [], plan, origins, False),
+        balloon=asset_factory(box, ["box"], [], plan, origins, False),
     )
     scene.env_origins, scene.sensors = origins, {}
     view = NS(
@@ -50,10 +81,10 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
         _wm_ephemeral_view=True,
     )
     for i, name in enumerate(HISTORY_FIELDS):
-        setattr(view, name, b["task_history"][:, i].round().long())
+        setattr(view, name, counters[i])
     for name, value in scheduler.static.items():
         setattr(view, name, copy.deepcopy(value))
-    for name, value in values.items():
-        setattr(view, name, value.clone())
+    for name, value in copied_values.items():
+        setattr(view, name, value)
     view._box_half_extents = b["dimensions"] / 2
     return view

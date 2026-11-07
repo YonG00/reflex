@@ -1,0 +1,21 @@
+{
+  "gpu_tested": true,
+  "training_started": false,
+  "python": "3.12.15",
+  "torch": "2.15.0",
+  "suite": {
+    "passed": 166,
+    "warnings": 1,
+    "seconds": 469.41
+  },
+  "supplemental": {
+    "checkpoint_contract": 1,
+    "wm_paired_restore": 1,
+    "actor_paired_full_updates_restore": 1
+  },
+  "new_test_cases": 42,
+  "tolerance": "torch.testing.assert_close default dtype tolerances; exact zero where asserted",
+  "gpu_speedup": "Actor 25.4 percent in paired combined trial; under-one-second target not reached",
+  "target_wm10_actor_critic_seconds": 1.0,
+  "gpu_report": "../V30_GPU_RESULTS_20261107_ZH.md"
+}
