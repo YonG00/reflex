@@ -1,0 +1,363 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /root/gpufree-data/IsaacLab-2.3.1/apps/isaaclab.python.headless.kit
+Loading user config located at: '/opt/conda/envs/isaaclab/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: /opt/conda/envs/isaaclab/lib/python3.11/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20261107_091906.log
+2026-11-07T01:19:06Z [120ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-11-07T01:19:06Z [609ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-11-07T01:19:07Z [877ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+2026-11-07T01:19:12Z [6,223ms] [Warning] [carb.graphics-vulkan.plugin] Could not initialize nvperf_grfx_host library. PerfSDK disabled
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 580.126.09    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 24564   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | d03a1662.. |
+|     |                                  |        |     |            | 38        |            |
+|=============================================================================================|
+| OS: 24.04.5 LTS (Noble Numbat) ubuntu, Version: 24.04.5, Kernel: 5.15.0-168-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: Intel(R) Xeon(R) Gold 6430
+| Bare Metal Cores: 64 | Bare Metal Logical Cores: 128
+| Core Usage Quota: 14
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 51200 | Free Memory: 46561
+| Total Page/Swap (MB): 0 | Free Page/Swap: 0
+|---------------------------------------------------------------------------------------------|
+[throw] CRADLE_RAMP ON: cradle_pose gaussian -> full-range linear ramp
+[throw] READY_DEV_ALLPHASE ON: dev penalty in ALL phases incl held
+[throw] HOLD_INIT ON: frac=0.25 (mark at reset, apply on first step, throw cancelled)
+[throw] CHEST_DELIVERY ON: w=2.5 (bed-gated scoop-to-chest reward, 3-point carry)
+[throw] CHEST_CONTACT ON: w=2.0 (pays ONLY at real chest contact, gap<=5mm full)
+[throw] FEET_GATHER ON: w=2.0 settle=20 steps (positive-only, post-settle stance gather)
+[throw] HOLD_INIT_RSI ON: +-0.05 rad arm, +-2.5cm box
+[throw] HOVER RANGE NON-DEFAULT: (1.0, 6.0)
+[throw] FRONTAL FAN: bearing +-10.0 deg, aim std 2.5 max 5.0 deg
+[throw] 3POINT ON: sustained gated by chest-contact x box-still x feet-planted; threepoint_hold_bonus armed
+[throw] THROW_REALIGN ON: first throw re-sampled post-teleport (fixes stale-facing side throws)
+[box_v24d] HOLD_POSE_CURL ON: held anchor = ready pose with elbows 0.95
+[throw] 3POINT chest gate = geometric gap<2cm (tilt-into stays as style reward only)
+[env] pelvis_pitch_penalty weight = 6.0 (M3_LEAN_W)
+[env] added cradle terms: bilateral_enclosure, ball_lateral_offset, low_hold (all weight 1.0)
+[env] torso_uprightness_penalty w=0.0 thr=20deg; cradle bilateral=2.0 low_hold=2.0 lateral=1.5; pelvis_pitch OFF
+[box_color] BOX_COLOR=cardboard -> diffuse (0.72, 0.52, 0.3)
+[env] wrist gimbal reflex ON (roll DOF, closed-form)
+[env] reward rebalance ON: chest_pocket 1.2, low_hold 1.2, box_on_bed 4.0, cradle_pose 3.5, bed mix (0.15,0.45,0.15,0.25)
+[env] strict_hold_sustained -> bed_gated (above gate)
+[env] upright-gated sustained + all-phase palm ON; hold_spin_w=0.04
+[env] palm_up 1.5 ON (min=1); compliant_intake 1.0; cradle_ready w=4.0; chest_w=2.2; tuck_w=1.0
+[env] wrist lip ON: pitch pinned -0.4 both (fingers-up ledge)
+[env] ARM_SCALE ON: 4 shoulder/elbow joints -> 0.02 (stock {'.*_elbow_joint': 0.439, '.*_shoulder_pitch_joint': 0.439, '.*_shoulder_roll_joint': 0.439, '.*_shoulder_yaw_joint': 0.439})
+[env] ELBOW_SCALE ON: ['.*_elbow_joint'] -> 0.35 (scoop authority; shoulders stay pinned)
+[env] ROBOT_MASS_DR ON: link mass xU[0.9,1.1]
+[env] SOFT BED ON: arm default pose = corrected CRADLE_POSE, bed_soft=1.0 (stock PD, compliant intake). Pair with BOX_ARM_SCALE~0.02.
+[env] torso_asym override applied: back 18deg w-0.5
+[env] HOLD_INIT events registered: frac=0.25 x=0.28 z=0.35
+[env] ARM_STIFF ON: shoulder/elbow kp -> 40.0 (kd ratio 0.0637, effort caps UNTOUCHED)
+[env] THROW_REALIGN event registered
+[env] 3POINT terms: bonus w=10 @ 3.0s; foot_step w=-0.2
+[env] GATE_ALL: upright-gated ['box_on_bed', 'chest_pocket', 'hold_still', 'hands_under_box', 'low_hold'] (start=-0.3 end=-0.15 floor=0.1)
+[env] AMP SLIM: zeroed ['tuck_in', 'compliant_intake', 'elbow_spread', 'wrist_steady', 'lean_during_intake', 'forearm_cradle'] kept ['arm_idle_still', 'chest_contact', 'chest_delivery', 'cradle_pose', 'cradle_ready', 'cradle_ready_dev', 'hold_feet_gather', 'palm_up', 'torso_asym', 'upright_hold']
+[perception] estimator off: 170-D obs, box obs are ground truth
+[robust] trust gate on catch rewards (floor 0.0)
+[robust] terms: still +1.5 softfall -2.0 cmdlim -2.0 fallterm -50.0
+[robust] walking thrower (v 0.3-0.9 m/s, R 1.5 m); set BOX_HOVER_LO/HI for long holds
+[teacher] aim-offset curriculum: P(off)=0.4 P(abandon)=0.08 abandon 1.0-2.0 m
+[box_v38] HANG-PRELAUNCH reward ON w=1.0 (armed; FIRED line must appear at runtime)
+[teacher] reactive arms: 5 ready-pose rewards gated on box-in-flight (ARM_SNAP=0)
+[teacher] cradle perturb p=0.15 v<=0.5 w<=3.0
+[teacher] cradle anchor reward +0.3 (sigma 0.18)
+Setting seed: 42
+2026-11-07T01:19:13Z [7,710ms] [Warning] [isaacsim.core.simulation_manager.impl.simulation_manager] CCD is not supported on GPU, ignoring request to enable it
+[INFO]: Base environment:
+	Environment device    : cuda:0
+	Environment seed      : 42
+	Physics step-size     : 0.005
+	Rendering step-size   : 0.02
+	Environment step-size : 0.02
+2026-11-07T01:19:14Z [8,232ms] [Warning] [carb.graphics-vulkan.plugin] Could not initialize nvperf_grfx_host library. PerfSDK disabled
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 580.126.09    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 24564   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | d03a1662.. |
+|     |                                  |        |     |            | 38        |            |
+|=============================================================================================|
+| OS: 24.04.5 LTS (Noble Numbat) ubuntu, Version: 24.04.5, Kernel: 5.15.0-168-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: Intel(R) Xeon(R) Gold 6430
+| Bare Metal Cores: 64 | Bare Metal Logical Cores: 128
+| Core Usage Quota: 14
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 51200 | Free Memory: 46441
+| Total Page/Swap (MB): 0 | Free Page/Swap: 0
+|---------------------------------------------------------------------------------------------|
+2026-11-07T01:19:15Z [9,524ms] [Warning] [omni.graph.visualization.nodes._impl.extension] No Viewport Window to add omni.graph.visualization.nodes-2.1.3 scene to
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link imu_in_pelvis has body properties (mass, inertia, or collisions) and is being merged into pelvis
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link LL_FOOT has body properties (mass, inertia, or collisions) and is being merged into left_ankle_roll_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link pelvis_contour_link has body properties (mass, inertia, or collisions) and is being merged into pelvis
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link LR_FOOT has body properties (mass, inertia, or collisions) and is being merged into right_ankle_roll_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link head_link has body properties (mass, inertia, or collisions) and is being merged into torso_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link imu_in_torso has body properties (mass, inertia, or collisions) and is being merged into torso_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link left_rubber_hand has body properties (mass, inertia, or collisions) and is being merged into left_wrist_yaw_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link logo_link has body properties (mass, inertia, or collisions) and is being merged into torso_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link mid360_link has body properties (mass, inertia, or collisions) and is being merged into torso_link
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-11-07T01:19:15Z [9,588ms] [Warning] [isaacsim.asset.importer.urdf] link right_rubber_hand has body properties (mass, inertia, or collisions) and is being merged into right_wrist_yaw_link
+2026-11-07T01:19:34Z [28,819ms] [Warning] [isaaclab.terrains.terrain_importer] Visual material specified for ground plane but no diffuse color found. Using default color: (0.0, 0.0, 0.0)
+[INFO]: Time taken for scene creation : 28.283060 seconds
+[INFO]: Scene manager:  <class InteractiveScene>
+	Number of environments: 4096
+	Environment spacing   : 2.5
+	Source prim name      : /World/envs/env_0
+	Global prim paths     : ['/World/ground']
+	Replicate physics     : False
+[INFO]: Starting the simulation. This may take a few seconds. Please wait...
+[INFO]: Time taken for simulation start : 40.247653 seconds
+[INFO] Command Manager:  <CommandManager> contains 1 active terms.
++--------------------------------+
+|      Active Command Terms      |
++-------+--------+---------------+
+| Index | Name   |      Type     |
++-------+--------+---------------+
+|   0   | motion | MotionCommand |
++-------+--------+---------------+
+
+[INFO] Event Manager:  <EventManager> contains 3 active terms.
++---------------------------------------+
+| Active Event Terms in Mode: 'startup' |
++---------+-----------------------------+
+|  Index  | Name                        |
++---------+-----------------------------+
+|    0    | physics_material            |
+|    1    | add_joint_default_pos       |
+|    2    | base_com                    |
+|    3    | randomize_robot_mass        |
+|    4    | randomize_box_mass          |
++---------+-----------------------------+
++-------------------------------------------------------+
+|         Active Event Terms in Mode: 'interval'        |
++-------+---------------------+-------------------------+
+| Index | Name                | Interval time range (s) |
++-------+---------------------+-------------------------+
+|   0   | push_robot          |        (1.0, 3.0)       |
+|   1   | box_hover_launch    |        (0.0, 0.0)       |
+|   2   | hold_init_apply     |        (0.0, 0.0)       |
+|   3   | first_throw_realign |        (0.0, 0.0)       |
+|   4   | v38_cradle_perturb  |        (0.5, 1.0)       |
++-------+---------------------+-------------------------+
++--------------------------------------+
+| Active Event Terms in Mode: 'reset'  |
++--------+-----------------------------+
+| Index  | Name                        |
++--------+-----------------------------+
+|   0    | randomize_motion_yaw        |
+|   1    | reset_balloon               |
+|   2    | randomize_init_state        |
+|   3    | randomize_cmd_time_steps    |
+|   4    | reset_chest_v5_persist      |
+|   5    | randomize_box_material      |
+|   6    | hold_init_mark              |
+|   7    | v38_aim_offsets             |
++--------+-----------------------------+
+
+[INFO] Recorder Manager:  <RecorderManager> contains 0 active terms.
++---------------------+
+| Active Recorder Terms |
++-----------+---------+
+|   Index   | Name    |
++-----------+---------+
++-----------+---------+
+
+[gimbal] palm axis = z (left left_wrist_yaw_link local -z, right right_wrist_yaw_link local -z)
+[gimbal] wrist reflex ACTIVE (roll DOF, closed-form, rate 0.15/step)
+[gimbal] LIMIT CLAMP ACTIVE (deploy-parity PD-target clamp to joint limits)
+[INFO] Action Manager:  <ActionManager> contains 1 active terms.
++------------------------------------+
+|  Active Action Terms (shape: 29)   |
++--------+-------------+-------------+
+| Index  | Name        |   Dimension |
++--------+-------------+-------------+
+|   0    | joint_pos   |          29 |
++--------+-------------+-------------+
+
+[INFO] Observation Manager: <ObservationManager> contains 2 groups.
++-----------------------------------------------------------+
+| Active Observation Terms in Group: 'policy' (shape: (179,)) |
++-----------+-----------------------------------+-----------+
+|   Index   | Name                              |   Shape   |
++-----------+-----------------------------------+-----------+
+|     0     | command                           |   (58,)   |
+|     1     | motion_anchor_pos_b               |    (3,)   |
+|     2     | motion_anchor_ori_b               |    (6,)   |
+|     3     | base_lin_vel                      |    (3,)   |
+|     4     | base_ang_vel                      |    (3,)   |
+|     5     | joint_pos                         |   (29,)   |
+|     6     | joint_vel                         |   (29,)   |
+|     7     | actions                           |   (29,)   |
+|     8     | balloon_pos_b                     |    (3,)   |
+|     9     | balloon_lin_vel_b                 |    (3,)   |
+|     10    | box_ori                           |    (6,)   |
+|     11    | box_ang                           |    (3,)   |
+|     12    | box_dimensions                    |    (3,)   |
+|     13    | box_mass                          |    (1,)   |
++-----------+-----------------------------------+-----------+
++-----------------------------------------------------------+
+| Active Observation Terms in Group: 'critic' (shape: (292,)) |
++-----------+-----------------------------------+-----------+
+|   Index   | Name                              |   Shape   |
++-----------+-----------------------------------+-----------+
+|     0     | command                           |   (58,)   |
+|     1     | motion_anchor_pos_b               |    (3,)   |
+|     2     | motion_anchor_ori_b               |    (6,)   |
+|     3     | body_pos                          |   (42,)   |
+|     4     | body_ori                          |   (84,)   |
+|     5     | base_lin_vel                      |    (3,)   |
+|     6     | base_ang_vel                      |    (3,)   |
+|     7     | joint_pos                         |   (29,)   |
+|     8     | joint_vel                         |   (29,)   |
+|     9     | actions                           |   (29,)   |
+|     10    | balloon_pos_b                     |    (3,)   |
+|     11    | balloon_lin_vel_b                 |    (3,)   |
++-----------+-----------------------------------+-----------+
+
+[INFO] Termination Manager:  <TerminationManager> contains 4 active terms.
++--------------------------------+
+|    Active Termination Terms    |
++-------+-------------+----------+
+| Index | Name        | Time Out |
++-------+-------------+----------+
+|   0   | time_out    |   True   |
+|   1   | anchor_pos  |  False   |
+|   2   | anchor_ori  |  False   |
+|   3   | ee_body_pos |  False   |
++-------+-------------+----------+
+
+[INFO] Reward Manager:  <RewardManager> contains 51 active terms.
++------------------------------------------------+
+|              Active Reward Terms               |
++-------+-------------------------------+--------+
+| Index | Name                          | Weight |
++-------+-------------------------------+--------+
+|   0   | motion_global_anchor_pos      |    0.5 |
+|   1   | motion_global_anchor_ori      |    0.5 |
+|   2   | motion_body_pos               |    1.0 |
+|   3   | motion_body_ori               |    1.0 |
+|   4   | motion_body_lin_vel           |    1.0 |
+|   5   | motion_body_ang_vel           |    1.0 |
+|   6   | action_rate_l2                |   -0.1 |
+|   7   | joint_limit                   |  -10.0 |
+|   8   | undesired_contacts            |    0.0 |
+|   9   | catch_eef_to_balloon          |    2.0 |
+|   10  | catch_success_bonus           |    0.0 |
+|   11  | chest_pocket                  |    2.2 |
+|   12  | wrist_proximity               |    1.5 |
+|   13  | wrist_flank                   |    0.0 |
+|   14  | head_shoulder_support_penalty |   -3.0 |
+|   15  | strict_hold_sustained         |    4.0 |
+|   16  | catch_success_strict_bonus    |   10.0 |
+|   17  | lean_during_intake            |    0.0 |
+|   18  | bilateral_enclosure           |    0.0 |
+|   19  | ball_lateral_offset           |    1.5 |
+|   20  | low_hold                      |    1.2 |
+|   21  | torso_uprightness_penalty     |    0.0 |
+|   22  | hands_under_box               |    1.5 |
+|   23  | forearm_cradle                |    0.0 |
+|   24  | elbow_spread                  |    0.0 |
+|   25  | hold_still                    |    2.0 |
+|   26  | box_on_bed                    |    4.0 |
+|   27  | face_box                      |    1.0 |
+|   28  | cradle_pose                   |    3.5 |
+|   29  | tuck_in                       |    0.0 |
+|   30  | compliant_intake              |    0.0 |
+|   31  | palm_up                       |    1.5 |
+|   32  | upright_hold                  |    1.5 |
+|   33  | arm_idle_still                | -0.035 |
+|   34  | cradle_ready_dev              |   -1.0 |
+|   35  | box_hold_spin                 |  -0.04 |
+|   36  | cradle_ready                  |    4.0 |
+|   37  | chest_delivery                |    2.5 |
+|   38  | chest_contact                 |    2.0 |
+|   39  | hold_feet_gather              |    2.0 |
+|   40  | wrist_steady                  |    0.0 |
+|   41  | leg_split                     |   -0.2 |
+|   42  | torso_asym                    |   -0.5 |
+|   43  | threepoint_bonus              |   10.0 |
+|   44  | hold_foot_step                |   -0.2 |
+|   45  | low_trust_stillness           |    1.5 |
+|   46  | soft_fall_shaping             |   -2.0 |
+|   47  | cmd_limit_excess              |   -2.0 |
+|   48  | fall_terminated               |  -50.0 |
+|   49  | v38_hang_prelaunch            |    1.0 |
+|   50  | v38_cradle_anchor             |    0.3 |
++-------+-------------------------------+--------+
+
+[INFO] Curriculum Manager:  <CurriculumManager> contains 0 active terms.
++----------------------+
+| Active Curriculum Terms |
++-----------+----------+
+|   Index   | Name     |
++-----------+----------+
++-----------+----------+
+
+[INFO]: Completed setting up the environment...
+Setting seed: 42
+[randomize_init_state] joint_pose_std=0.3 root_vel_xy_max=1.0 applied to 4096/4096 envs
+[randomize_cmd_time_steps_mixture] mix=0.5/0.3/0.2 catch_window=(250, 800) applied to 4096 envs
+[teacher] reference arms patched: 14 arm joints served from clip 0-5s while waiting
+[box_v38] TS DELTA GATE ACTIVE: waiting delta x0.15 -> full on trigger
+[box_v38] TWO-STAGE ARMS raised pose (env0) = [-0.85610, -0.85115, 0.18722, -0.18389, -0.24690, 0.24588, 0.64840, 0.64248] | per-env std max 0.0058 rad | cradle default
+[teacher] cradle thresholds: d<0.50 relv<2.0 z_rel>0.45 | launched gate = env._box_launched
+[teacher] two-stage arms: 8 shoulder/elbow targets = clip 0-5s down pose while waiting | trigger = GT _box_launched flag — SIM ONLY, NOT DEPLOYABLE | down pose = [0.19438, -0.04141, 0.03882, -0.11136, 0.06105, 0.55658, 1.06134, 1.26890] | base_blend=1
+[AMP] context set: expert pairs (6576, 2, 83), w_style 1.0 w_task 1.0 disc_steps 4
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+[box_v38] HANG-PRELAUNCH REWARD FIRED: w=1 sig=0.35 joints=8
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "baseline", "trial": 0, "wall_seconds": 74.95942172780633}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "baseline", "trial": 1, "wall_seconds": 4.756512638181448}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "baseline", "trial": 2, "wall_seconds": 4.70317542925477}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "baseline", "trial": 3, "wall_seconds": 4.721918150782585}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "baseline", "trial": 4, "wall_seconds": 4.906290493905544}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+/opt/conda/envs/isaaclab/lib/python3.11/site-packages/torch/_inductor/compile_fx.py:236: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "optimized", "trial": 0, "wall_seconds": 222.6498216688633}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "optimized", "trial": 1, "wall_seconds": 3.9995686784386635}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "optimized", "trial": 2, "wall_seconds": 3.9379784017801285}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset
+Actor gradient trajectories 2048/2048
+{"efficiency_variant": "optimized", "trial": 3, "wall_seconds": 3.9429777152836323}
+[AMP checkpoint] restored discriminator/Adam, iter=376, replay=200000/200000; simulator transition pairs reset

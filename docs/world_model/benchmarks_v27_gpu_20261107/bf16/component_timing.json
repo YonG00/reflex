@@ -1,0 +1,81 @@
+{
+  "completed": true,
+  "batch": 2048,
+  "horizon": 32,
+  "optimizer_updates": 0,
+  "warm_excluded": {
+    "forward_seconds": 1.3133959211409092,
+    "backward_seconds": 1.3608674444258213,
+    "total_seconds": 2.6742633655667305,
+    "gradient_norm": 0.5781323909759521
+  },
+  "records": [
+    {
+      "forward_seconds": 1.2933296412229538,
+      "backward_seconds": 1.3159829340875149,
+      "total_seconds": 2.6093125753104687,
+      "gradient_norm": 0.5781323909759521
+    },
+    {
+      "forward_seconds": 1.3010262586176395,
+      "backward_seconds": 1.29521956294775,
+      "total_seconds": 2.5962458215653896,
+      "gradient_norm": 0.5781323909759521
+    },
+    {
+      "forward_seconds": 2.6493321917951107,
+      "backward_seconds": 1.437164530158043,
+      "total_seconds": 4.086496721953154,
+      "gradient_norm": 0.5781323909759521
+    }
+  ],
+  "instrumented": {
+    "forward_seconds": 1.538394145667553,
+    "backward_seconds": 1.457980029284954,
+    "total_seconds": 2.996374174952507,
+    "gradient_norm": 0.5781323909759521
+  },
+  "host_scopes": {
+    "position_FK": {
+      "calls": 65,
+      "host_seconds": 0.2611209638416767
+    },
+    "observations": {
+      "calls": 32,
+      "host_seconds": 0.06169815734028816
+    },
+    "actor_MLP": {
+      "calls": 32,
+      "host_seconds": 0.008044317364692688
+    },
+    "action_targets": {
+      "calls": 32,
+      "host_seconds": 0.013527903705835342
+    },
+    "physical_WM": {
+      "calls": 32,
+      "host_seconds": 0.0643245130777359
+    },
+    "reward_termination": {
+      "calls": 32,
+      "host_seconds": 0.17850017175078392
+    },
+    "native_scheduler": {
+      "calls": 32,
+      "host_seconds": 0.5876581482589245
+    },
+    "deterministic_apply": {
+      "calls": 32,
+      "host_seconds": 0.009587891399860382
+    },
+    "AMP_features": {
+      "calls": 64,
+      "host_seconds": 0.10841615870594978
+    },
+    "AMP_discriminator": {
+      "calls": 32,
+      "host_seconds": 0.014306016266345978
+    }
+  },
+  "warning": "Host scopes include launch/synchronization and may nest; not GPU exclusive time; do not sum."
+}
