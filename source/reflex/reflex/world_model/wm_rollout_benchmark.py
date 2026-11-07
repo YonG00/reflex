@@ -10,7 +10,18 @@ import torch
 from .timing import timestamp
 
 
-def check(t, output, repeats=3):
+def check(t, output, repeats=3, stable_heading=False):
+    if stable_heading:
+        from .stable_canonical import trial
+
+        if not t.normalized:
+            t.fit_normalizers()
+        with trial(t):
+            return _check(t, output, repeats)
+    return _check(t, output, repeats)
+
+
+def _check(t, output, repeats):
     if not t.cfg.analytic_soft_termination or not t.cfg.deterministic_event_apply:
         raise ValueError("Requires analytic deterministic WM")
     path = Path(output) / "wm_rollout_v30.json"
@@ -35,7 +46,12 @@ def check(t, output, repeats=3):
     cuda_rng = (
         torch.cuda.get_rng_state_all() if str(t.device).startswith("cuda") else None
     )
-    result = {"completed": False, "variants": {}, "errors": {}}
+    result = {
+        "completed": False,
+        "variants": {},
+        "errors": {},
+        "stable_heading_trial": getattr(t.model, "_stable_heading_trial", False),
+    }
 
     def restore():
         t.model.load_state_dict(copy.deepcopy(initial))

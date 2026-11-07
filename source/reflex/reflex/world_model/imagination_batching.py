@@ -15,7 +15,43 @@ from .timing import timestamp
 from .trainer import freeze
 
 
-def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
+def check(
+    t,
+    output,
+    repeats=3,
+    execution_variants=False,
+    graph_trial=False,
+    graph_all_static=False,
+    graph_only=False,
+    stable_heading=False,
+):
+    if stable_heading:
+        from .stable_canonical import trial
+
+        with trial(t):
+            return _check(
+                t,
+                output,
+                repeats,
+                execution_variants,
+                graph_trial,
+                graph_all_static,
+                graph_only,
+            )
+    return _check(
+        t,
+        output,
+        repeats,
+        execution_variants,
+        graph_trial,
+        graph_all_static,
+        graph_only,
+    )
+
+
+def _check(
+    t, output, repeats, execution_variants, graph_trial, graph_all_static, graph_only
+):
     if t.event_scheduler is None:
         raise ValueError("Batching check requires the native event scheduler")
     out = Path(output) / (
@@ -75,6 +111,7 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
     report = {
         "completed": False,
         "actor_core_include_fk": t.cfg.actor_core_include_fk,
+        "stable_heading_trial": getattr(t.model, "_stable_heading_trial", False),
         "variants": {},
         "errors": {},
         "tolerance": "torch.testing.assert_close default dtype tolerance",
@@ -143,6 +180,10 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
                     ("amp_critic", True, True, *flags[2:], False),
                 ]
             )
+            if graph_only:
+                if not graph_trial:
+                    raise ValueError("Graph-only comparison requires graph_trial")
+                variants = variants[:1]
             if graph_trial:
                 variants.append(
                     (
@@ -203,6 +244,19 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
                         fullgraph=True,
                         dynamic=False,
                         backend=t.cfg.compile_backend,
+                    )
+                if graph and graph_all_static:
+                    t._fk = torch.compile(
+                        t.bridge.fk,
+                        fullgraph=True,
+                        dynamic=False,
+                        mode="reduce-overhead",
+                    )
+                    t._v24_heads = torch.compile(
+                        t.v24_packed_reward_termination,
+                        fullgraph=True,
+                        dynamic=False,
+                        mode="reduce-overhead",
                     )
                 restore()
                 current = {}
@@ -296,6 +350,11 @@ def check(t, output, repeats=3, execution_variants=False, graph_trial=False):
                     "cold_diagnostic_includes_compile_and_CPU_snapshot_seconds": cold_seconds,
                     "explicit_fk_calls_per_horizon": fk_count[0],
                     "graph_trial": graph,
+                    "graph_scope": "core_fk_heads"
+                    if graph and graph_all_static
+                    else "core"
+                    if graph
+                    else None,
                     "warmup_update": rows[0],
                     "steady": rows[1:],
                     "coverage": coverage,

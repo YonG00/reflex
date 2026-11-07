@@ -77,7 +77,10 @@ parser.add_argument(
     action="store_true",
     help="Compare reference versus Graph candidate without repeating the default-mode candidate",
 )
+parser.add_argument("--wm_stable_heading_trial", action="store_true")
 parser.add_argument("--actor_graph_trial", action="store_true")
+parser.add_argument("--actor_graph_all_static", action="store_true")
+parser.add_argument("--actor_graph_only", action="store_true")
 parser.add_argument("--actor_core_no_fk", action="store_true")
 parser.add_argument("--context_rounds", type=int, default=500)
 parser.add_argument("--context_collect_steps", type=int, default=256)
@@ -144,6 +147,13 @@ if (
     parser.error("Choose exactly one resume/warm-start source")
 if args.checkpoint and args.warm_start_actor:
     parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
+if args.wm_stable_heading_trial and args.mode not in (
+    "wm_rollout_v30_check",
+    "actor_execution_v30_check",
+):
+    parser.error(
+        "Stable heading trial is benchmark-only; no implicit checkpoint migration"
+    )
 minimum_envs = 1 if args.mode == "play" else 6
 if args.num_envs < minimum_envs or args.save_every < 1:
     parser.error(f"Use at least {minimum_envs} envs for this mode and save_every >= 1")
@@ -417,7 +427,12 @@ def main():
 
             for _ in range(max(0, 40 - trainer.replay.count)):
                 trainer.collect(adapter)
-            print(json.dumps(check(trainer, out)), flush=True)
+            print(
+                json.dumps(
+                    check(trainer, out, stable_heading=args.wm_stable_heading_trial)
+                ),
+                flush=True,
+            )
             return
         if args.mode == "actor_execution_v30_check":
             from .imagination_batching import check
@@ -434,6 +449,9 @@ def main():
                         out,
                         execution_variants=True,
                         graph_trial=args.actor_graph_trial,
+                        graph_all_static=args.actor_graph_all_static,
+                        graph_only=args.actor_graph_only,
+                        stable_heading=args.wm_stable_heading_trial,
                     )
                 ),
                 flush=True,
