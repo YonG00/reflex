@@ -45,6 +45,8 @@ class TrainConfig:
     privileged_critic: bool = False
     actor_zero_output: bool = True
     learned_termination: bool = False
+    analytic_soft_termination: bool = False
+    critic_include_all_actor: bool = False
     joint_predicted_termination: bool = False
     variable_model_windows: bool = False
     state_loss_reduction: str = "mean"
@@ -191,17 +193,31 @@ class Trainer:
             not c.compile_dynamics or c.compile_backend != "inductor"
         ):
             raise ValueError("WM compile mode requires compile_dynamics with Inductor")
+        if c.analytic_soft_termination and (
+            c.learned_termination
+            or c.joint_predicted_termination
+            or not c.pure_soft_survival
+            or c.hard_imagination_boundaries
+            or c.wm_kind != "state"
+            or task is None
+            or "pelvis" not in task.tracked_names
+        ):
+            raise ValueError(
+                "Analytic soft termination requires state WM, pelvis reference, pure soft survival, no learned head/BCE or hard boundary"
+            )
+        if c.critic_include_all_actor and not c.privileged_critic:
+            raise ValueError("Complete Actor inputs require privileged Critic")
         self.task = task.to(device) if task is not None else None
         self.terminal_reward_index = None
         self.terminal_reward_cost = 0.0
         if c.pure_soft_survival:
             if (
                 c.hard_imagination_boundaries
-                or not c.learned_termination
+                or not (c.learned_termination or c.analytic_soft_termination)
                 or task is None
             ):
                 raise ValueError(
-                    "Pure soft survival requires learned termination and no hard boundaries"
+                    "Pure soft survival requires a soft termination mechanism and no hard boundaries"
                 )
             if "fall_terminated" in self.reward_names:
                 self.terminal_reward_index = self.reward_names.index("fall_terminated")
@@ -303,11 +319,15 @@ class Trainer:
             from .observation import PrivilegedObservation
 
             self.privileged_bridge = PrivilegedObservation(
-                self.bridge, contract["tracked_names"]
+                self.bridge, contract["tracked_names"], c.critic_include_all_actor
             ).to(device)
-        self.critic_dim = 292 if c.privileged_critic else 179
+        self.critic_dim = (
+            (305 if c.critic_include_all_actor else 292) if c.privileged_critic else 179
+        )
         self.critic_norm = (
-            Standardizer(292).to(device) if c.privileged_critic else self.obs_norm
+            Standardizer(self.critic_dim).to(device)
+            if c.privileged_critic
+            else self.obs_norm
         )
         self.critic = mlp(self.critic_dim, 1, c.hidden, layers=c.critic_hidden_dims).to(
             device
@@ -339,7 +359,7 @@ class Trainer:
         if c.learn_external_events and (
             not self.model.state_only
             or c.compile_step
-            or not c.joint_predicted_termination
+            or not (c.joint_predicted_termination or c.analytic_soft_termination)
         ):
             raise ValueError(
                 "Macro experiment requires state WM with validated Dynamics/FK compile only"
@@ -389,11 +409,11 @@ class Trainer:
         if c.compile_wm_training_step and not (
             c.condition_external_events
             and c.deterministic_event_apply
-            and c.joint_predicted_termination
+            and (c.joint_predicted_termination or c.analytic_soft_termination)
             and c.wm_kind == "state"
         ):
             raise ValueError(
-                "Fused WM loss requires deterministic V24 and joint predicted termination"
+                "Fused WM loss requires deterministic V24 with joint BCE or analytic soft termination"
             )
         self._wm_training_step = (
             torch.compile(
@@ -542,6 +562,10 @@ class Trainer:
         )
 
     def warm_start_macro(self, path):
+        if self.cfg.analytic_soft_termination or self.cfg.critic_include_all_actor:
+            raise ValueError(
+                "Use explicit checkpoint migration for analytic termination or expanded Critic"
+            )
         if self.context_spec is not None:
             raise ValueError(
                 "Compact WM requires fresh initialization, not old WM migration"
@@ -576,8 +600,9 @@ class Trainer:
         ):
             getattr(self, name).load_state_dict(state[name])
         self.model.warm_start_physical(state["model"])
-        self.termination.load_state_dict(state["termination"])
-        self.termination_opt.load_state_dict(state["termination_opt"])
+        if self.termination is not None:
+            self.termination.load_state_dict(state["termination"])
+            self.termination_opt.load_state_dict(state["termination_opt"])
         self.task.load_state_dict(state["task_state"])
         self.prior.load_amp_state_dict(state["amp"])
         self.normalized = state["normalized"]
@@ -841,30 +866,33 @@ class Trainer:
         )
         physical = self.model.predict_physical(s, row["target"], row["context"], pre)
         ns = self.model.predict_post(physical, row["event_targets"], row["event_mask"])
-        before = (
-            None
-            if initial and "reference_relative_p" in row
-            else self.bridge.fk.subset(s, (self.task.anchor_name,))
-            if self.cfg.minimal_termination_fk
-            else self.bridge.fk(s)
-        )
-        after = (
-            self.bridge.fk.subset(physical, tuple(self.task.tracked_names))
-            if self.cfg.minimal_termination_fk
-            else self.bridge.fk(physical)
-        )
-        features = self.task.predicted_termination_features(
-            row,
-            s,
-            physical,
-            row["phase"],
-            initial=initial,
-            fk_before=before,
-            fk_after=after,
-        )
-        dl = nn.functional.binary_cross_entropy_with_logits(
-            self.termination(features), row["terminated"].float(), reduction="none"
-        )
+        if self.cfg.analytic_soft_termination:
+            dl = torch.zeros_like(s[:, 0])
+        else:
+            before = (
+                None
+                if initial and "reference_relative_p" in row
+                else self.bridge.fk.subset(s, (self.task.anchor_name,))
+                if self.cfg.minimal_termination_fk
+                else self.bridge.fk(s)
+            )
+            after = (
+                self.bridge.fk.subset(physical, tuple(self.task.tracked_names))
+                if self.cfg.minimal_termination_fk
+                else self.bridge.fk(physical)
+            )
+            features = self.task.predicted_termination_features(
+                row,
+                s,
+                physical,
+                row["phase"],
+                initial=initial,
+                fk_before=before,
+                fk_after=after,
+            )
+            dl = nn.functional.binary_cross_entropy_with_logits(
+                self.termination(features), row["terminated"].float(), reduction="none"
+            )
         physical_loss = (
             state_error(physical, row["physical_next_state"]).square().sum(-1)
         )
@@ -973,7 +1001,8 @@ class Trainer:
                         state_losses.append(sl)
                         physics_losses.append(sl)
                         macro_losses.append(post_loss)
-                        termination_losses.append(dl)
+                        if self.cfg.joint_predicted_termination:
+                            termination_losses.append(dl)
                         mode_losses.append(torch.zeros_like(sl))
                         losses.append(sl + self.cfg.term_loss_weight * dl)
                         continue
@@ -1279,7 +1308,7 @@ class Trainer:
                         logits, seq["after_launched"][j].float()
                     )
                 )
-                if h == 1:
+                if h == 1 and self.termination is not None:
                     row = {k: v[0] for k, v in seq.items()}
                     f = self.task.predicted_termination_features(
                         row, s, physical, row["phase"]
@@ -1371,6 +1400,15 @@ class Trainer:
         critic = self.critic_observation(b, s, previous, phase, poses, raw)
         return raw, critic
 
+    def imagination_termination(self, physical, task):
+        if self.cfg.analytic_soft_termination:
+            from .analytic_termination import probability
+
+            return probability(self.task, physical, task.phase)
+        if self.termination is not None:
+            return self._termination_fn(task.termination_features).sigmoid()
+        return task.terminated.float()
+
     def v24_reward_termination(
         self,
         b,
@@ -1402,7 +1440,7 @@ class Trainer:
             fk_after=physical_poses,
             initial_step=first,
         )
-        return task, self.termination(task.termination_features).sigmoid()
+        return task, self.imagination_termination(physical, task)
 
     def v24_packed_reward_termination(
         self,
@@ -1539,7 +1577,7 @@ class Trainer:
             fk_after=physical_poses,
             initial_step=first,
         )
-        done = self.termination(task.termination_features).sigmoid()
+        done = self.imagination_termination(physical, task)
         return physical, physical_poses, task, done
 
     def transition(
@@ -1574,11 +1612,7 @@ class Trainer:
             fk_after=next_poses,
             initial_step=first,
         )
-        d = (
-            self._termination_fn(task.termination_features).sigmoid()
-            if self.termination is not None
-            else task.terminated.float()
-        )
+        d = self.imagination_termination(ns, task)
         return ns, next_poses, task, d
 
     def imagine(self, start_batch=None, trace=False):
@@ -1603,6 +1637,7 @@ class Trainer:
         styles = []
         amp_pairs = []
         trace_rows = []
+        physical_trace, reference_trace = [], []
         validity = []
         truncations = []
         predicted_modes = []
@@ -1709,8 +1744,10 @@ class Trainer:
                             fk_after=physical_poses,
                         )
                     r, d, trunc = task.rewards, task.terminated.float(), task.truncated
-                    if self.termination is not None:
-                        d = self.termination(task.termination_features).sigmoid()
+                    d = self.imagination_termination(physical, task)
+                if trace:
+                    physical_trace.append(physical)
+                    reference_trace.append(task.phase)
                 if self.cfg.pure_soft_survival:
                     from .events_v24.soft_survival import expected_terminal_reward
 
@@ -1843,7 +1880,9 @@ class Trainer:
                 )
             previous = torch.where(valid[:, None], raw, previous)
             phase = torch.where(valid, next_phase, phase)
-            valid = valid & ~trunc & ~(d.detach() >= 1)
+            valid = valid & ~trunc
+            if not self.cfg.analytic_soft_termination:
+                valid = valid & ~(d.detach() >= 1)
             if self.cfg.hard_imagination_boundaries and self.model.state_only:
                 valid = valid & ~task.terminated
         final_obs = self.observation(b, s, previous, phase, poses)
@@ -1866,6 +1905,14 @@ class Trainer:
                 ]
         return {
             **({"event_trace": torch.stack(trace_rows)} if trace_rows else {}),
+            **(
+                {
+                    "physical_states": torch.stack(physical_trace),
+                    "reference_next_phases": torch.stack(reference_trace),
+                }
+                if physical_trace
+                else {}
+            ),
             "predicted_launch_probability": torch.stack(predicted_modes)
             if predicted_modes
             else torch.empty(0, device=self.device),
@@ -1886,6 +1933,7 @@ class Trainer:
             self.cfg.actor_microbatch
             or self.cfg.privileged_critic
             or self.cfg.learned_termination
+            or self.cfg.analytic_soft_termination
         ):
             from .joint import update_actor
 
@@ -2005,7 +2053,9 @@ class Trainer:
     def learning_contract(self):
         result = {
             "critic_input_dim": self.critic_dim,
-            "critic_layout": "reflex_privileged292_v1"
+            "critic_layout": "reflex_privileged305_all_actor_v1"
+            if self.cfg.critic_include_all_actor
+            else "reflex_privileged292_v1"
             if self.cfg.privileged_critic
             else "oracle_policy179_v1",
             "termination_geometry": "anchor_world3+gravity3+tracked_body_error_world3_signed_abs_v1"
@@ -2016,6 +2066,15 @@ class Trainer:
             else None,
         }
 
+        if self.cfg.analytic_soft_termination:
+            result["analytic_soft_termination"] = {
+                "formula": "supermimic_vibed_0525a23_root_z_Rzz_abs_v1",
+                "height_threshold": 0.25,
+                "height_temperature": 0.02,
+                "tilt_threshold": 0.8,
+                "tilt_temperature": 0.04,
+                "reference_clock": "physical_next_phase_clamped_at_reference_end",
+            }
         if self.context_spec is not None:
             result["wm_context"] = self.context_spec.specification()
         if self.cfg.condition_external_events:
@@ -2031,7 +2090,9 @@ class Trainer:
             result["event_supervision"] = self.cfg.event_supervision_protocol
         if self.cfg.pure_soft_survival:
             result["soft_survival"] = (
-                "learned_hazard_expected_original_terminal_cost_v1"
+                "analytic_hazard_expected_original_terminal_cost_v1"
+                if self.cfg.analytic_soft_termination
+                else "learned_hazard_expected_original_terminal_cost_v1"
             )
         if self.cfg.hard_imagination_boundaries:
             result["imagination_boundaries"] = "original_physical_terminal_absorbing_v1"
@@ -2142,8 +2203,19 @@ class Trainer:
         migrate_event_execution=False,
         migrate_update_rate=False,
         migrate_standing_profile=False,
+        migrate_analytic_soft_termination=False,
+        migrate_critic_box_observation=False,
     ):
         state = torch.load(path, map_location=self.device, weights_only=False)
+        if migrate_analytic_soft_termination or migrate_critic_box_observation:
+            from .termination_migration import migrate
+
+            state = migrate(
+                state,
+                self,
+                migrate_analytic_soft_termination,
+                migrate_critic_box_observation,
+            )
         saved_config = dict(state["config"])
         if state.get("version") == 1:
             saved_config.setdefault("wm_kind", "multitask")

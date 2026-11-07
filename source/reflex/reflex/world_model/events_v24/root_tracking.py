@@ -45,7 +45,18 @@ def check(t, output):
             )
             joints.append((physical[:, 7:36] - true[:, 7:36]).square())
             velocities.append((physical[:, 36:39] - true[:, 36:39]).square())
-            probabilities.append(t.termination(feat).sigmoid())
+            if t.cfg.analytic_soft_termination:
+                from ..analytic_termination import probability
+
+                probabilities.append(
+                    probability(
+                        t.task,
+                        physical,
+                        (b["phase"] + 1).clamp_max(len(t.task.ref_q) - 1),
+                    )
+                )
+            else:
+                probabilities.append(t.termination(feat).sigmoid())
             labels.append(seq["terminated"][j].float())
             s = t.model.predict_post(
                 physical, seq["event_targets"][j], seq["event_mask"][j]

@@ -159,9 +159,7 @@ def rank_actions(
                     if trainer.cfg.pure_soft_survival:
                         from .events_v24.soft_survival import expected_terminal_reward
 
-                        probability = trainer.termination(
-                            predicted_task.termination_features
-                        ).sigmoid()
+                        probability = trainer.imagination_termination(ns, predicted_task)
                         reward = expected_terminal_reward(
                             reward,
                             probability,

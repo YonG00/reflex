@@ -100,7 +100,7 @@ def evaluate(trainer, batch=64):
                                 ns[launch, 78:81] - seq["next_state"][j, launch, 78:81]
                             ).square()
                         )
-                    if h == 1 and protocol == "conditioned":
+                    if h == 1 and protocol == "conditioned" and t.termination is not None:
                         features = t.task.predicted_termination_features(
                             b, s, physical, b["phase"]
                         )

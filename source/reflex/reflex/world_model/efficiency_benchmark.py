@@ -22,6 +22,10 @@ def check(
     t, output, repeats=3, deterministic=False, include_cudagraph=False, graph_only=False
 ):
     out = Path(output)
+    if t.termination is None:
+        raise ValueError(
+            "Legacy V27 paired efficiency baseline requires a learned head; use soft_termination_check or actor_timing for analytic mode"
+        )
     if not t.actor_warmup_complete():
         raise ValueError(
             "Use an already trained compatible checkpoint for performance comparison"

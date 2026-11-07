@@ -29,6 +29,8 @@ def seed(value, scheduler):
 
 
 def cpu_state(obj):
+    if obj is None:
+        return None
     return {k: v.detach().cpu().clone() for k, v in obj.state_dict().items()}
 
 
@@ -113,6 +115,8 @@ def run(
                 }
             else:
                 for name, states in templates.items():
+                    if states is None:
+                        continue
                     target = getattr(t, name).state_dict()
                     for k, v in states.items():
                         if k in target and target[k].shape == v.shape:

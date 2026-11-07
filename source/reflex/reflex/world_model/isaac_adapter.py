@@ -613,7 +613,7 @@ class IsaacAdapter:
             result["wm_context"] = self.wm_context_spec.select(result["context"])
         return result
 
-    def parity(self, b, atol=2e-4, critic=False):
+    def parity(self, b, atol=2e-4, critic=False, critic_all_actor=False):
         """Compare pure Torch reconstruction with live manager observations / links."""
         reconstructed = self.bridge(
             b["state"],
@@ -656,6 +656,15 @@ class IsaacAdapter:
             errors["critic_observation_max"] = float(
                 (observed - reconstructed).abs().max()
             )
+            if critic_all_actor:
+                expanded = PrivilegedObservation(
+                    self.bridge, self.command.cfg.body_names, include_all_actor=True
+                ).to(self.device)(
+                    b["state"], b["previous_action"], b["phase"], b["yaw"],
+                    b["launched"], b["dimensions"], b["mass"], b["default_q"], b["default_dq"],
+                )
+                expected = torch.cat((observed, actual[..., 166:]), -1)
+                errors["critic305_observation_max"] = float((expanded - expected).abs().max())
         if max(errors.values()) > atol:
             raise RuntimeError(f"FK / observation parity failed: {errors}")
         return errors

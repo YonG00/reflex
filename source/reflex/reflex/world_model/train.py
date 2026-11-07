@@ -37,6 +37,7 @@ parser.add_argument(
         "efficiency_capacity_check",
         "wm_context_ablation",
         "imagination_batching_check",
+        "soft_termination_check",
     ),
     default="preflight",
 )
@@ -78,6 +79,8 @@ parser.add_argument(
 )
 parser.add_argument("--checkpoint")
 parser.add_argument("--migrate_standing_profile", action="store_true")
+parser.add_argument("--migrate_analytic_soft_termination", action="store_true")
+parser.add_argument("--migrate_critic_box_observation", action="store_true")
 parser.add_argument("--migrate_event_execution", action="store_true")
 parser.add_argument("--migrate_update_rate", action="store_true")
 parser.add_argument("--migrate_soft_survival", action="store_true")
@@ -307,6 +310,8 @@ def main():
                 migrate_event_execution=args.migrate_event_execution,
                 migrate_update_rate=args.migrate_update_rate,
                 migrate_standing_profile=args.migrate_standing_profile,
+                migrate_analytic_soft_termination=args.migrate_analytic_soft_termination,
+                migrate_critic_box_observation=args.migrate_critic_box_observation,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)
@@ -354,8 +359,13 @@ def main():
             json.dumps(manifest, indent=2, ensure_ascii=False)
         )
         b = adapter.snapshot()
-        parity = adapter.parity(b, critic=config.privileged_critic)
+        parity = adapter.parity(b, critic=config.privileged_critic, critic_all_actor=config.critic_include_all_actor)
         (out / "parity.json").write_text(json.dumps(parity, indent=2))
+        if args.mode == "soft_termination_check":
+            from .soft_termination_check import check
+
+            print(json.dumps(check(trainer, out)), flush=True)
+            return
         if args.mode == "imagination_batching_check":
             from .imagination_batching import check
 

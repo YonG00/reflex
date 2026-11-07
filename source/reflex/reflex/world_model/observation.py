@@ -99,14 +99,15 @@ def mul6(a, b):
 
 
 class PrivilegedObservation(nn.Module):
-    """Original Reflex critic: command/anchor, 14 bodies, proprioception, object (292)."""
+    """Legacy292 or explicit305: keep 14 bodies and optionally every Actor column."""
 
-    def __init__(self, bridge, tracked_names):
+    def __init__(self, bridge, tracked_names, include_all_actor=False):
         super().__init__()
         if len(tracked_names) != 14:
             raise ValueError(
                 "292-D critic requires exactly the original 14 tracked bodies"
             )
+        self.include_all_actor = include_all_actor
         self.bridge = bridge
         self.tracked_names = tuple(tracked_names)
 
@@ -137,4 +138,9 @@ class PrivilegedObservation(nn.Module):
             ],
             -2,
         ).flatten(-2)
-        return torch.cat((actor[..., :67], body_p, body_q, actor[..., 67:166]), -1)
+        original = torch.cat((actor[..., :67], body_p, body_q, actor[..., 67:166]), -1)
+        return (
+            torch.cat((original, actor[..., 166:]), -1)
+            if self.include_all_actor
+            else original
+        )
