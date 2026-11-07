@@ -96,6 +96,7 @@ def _check(
             "_v24_heads",
             "_actor_core",
             "_bootstrap_critic_observation",
+            "_observations",
         )
     }
     if graph_trial and (not execution_variants or not str(t.device).startswith("cuda")):
@@ -187,13 +188,15 @@ def _check(
             if graph_trial:
                 variants.append(
                     (
-                        "fused_core_graph_trial",
+                        "segmented_graph_trial"
+                        if graph_all_static
+                        else "fused_core_graph_trial",
                         flags[0],
                         flags[1],
                         True,
                         True,
-                        True,
-                        True,
+                        not graph_all_static,
+                        not graph_all_static,
                         True,
                     )
                 )
@@ -246,6 +249,18 @@ def _check(
                         backend=t.cfg.compile_backend,
                     )
                 if graph and graph_all_static:
+                    t._dynamics = torch.compile(
+                        t.model.predict_physical,
+                        fullgraph=True,
+                        dynamic=False,
+                        mode="reduce-overhead",
+                    )
+                    t._observations = torch.compile(
+                        t.imagined_observations,
+                        fullgraph=True,
+                        dynamic=False,
+                        mode="reduce-overhead",
+                    )
                     t._fk = torch.compile(
                         t.bridge.fk,
                         fullgraph=True,
@@ -350,7 +365,7 @@ def _check(
                     "cold_diagnostic_includes_compile_and_CPU_snapshot_seconds": cold_seconds,
                     "explicit_fk_calls_per_horizon": fk_count[0],
                     "graph_trial": graph,
-                    "graph_scope": "core_fk_heads"
+                    "graph_scope": "original_partitions"
                     if graph and graph_all_static
                     else "core"
                     if graph
