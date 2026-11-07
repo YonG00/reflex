@@ -81,6 +81,7 @@ parser.add_argument("--wm_stable_heading_trial", action="store_true")
 parser.add_argument("--wm_graph_trial", action="store_true")
 parser.add_argument("--actor_amp_features_trial", action="store_true")
 parser.add_argument("--actor_full_subset_trial", action="store_true")
+parser.add_argument("--actor_event_tensor_trial", action="store_true")
 parser.add_argument("--actor_graph_trial", action="store_true")
 parser.add_argument("--actor_graph_all_static", action="store_true")
 parser.add_argument("--actor_graph_only", action="store_true")
@@ -364,6 +365,9 @@ def main():
             manifest["actor_execution_v30"] = {
                 "reuse_post_event_fk": config.reuse_post_event_fk,
                 "compact_event_pool_updates": config.compact_event_pool_updates,
+                "collapse_full_event_subsets": config.collapse_full_event_subsets,
+                "compile_event_tensors": config.compile_event_tensors,
+                "batch_imagination_amp_features": config.batch_imagination_amp_features,
                 "sparse_actor_bootstrap": config.sparse_actor_bootstrap,
                 "fuse_actor_core": config.fuse_actor_core,
                 "actor_core_include_fk": config.actor_core_include_fk
@@ -462,6 +466,7 @@ def main():
                         stable_heading=args.wm_stable_heading_trial,
                         amp_feature_variants=args.actor_amp_features_trial,
                         subset_variants=args.actor_full_subset_trial,
+                        event_tensor_variants=args.actor_event_tensor_trial,
                     )
                 ),
                 flush=True,

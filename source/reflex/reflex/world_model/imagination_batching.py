@@ -26,6 +26,7 @@ def check(
     stable_heading=False,
     amp_feature_variants=False,
     subset_variants=False,
+    event_tensor_variants=False,
 ):
     if stable_heading:
         from .stable_canonical import trial
@@ -41,6 +42,7 @@ def check(
                 graph_only,
                 amp_feature_variants,
                 subset_variants,
+                event_tensor_variants,
             )
     return _check(
         t,
@@ -52,6 +54,7 @@ def check(
         graph_only,
         amp_feature_variants,
         subset_variants,
+        event_tensor_variants,
     )
 
 
@@ -65,6 +68,7 @@ def _check(
     graph_only,
     amp_feature_variants,
     subset_variants,
+    event_tensor_variants,
 ):
     if t.event_scheduler is None:
         raise ValueError("Batching check requires the native event scheduler")
@@ -87,6 +91,7 @@ def _check(
     profile_before = t.profile_next_actor
     feature_flag = t.cfg.batch_imagination_amp_features
     subset_flag = t.cfg.collapse_full_event_subsets
+    tensor_flag = t.cfg.compile_event_tensors
     flags = (
         t.cfg.batch_imagination_amp,
         t.cfg.batch_imagination_critic,
@@ -104,7 +109,15 @@ def _check(
             "_v30_original_invoke",
             "event_asset_factory",
             "robot_pose_write_issued",
+            "tensor_preparer",
         )
+    }
+    codec_attrs = {
+        k: (
+            k in t.event_scheduler.codec.__dict__,
+            t.event_scheduler.codec.__dict__.get(k),
+        )
+        for k in ("decode", "encode", "_v30_original_decode", "_v30_original_encode")
     }
     compiled_handles = {
         k: getattr(t, k)
@@ -250,6 +263,19 @@ def _check(
                             False,
                         )
                     )
+            if event_tensor_variants:
+                if (
+                    not execution_variants
+                    or graph_trial
+                    or subset_variants
+                    or amp_feature_variants
+                ):
+                    raise ValueError(
+                        "Event tensor trial requires its own execution comparison"
+                    )
+                variants = [
+                    (label, *flags, False) for label in ("reference", "event_tensors")
+                ]
             if graph_only:
                 if not graph_trial:
                     raise ValueError("Graph-only comparison requires graph_trial")
@@ -290,6 +316,9 @@ def _check(
                     if subset_variants
                     else subset_flag
                 )
+                t.cfg.compile_event_tensors = (
+                    (label == "event_tensors") if event_tensor_variants else tensor_flag
+                )
                 t.cfg.sparse_actor_bootstrap = sparse
                 t.cfg.fuse_actor_core = fused
                 t.cfg.batch_imagination_amp, t.cfg.batch_imagination_critic = (
@@ -309,6 +338,13 @@ def _check(
                         compact_pool,
                         t.cfg.collapse_full_event_subsets,
                     )
+                from .events_v24.tensors_v30 import configure as configure_tensors
+
+                configure_tensors(
+                    t.event_scheduler,
+                    t.cfg.compile_event_tensors,
+                    t.cfg.compile_backend,
+                )
                 for name, handle in compiled_handles.items():
                     setattr(t, name, handle)
                 if fused:
@@ -451,6 +487,7 @@ def _check(
                     "graph_trial": graph,
                     "batch_amp_features": t.cfg.batch_imagination_amp_features,
                     "collapse_full_event_subsets": t.cfg.collapse_full_event_subsets,
+                    "compile_event_tensors": t.cfg.compile_event_tensors,
                     "graph_scope": "original_partitions"
                     if graph and graph_all_static
                     else "core"
@@ -508,6 +545,7 @@ def _check(
         t.profile_next_actor = profile_before
         t.cfg.batch_imagination_amp_features = feature_flag
         t.cfg.collapse_full_event_subsets = subset_flag
+        t.cfg.compile_event_tensors = tensor_flag
         (
             t.cfg.batch_imagination_amp,
             t.cfg.batch_imagination_critic,
@@ -521,6 +559,11 @@ def _check(
                 setattr(t.event_scheduler, key, value)
             elif key in t.event_scheduler.__dict__:
                 delattr(t.event_scheduler, key)
+        for key, (present, value) in codec_attrs.items():
+            if present:
+                setattr(t.event_scheduler.codec, key, value)
+            elif key in t.event_scheduler.codec.__dict__:
+                delattr(t.event_scheduler.codec, key)
         for key, value in compiled_handles.items():
             setattr(t, key, value)
         t.event_scheduler.rng = rng

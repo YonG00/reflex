@@ -78,6 +78,7 @@ class TrainConfig:
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
     collapse_full_event_subsets: bool = False
+    compile_event_tensors: bool = False
     sparse_actor_bootstrap: bool = False
     fuse_actor_core: bool = False
     actor_core_include_fk: bool = True
@@ -273,6 +274,18 @@ class Trainer:
                 c.compact_event_pool_updates,
                 c.collapse_full_event_subsets,
             )
+        if c.compile_event_tensors:
+            if event_scheduler is None or not (
+                c.minimal_event_view
+                and c.condition_external_events
+                and c.deterministic_event_apply
+            ):
+                raise ValueError(
+                    "Event tensor fusion requires deterministic minimal native events"
+                )
+            from .events_v24.tensors_v30 import configure as configure_tensors
+
+            configure_tensors(event_scheduler, True, c.compile_backend)
         if event_scheduler is not None:
             event_scheduler.compact_inputs = c.compact_event_inputs
         if c.compact_event_inputs and not c.minimal_event_view:
@@ -2539,6 +2552,7 @@ class Trainer:
             "reuse_post_event_fk",
             "compact_event_pool_updates",
             "collapse_full_event_subsets",
+            "compile_event_tensors",
             "sparse_actor_bootstrap",
             "fuse_actor_core",
             "actor_core_include_fk",
