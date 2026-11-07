@@ -1,5 +1,17 @@
 # 待补改动
 
+> 当前V30实现与GPU实测见 [V30结果](world_model/V30_GPU_RESULTS_20261107_ZH.md)。下方2026-11-05内容是当时的历史状态，不代表当前仍未做GPU验证。
+
+## V30执行效率（2026-11-07）
+
+- 已验证：FK复用、计时器池精简、全量事件子集消除恒等索引、AMP特征批处理；Actor同组耗时降低约25%。
+- 推荐配置：`configs/world_model/joint_execution_v30_verified_actor_trial.json`。不改H32、batch、奖励、AMP、事件或软存活规则。
+- 不启用：事件张量融合正确但慢约21%；大图融合部分数值失败；稀疏bootstrap没有明确收益，均默认关闭。
+- WM精确零列和H8 Graph约0.25秒/10次更新仅为显式基准，正式编码迁移与连续联跑仍待完成。
+- 尚未达成：整轮1秒、长期训练效果验证；本轮未启动正式训练。
+- 回滚：继续V29配置即可；旧checkpoint未覆盖，新增执行开关默认关闭。
+- 验证入口：`tests/test_actor_execution_v30.py`、`tests/test_amp_feature_batching.py`、`tests/test_event_tensor_fusion.py`、`tests/test_stable_canonical_trial.py`及GPU报告原始JSON。
+
 ## Stage 1 联合世界模型（2026-11-05，等待 GPU 验证）
 
 依据用户 V2 方案实现独立 WM/想象 Actor/Critic/真实 AMP 闭环与匹配 Oracle PPO。设计选择、启动命令与限制见 [实施说明](world_model/IMPLEMENTATION_ZH.md)。CPU 合成闭环通过不代表真实 Isaac 训练跑通；未启动 GPU 任务。
