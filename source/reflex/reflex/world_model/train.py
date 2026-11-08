@@ -38,6 +38,9 @@ parser.add_argument(
         "wm_context_ablation",
         "imagination_batching_check",
         "actor_execution_v30_check",
+        "actor_full_v31_profile",
+        "actor_v31_diagnostics",
+        "actor_minimal_v31_export",
         "wm_rollout_v30_check",
         "soft_termination_check",
     ),
@@ -128,6 +131,8 @@ parser.add_argument(
 parser.add_argument("--save_every", type=int, default=25)
 parser.add_argument("--preflight_steps", type=int, default=512)
 parser.add_argument("--benchmark_steps", type=int, default=24)
+parser.add_argument("--diagnostic_repeats", type=int, default=20)
+parser.add_argument("--diagnostic_warmups", type=int, default=2)
 parser.add_argument(
     "--benchmark_no_checkpoint",
     action="store_true",
@@ -158,6 +163,15 @@ if args.wm_stable_heading_trial and args.mode not in (
     parser.error(
         "Stable heading trial is benchmark-only; no implicit checkpoint migration"
     )
+if args.mode in (
+    "actor_full_v31_profile",
+    "actor_minimal_v31_export",
+    "actor_v31_diagnostics",
+):
+    if not args.checkpoint:
+        parser.error("Actor diagnostics require an explicit trained checkpoint")
+    if not (1 <= args.diagnostic_repeats <= 100 and 1 <= args.diagnostic_warmups <= 10):
+        parser.error("Use 1..100 diagnostic repeats and 1..10 warmups")
 minimum_envs = 1 if args.mode == "play" else 6
 if args.num_envs < minimum_envs or args.save_every < 1:
     parser.error(f"Use at least {minimum_envs} envs for this mode and save_every >= 1")
@@ -428,6 +442,37 @@ def main():
             from .soft_termination_check import check
 
             print(json.dumps(check(trainer, out)), flush=True)
+            return
+        if args.mode in (
+            "actor_full_v31_profile",
+            "actor_minimal_v31_export",
+            "actor_v31_diagnostics",
+        ):
+            for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
+                trainer.collect(adapter)
+            if args.mode in ("actor_full_v31_profile", "actor_v31_diagnostics"):
+                from .diagnostics_v31.full import check
+
+                report = check(
+                    trainer,
+                    out,
+                    repeats=args.diagnostic_repeats,
+                    warmups=args.diagnostic_warmups,
+                )
+            else:
+                from .diagnostics_v31.minimal import export
+
+                report = export(trainer, out / "minimal_capsule.pt")
+            if args.mode == "actor_v31_diagnostics":
+                from .diagnostics_v31.minimal import export
+
+                capsule = export(trainer, out / "minimal_capsule.pt")
+                if capsule["full_start_sha256"] != report["sample_sha256"]:
+                    raise RuntimeError(
+                        "Full and minimal diagnostics sampled different starts"
+                    )
+                report["capsule"] = capsule
+            print(json.dumps(report), flush=True)
             return
         if args.mode == "wm_rollout_v30_check":
             from .wm_rollout_benchmark import check

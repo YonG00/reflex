@@ -1,0 +1,10 @@
+........................................................................ [ 41%]
+........................................................................ [ 83%]
+.............................                                            [100%]
+=============================== warnings summary ===============================
+tests/test_wm_compute_acceleration.py::test_actor_export_remains_original_sequential
+  /tmp/reflex-wm-venv/lib/python3.12/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+173 passed, 1 warning in 548.51s (0:09:08)

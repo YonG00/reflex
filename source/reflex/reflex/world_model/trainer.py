@@ -15,6 +15,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from .diagnostics_v31.regions import region
 from .models import (
     CompactContextWorldModel,
     ConditionedWorldModel,
@@ -2043,44 +2044,51 @@ class Trainer:
                 if self.cfg.condition_external_events:
                     from .events_v24.writes import WritePlan
 
-                    active = valid & ~task.truncated
-                    if not self.cfg.pure_soft_survival:
-                        active = active & ~task.terminated
-                    ids = active.nonzero().flatten()
-                    plan = WritePlan(physical)
-                    next_event, next_pool = event_state, event_pool
-                    if self.cfg.reuse_post_event_fk:
-                        self.event_scheduler.robot_pose_write_issued = False
+                    with region(self, "event_active_selection"):
+                        active = valid & ~task.truncated
+                        if not self.cfg.pure_soft_survival:
+                            active = active & ~task.terminated
+                        ids = active.nonzero().flatten()
+                        plan = WritePlan(physical)
+                        next_event, next_pool = event_state, event_pool
+                        if self.cfg.reuse_post_event_fk:
+                            self.event_scheduler.robot_pose_write_issued = False
                     if len(ids):
-                        event_b = {
-                            **b,
-                            "phase": task.phase,
-                            "task_history": task.history,
-                        }
-                        event_b = {
-                            k: (
-                                v[ids]
-                                if torch.is_tensor(v) and v.ndim and len(v) == len(s)
-                                else v
+                        with region(self, "event_input_gathers"):
+                            event_b = {
+                                **b,
+                                "phase": task.phase,
+                                "task_history": task.history,
+                            }
+                            event_b = {
+                                k: (
+                                    v[ids]
+                                    if torch.is_tensor(v)
+                                    and v.ndim
+                                    and len(v) == len(s)
+                                    else v
+                                )
+                                for k, v in event_b.items()
+                            }
+                            pp = tuple(
+                                {k: v[ids] for k, v in group.items()}
+                                for group in physical_poses
                             )
-                            for k, v in event_b.items()
-                        }
-                        pp = tuple(
-                            {k: v[ids] for k, v in group.items()}
-                            for group in physical_poses
-                        )
-                        child, ce, cp = self.event_scheduler.step(
-                            event_b,
-                            physical[ids],
-                            pp,
-                            event_state[ids],
-                            event_pool[ids],
-                            task.episode_steps[ids],
-                            common[ids] + 1,
-                        )
-                        plan.merge(ids, child)
-                        next_event = event_state.index_copy(0, ids, ce)
-                        next_pool = event_pool.index_copy(0, ids, cp)
+                            event_inputs = (
+                                event_b,
+                                physical[ids],
+                                pp,
+                                event_state[ids],
+                                event_pool[ids],
+                                task.episode_steps[ids],
+                                common[ids] + 1,
+                            )
+                        child, ce, cp = self.event_scheduler.step(*event_inputs)
+                        del event_inputs
+                        with region(self, "event_write_merge"):
+                            plan.merge(ids, child)
+                            next_event = event_state.index_copy(0, ids, ce)
+                            next_pool = event_pool.index_copy(0, ids, cp)
                     ns = self._post(physical, plan.targets, plan.mask)
                     if trace:
                         trace_rows.append(
@@ -2102,24 +2110,33 @@ class Trainer:
                         and not self.event_scheduler.robot_pose_write_issued
                         else self._fk(ns)
                     )
-                    event_state = torch.where(valid[:, None], next_event, event_state)
-                    event_pool = torch.where(
-                        valid[:, None, None], next_pool, event_pool
-                    )
-                    b = {**b, "launched": self.event_scheduler.codec.mode(event_state)}
-                    history_values, _ = self.event_scheduler.codec.decode(event_state)
-                    task.history = task.history.clone()
-                    from .task import HISTORY_FIELDS
+                    with region(self, "event_controller_carry"):
+                        event_state = torch.where(
+                            valid[:, None], next_event, event_state
+                        )
+                        event_pool = torch.where(
+                            valid[:, None, None], next_pool, event_pool
+                        )
+                        b = {
+                            **b,
+                            "launched": self.event_scheduler.codec.mode(event_state),
+                        }
+                        history_values, _ = self.event_scheduler.codec.decode(
+                            event_state
+                        )
+                        task.history = task.history.clone()
+                        from .task import HISTORY_FIELDS
 
-                    for key in ("_box_regrace", "_v38_cradle_ticks"):
-                        task.history[:, HISTORY_FIELDS.index(key)] = history_values[
-                            key
-                        ].float()
-                    common = torch.where(valid, common + 1, common)
-                hist = torch.where(valid[:, None], task.history, hist)
-                episode = torch.where(valid, task.episode_steps, episode)
-                event = torch.where(valid, task.event_seconds, event)
-                next_phase = task.phase
+                        for key in ("_box_regrace", "_v38_cradle_ticks"):
+                            task.history[:, HISTORY_FIELDS.index(key)] = history_values[
+                                key
+                            ].float()
+                        common = torch.where(valid, common + 1, common)
+                with region(self, "task_history_carry"):
+                    hist = torch.where(valid[:, None], task.history, hist)
+                    episode = torch.where(valid, task.episode_steps, episode)
+                    event = torch.where(valid, task.event_seconds, event)
+                    next_phase = task.phase
             else:
                 ns, m, r, d = self.model(
                     s, target, b["context"], m, phase, blend, raw_obs, raw
@@ -2151,37 +2168,39 @@ class Trainer:
             terms.append(r)
             validity.append(valid)
             truncations.append(trunc)
-            if self.model.state_only:
-                poses = tuple(
-                    {k: torch.where(valid[:, None], pred[k], old[k]) for k in old}
-                    for old, pred in zip(poses, next_poses)
-                )
-            else:
-                poses = self._fk(torch.where(valid[:, None], ns, s))
-            s = torch.where(valid[:, None], ns, s)
-            if (
-                self.cfg.learn_external_events
-                and not self.cfg.condition_external_events
-            ):
-                mode = torch.where(valid, mode_logits.sigmoid(), mode)
-                predicted_modes.append(mode)
-                b = {**b, "launched": mode.detach() > 0.5}
-            if self.cfg.condition_external_events:
-                predicted_modes.append(
-                    self.event_scheduler.codec.mode(event_state).float()
-                )
-            previous = torch.where(valid[:, None], raw, previous)
-            phase = torch.where(valid, next_phase, phase)
-            valid = valid & ~trunc
-            if not self.cfg.analytic_soft_termination:
-                valid = valid & ~(d.detach() >= 1)
-            if self.cfg.hard_imagination_boundaries and self.model.state_only:
-                valid = valid & ~task.terminated
-        final_obs = self.observation(b, s, previous, phase, poses)
-        observations.append(self.obs_norm(final_obs))
-        critic_observations.append(
-            self.critic_observation(b, s, previous, phase, poses, final_obs)
-        )
+            with region(self, "pose_state_carry"):
+                if self.model.state_only:
+                    poses = tuple(
+                        {k: torch.where(valid[:, None], pred[k], old[k]) for k in old}
+                        for old, pred in zip(poses, next_poses)
+                    )
+                else:
+                    poses = self._fk(torch.where(valid[:, None], ns, s))
+                s = torch.where(valid[:, None], ns, s)
+                if (
+                    self.cfg.learn_external_events
+                    and not self.cfg.condition_external_events
+                ):
+                    mode = torch.where(valid, mode_logits.sigmoid(), mode)
+                    predicted_modes.append(mode)
+                    b = {**b, "launched": mode.detach() > 0.5}
+                if self.cfg.condition_external_events:
+                    predicted_modes.append(
+                        self.event_scheduler.codec.mode(event_state).float()
+                    )
+                previous = torch.where(valid[:, None], raw, previous)
+                phase = torch.where(valid, next_phase, phase)
+                valid = valid & ~trunc
+                if not self.cfg.analytic_soft_termination:
+                    valid = valid & ~(d.detach() >= 1)
+                if self.cfg.hard_imagination_boundaries and self.model.state_only:
+                    valid = valid & ~task.terminated
+        with region(self, "final_observation"):
+            final_obs = self.observation(b, s, previous, phase, poses)
+            observations.append(self.obs_norm(final_obs))
+            critic_observations.append(
+                self.critic_observation(b, s, previous, phase, poses, final_obs)
+            )
         if self.cfg.batch_imagination_amp:
             with torch.profiler.record_function("imagine/batched_AMP"):
                 if self.cfg.batch_imagination_amp_features:
