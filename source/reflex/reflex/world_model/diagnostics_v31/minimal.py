@@ -373,8 +373,17 @@ def check(
             terminal = (
                 (states[-1] - step.state_vector(step.initial()[0])).square().mean()
             )
-            physical_vjp = torch.autograd.grad(terminal, first, allow_unused=True)[0]
-            vjp_norm = float(physical_vjp.norm()) if physical_vjp is not None else 0.0
+            # A compiled step returns state and action as sibling outputs: a VJP
+            # to that returned action misses the same-step WM dependency. Probe
+            # the terminal physical loss against leaf Actor parameters instead.
+            physical_grads = torch.autograd.grad(
+                terminal, tuple(step.actor.parameters())
+            )
+            physical_gradient = torch.cat(
+                [v.detach().flatten() for v in physical_grads]
+            )
+            vjp_norm = float(physical_gradient.norm())
+            actual["terminal_physical_actor_gradient"] = physical_gradient.cpu()
             if reference is None:
                 reference = actual
             numeric = compare(reference, actual)
@@ -385,7 +394,7 @@ def check(
                 "wall_seconds": distribution(
                     [r["complete_seconds"] for r in rows[warmups:]]
                 ),
-                "state_loss_to_first_action_vjp_norm": vjp_norm,
+                "terminal_physical_actor_gradient_norm": vjp_norm,
                 "physical_bptt_nonzero": vjp_norm > 0,
                 "actor_parameter_count": sum(
                     p.numel() for p in step.actor.parameters()
@@ -407,7 +416,8 @@ def check(
                 states,
                 actions,
                 first,
-                physical_vjp,
+                physical_grads,
+                physical_gradient,
                 call,
                 step,
                 opt,

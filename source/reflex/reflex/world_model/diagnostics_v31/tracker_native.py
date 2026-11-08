@@ -92,16 +92,22 @@ def factory_from_repo(repo, device, batch, seed=31001):
             return wm(state, raw, self.data["xi"]), raw, history
 
     source = Path(inspect.getsourcefile(networks.WorldModel))
-    revision = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    revision_error = None
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except subprocess.CalledProcessError as exc:
+        revision = None
+        revision_error = exc.stderr.strip()
     return TrackerStep, {
         "kind": "tracker_native_minimal",
         "repo": str(repo),
         "revision": revision,
+        "revision_unavailable_reason": revision_error,
         "network_source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "seed": seed,
         "note": "Native Policy/WorldModel.step, synthetic inputs and diagnostic objective, no simulation/FK/reward/events; zero heads explicitly perturbed to test physical BPTT",

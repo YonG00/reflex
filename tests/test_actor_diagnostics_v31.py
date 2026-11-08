@@ -223,6 +223,43 @@ def test_timeline_union_does_not_sum_overlapping_streams():
     result = activity_timeline([root, a, b])
     assert result["device_activity_union_us"] == 9
     assert result["unobserved_device_gap_us"] == 1
+    annotation = event("v31/complete_update")
+    annotation.device_type = "CUDA"
+    annotation.time_range = NS(start=0, end=10)
+    annotation.is_user_annotation = True
+    assert activity_timeline([root, a, b, annotation]) == result
+    from reflex.world_model.diagnostics_v31.trace_analysis import analyze
+
+    trace = [
+        {
+            "ph": "X",
+            "cat": "user_annotation",
+            "name": "v31/complete_update",
+            "ts": 0,
+            "dur": 10,
+        },
+        {
+            "ph": "X",
+            "cat": "gpu_user_annotation",
+            "name": "v31/complete_update",
+            "ts": 0,
+            "dur": 10,
+        },
+        {"ph": "X", "cat": "kernel", "name": "a", "ts": 0, "dur": 5},
+        {"ph": "X", "cat": "kernel", "name": "b", "ts": 3, "dur": 6},
+        {
+            "ph": "X",
+            "cat": "gpu_memcpy",
+            "name": "DtoH",
+            "ts": 2,
+            "dur": 1,
+            "args": {"bytes": 4},
+        },
+    ]
+    summary = analyze(trace)
+    assert summary["device_activity_union_us"] == 9
+    assert summary["kernel_count"] == 2
+    assert summary["memcpy_bytes"] == {"DtoH": 4}
 
 
 def test_native_adapter_interface_with_fixture_checkout(tmp_path, monkeypatch):
@@ -301,3 +338,11 @@ class Policy(nn.Module):
     )
     assert report["completed"] and report["numeric_passed"]
     assert all(v["physical_bptt_nonzero"] for v in report["drivers"].values())
+
+    def no_git(*args, **kwargs):
+        raise subprocess.CalledProcessError(128, args[0], stderr="not a git repository")
+
+    monkeypatch.setattr(subprocess, "run", no_git)
+    _, no_git_metadata = factory_from_repo(repo, "cpu", 2)
+    assert no_git_metadata["revision"] is None
+    assert no_git_metadata["revision_unavailable_reason"] == "not a git repository"

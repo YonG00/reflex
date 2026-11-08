@@ -48,8 +48,11 @@ def activity_timeline(events):
     begin, end = root.time_range.start, root.time_range.end
     intervals = []
     for e in events:
-        if str(e.device_type).split(".")[-1] == "CUDA" and getattr(
-            e, "time_range", None
+        if (
+            str(e.device_type).split(".")[-1] == "CUDA"
+            and getattr(e, "time_range", None)
+            and not getattr(e, "is_user_annotation", False)
+            and not e.name.startswith(PREFIX)
         ):
             a, b = max(begin, e.time_range.start), min(end, e.time_range.end)
             if b > a:
