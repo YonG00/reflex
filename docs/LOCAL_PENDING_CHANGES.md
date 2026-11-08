@@ -1,13 +1,14 @@
 # 待补改动
 
-## V31 Actor H32 诊断（2026-11-08，GPU 待测）
+## V31 Actor H32 诊断（2026-11-08，GPU 已测、新融合未验收）
 
 - 目的：直接 profile 当前完整 Actor，并以同权重/起点的最小 Actor＋Physical WM H32 对照判断基础计算与任务附加开销；不先入为主认定事件是主因。
 - 入口：`scripts/diagnose_actor_v31.sh`；设计、输出解释和局限见 [V31说明](world_model/V31_ACTOR_DIAGNOSTICS_ZH.md)。独立 `experiment/v31-actor-diagnostics` 分支。
 - 不变量：真实 sampler、事件、奖励、AMP、软存活、H32/BPTT、Actor/Critic 更新规则保持；记录范围默认关闭，不覆盖 checkpoint 或已有输出。
 - 出错症状：记录后轨迹/梯度/Adam 不一致、起点 SHA 改变、捕获中重编译、反向归属出现错误百分比；报告显式保留失败与无法匹配部分。
 - 快速回滚：继续 V30 原训练入口，不使用 V31 三个诊断 mode；独立目录保留诊断记录。
-- 验证入口：`tests/test_actor_diagnostics_v31.py`（7项 CPU 通过）；完整回归173项通过、1条已有弃用警告、548.51秒，原始日志见 `docs/world_model/benchmarks_v31_cpu/`。GPU 测试与第三方真实 checkout 集成待开卡，不宣称新的提速收益。
+- 验证入口：`tests/test_actor_diagnostics_v31.py`（7项 CPU 通过）；完整回归173项通过、1条已有弃用警告、548.51秒，原始日志见 `docs/world_model/benchmarks_v31_cpu/`。GPU完整Actor＋Critic中位1.754秒，记录前后轨迹/梯度/Adam差0；实际第三方原生最小链路0.162秒且数值通过。Reflex最小编译链路约0.077秒但状态和Adam超差，未合入训练。瓶颈证据与原始数据见 [V31 GPU报告](world_model/V31_GPU_RESULTS_20261108_ZH.md)。
+- 新发现：97,596个kernel、96.9%≤5µs；758次nonzero、689次item、1608次stream同步。下一步优先事件外层gather及packed pose carry，不能跳过事件或切断梯度。本次未训练，未达到整轮1秒。
 
 > 当前V30实现与GPU实测见 [V30结果](world_model/V30_GPU_RESULTS_20261107_ZH.md)。下方2026-11-05内容是当时的历史状态，不代表当前仍未做GPU验证。
 

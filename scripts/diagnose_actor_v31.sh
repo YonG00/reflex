@@ -46,6 +46,9 @@ timeout --signal=TERM --kill-after=30 "$limit" bash "$ROOT/scripts/train_stage1_
   --checkpoint "$checkpoint" --reinitialize_replay \
   --diagnostic_repeats "$repeats" --diagnostic_warmups 2 \
   --output "$output/full" --no_debug_vis > "$output/full.log" 2>&1
+"$ISAACLAB_PY" -m reflex.world_model.diagnostics_v31.trace_analysis \
+  "$output/full/actor_full_trace.json" "$output/full/actor_full_trace_summary.json" \
+  > "$output/trace_summary.log"
 "$ISAACLAB_PY" - "$output/full/actor_full_v31.json" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))

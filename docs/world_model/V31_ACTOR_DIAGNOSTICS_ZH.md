@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-本分支基于 main `735e702`，只增加诊断入口与可开关的记录范围，不改变训练算法，不启动长训练。GPU 诊断尚未执行。V30 的旧 trace 早于最终 AMP 特征批处理和全量事件子集优化，不能用来解释当前约 1.8 秒 Actor 的各项占比。
+本分支基于 main `735e702`，只增加诊断入口与可开关的记录范围，不改变训练算法，不启动长训练。GPU 诊断已完成，详见 [2026-11-08结果](V31_GPU_RESULTS_20261108_ZH.md)：完整链路通过记录一致性检查，第三方原生最小链路通过，Reflex新编译边界仍有数值超差。V30 的旧 trace 早于最终 AMP 特征批处理和全量事件子集优化，不能用来解释当前约 1.8 秒 Actor 的各项占比。
 
 已有数据只用于提出问题：V30 同组 Actor 2.5077→1.8709 秒；WM 约 0.25 秒是独立显式 Graph 基准。第三方约 0.29 秒 Actor/Critic 的任务、输入与奖励不同。不能把这些不同实验相减后，把差值全部归因于事件或 FK，也不能据此宣称完整一轮已低于 1 秒。
 
@@ -32,11 +32,11 @@
 | segmented | 仅 Physical WM 单步编译 |
 | single_step | Actor→目标→Physical WM→诊断观测投影一起单步编译 |
 
-H32 外层保留 Python 递推，不编译 H32 大图。所有组使用同一初始权重、输入、随机状态、诊断损失和初始化的 Adam。WM 参数冻结，但不使用 `no_grad`，检查最终物理状态对第一步动作的 VJP 非零；比较轨迹、动作、损失、梯度和实际 Adam 参数更新，不放宽 `torch.testing.assert_close` 默认容差。
+H32 外层保留 Python 递推，不编译 H32 大图。所有组使用同一初始权重、输入、随机状态、诊断损失和初始化的 Adam。WM 参数冻结，但不使用 `no_grad`，检查最终物理状态损失对 Actor 叶参数的梯度非零，并逐元素比较该梯度；比较轨迹、动作、损失、梯度和实际 Adam 参数更新，不放宽 `torch.testing.assert_close` 默认容差。不能直接对编译函数返回的第一步动作求 VJP 来衡量完整物理梯度：动作和物理状态在编译边界处是并列输出，该方法会遗漏同一步 WM 的依赖；初版该诊断字段已被替换，不涉及训练梯度改动。
 
 这是独立计算对照：用固定可微投影代替任务观测更新，固定 context/事件特征，没有任务 FK、奖励、AMP、调度和真实仿真。诊断损失为状态偏移平方均值加小幅动作项，不代表 Reflex 训练目标。不能把它的速度当完整 Actor 的速度，不能用于判断站立/接箱效果。
 
-`tracker_native.py` 可读取用户已有 TrackerLab checkout 的原生 `Policy` 和 `WorldModel.step`，用同一计时框架、FP32/TF32 off、batch 2048/H32 做独立对照。输入与权重为确定性合成；为避免零输出 WM 初始化让物理梯度为零，明确给全零 Linear 输出头添加 std=0.001 扰动，并在报告中标识。它不是训练复现，也不是同一模型的因果消融：网络尺寸、历史观测和状态结构仍不同。实际第三方 checkout 导入及 GPU 兼容性等待服务器测试，当前仅通过接口 fixture 测试。
+`tracker_native.py` 可读取用户已有 TrackerLab 代码的原生 `Policy` 和 `WorldModel.step`，用同一计时框架、FP32/TF32 off、batch 2048/H32 做独立对照。输入与权重为确定性合成；为避免零输出 WM 初始化让物理梯度为零，明确给全零 Linear 输出头添加 std=0.001 扰动，并在报告中标识。它不是训练复现，也不是同一模型的因果消融：网络尺寸、历史观测和状态结构仍不同。服务器提供的目录没有 `.git`，因此修正为记录 `revision=null`、缺失原因与实际网络源码 SHA，而非伪造 commit。GPU 实际结果另见本轮结果报告。
 
 ## GPU 使用
 
@@ -58,6 +58,7 @@ bash scripts/diagnose_actor_v31.sh \
 
 - `full/actor_full_v31.json`：稳态统计、正确性校验、采样 SHA、覆盖次数、编译计数、算子表及反向归属。
 - `full/actor_full_trace.json`：Chrome/Perfetto trace。
+- `full/actor_full_trace_summary.json`：仅按 trace 中 kernel/memcpy/memset 类别计算的活动并集、短 kernel、同步及传输统计；排除 `gpu_user_annotation`。首轮旧报告中的 timeline 含 GPU 用户范围，应以此独立重算结果为准。
 - `full/minimal_capsule.pt`：可移植 Reflex 最小计算输入与权重。
 - `reflex_minimal/minimal_actor_v31.json`：三种编译边界的前向、BPTT、裁剪/Adam、完整更新耗时及数值检查。
 - 可选 `tracker_minimal/minimal_actor_v31.json`：第三方原生最小链路，不能当第三方完整训练基准。
