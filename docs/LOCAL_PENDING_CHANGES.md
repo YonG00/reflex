@@ -110,3 +110,18 @@ CPU 回归测试通过：保存/恢复后的下一次判别器更新，loss、�
 - 回滚：保留旧 checkpoint，撤销 AMP 保存/恢复扩展；必须恢复为明确警告的非完整 AMP resume。
 
 完整 replay 在填满后约 126.6 MiB，因此新 checkpoint 比原先约 7 MB 的 PPO 存档明显增大。已验证范围为单 GPU；本次未验证多 GPU 各 rank 私有缓存和随机数的逐 rank 恢复。
+
+
+## 2026-11-08 V36完整Actor融合收益归因（离线研究）
+
+- 改动：显式允许在融合core外作完整Profiler归因；跳过融合内部actor.forward和targets的替换；V36_PROFILE可选配对采集。默认训练路径不启用。
+- 本意：区分最小链eager收益与生产分段编译后的剩余收益，测清前向/BPTT及外围开销，不以猜测继续融合。
+- 不变量：真实事件、随机数、H32、网络、奖励、AMP、梯度链与正式训练配置不改；保留严格误差失败。
+- 风险症状：打点导致新增编译、样本SHA不一致、轨迹/梯度/Adam更新改变，或异常后core/flag未恢复。CPU测试覆盖这些恢复和自等价条件；GPU未测。
+- 回滚：关闭V36_PROFILE；原完整Profiler默认仍拒绝融合，不影响已有分段入口。
+- 验证入口：tests/test_diagnostic_preparation_v36.py新增fused_profiler、optional_profiles、profile_failure；tests/test_actor_diagnostics_v31.py原完整Profiler回归。结果与GPU准备说明见V36_FUSION_BENEFIT_AUDIT_ZH.md。
+
+
+### V36完整Profiler GPU验收（2026-11-08）
+
+r9退出0，两组打点自等价、实际更新与捕获期间无新增编译检查通过；5组配对中位1.57766→1.56907s。融合对分段严格轨迹检查仍失败，未进入正式训练。原始trace已本地备份。GPU研究入口已验证，优化收益和训练等价性未通过；详细报告V36_FULL_PROFILER_RESULTS_20261108_ZH.md。

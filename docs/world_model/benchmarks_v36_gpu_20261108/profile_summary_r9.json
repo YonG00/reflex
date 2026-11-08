@@ -1,0 +1,688 @@
+{
+  "archive": "/Users/mac/Documents/skills/\u8d44\u6599/2026-11-08_200143_Reflex_V36\u5b8c\u6574Profiler\u5bf9\u7167/full_profiles_r9_results.tar.gz",
+  "archive_sha256": "c03c763f5fee0dea473367abf50431fc3789fe5f3904ea36c93bd4b5ac35b8cb",
+  "paired_seconds": {
+    "reference": {
+      "median": 1.5776597689837217,
+      "p90": 1.7827109429053962,
+      "min": 1.5663138129748404,
+      "max": 1.7827109429053962
+    },
+    "fused_no_fk": {
+      "median": 1.5690747308544815,
+      "p90": 2.3965056841261685,
+      "min": 1.5553483827970922,
+      "max": 2.3965056841261685
+    }
+  },
+  "paired_numeric_passed": false,
+  "profile_inputs_match": true,
+  "profiles": {
+    "reference": {
+      "numeric_passed": true,
+      "scope_semantics_passed": true,
+      "capture_compile_delta": {
+        "unique_graphs": 0,
+        "frames": 0,
+        "graph_breaks": 0
+      },
+      "sample_sha256": "eb7a406b5e58f997c8cc86c3b9a245de04c3258c0a70cf78e32cbbe6260737a8",
+      "attribution": {
+        "groups": {
+          "complete_update": {
+            "cpu_self_us": 1370986.448000001,
+            "kernel_work_us": 4199.11000000186,
+            "direct_kernel_count": 798,
+            "cpu_operator_count": 3373
+          },
+          "replay/sample": {
+            "cpu_self_us": 10878.926000000001,
+            "kernel_work_us": 450.1740000000027,
+            "direct_kernel_count": 138,
+            "cpu_operator_count": 893
+          },
+          "fk": {
+            "cpu_self_us": 195591.5729999995,
+            "kernel_work_us": 5058.094999996189,
+            "direct_kernel_count": 4022,
+            "cpu_operator_count": 8313
+          },
+          "observation": {
+            "cpu_self_us": 87869.64800000045,
+            "kernel_work_us": 2270.744999999297,
+            "direct_kernel_count": 1607,
+            "cpu_operator_count": 4209
+          },
+          "actor_mlp": {
+            "cpu_self_us": 11202.456000000158,
+            "kernel_work_us": 2700.0710000014333,
+            "direct_kernel_count": 224,
+            "cpu_operator_count": 1184
+          },
+          "action_targets": {
+            "cpu_self_us": 19997.413999999142,
+            "kernel_work_us": 1241.485000002438,
+            "direct_kernel_count": 736,
+            "cpu_operator_count": 2176
+          },
+          "wm_event_features": {
+            "cpu_self_us": 9413.948000000262,
+            "kernel_work_us": 471.9040000005516,
+            "direct_kernel_count": 192,
+            "cpu_operator_count": 1664
+          },
+          "physical_wm": {
+            "cpu_self_us": 83225.95000000043,
+            "kernel_work_us": 31902.40000000024,
+            "direct_kernel_count": 1774,
+            "cpu_operator_count": 3836
+          },
+          "reward_termination_packed": {
+            "cpu_self_us": 225092.4899999997,
+            "kernel_work_us": 7248.154000000322,
+            "direct_kernel_count": 4502,
+            "cpu_operator_count": 9326
+          },
+          "event_active_selection": {
+            "cpu_self_us": 9914.069000000098,
+            "kernel_work_us": 334.5850000006685,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 1216
+          },
+          "event_input_gathers": {
+            "cpu_self_us": 9051.616000000402,
+            "kernel_work_us": 2843.4019999977027,
+            "direct_kernel_count": 320,
+            "cpu_operator_count": 1536
+          },
+          "native_events": {
+            "cpu_self_us": 636257.6200000002,
+            "kernel_work_us": 38778.68499998598,
+            "direct_kernel_count": 22068,
+            "cpu_operator_count": 108255
+          },
+          "event_decode": {
+            "cpu_self_us": 68488.53099999939,
+            "kernel_work_us": 2988.0450000034907,
+            "direct_kernel_count": 1792,
+            "cpu_operator_count": 17344
+          },
+          "event_encode": {
+            "cpu_self_us": 13713.147000000361,
+            "kernel_work_us": 821.1829999993788,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 2912
+          },
+          "event_write_merge": {
+            "cpu_self_us": 5896.524999999878,
+            "kernel_work_us": 3878.5210000005172,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 800
+          },
+          "deterministic_apply": {
+            "cpu_self_us": 10060.091999999946,
+            "kernel_work_us": 107.58599999957369,
+            "direct_kernel_count": 32,
+            "cpu_operator_count": 192
+          },
+          "event_controller_carry": {
+            "cpu_self_us": 14892.239000000205,
+            "kernel_work_us": 3231.1890000034473,
+            "direct_kernel_count": 320,
+            "cpu_operator_count": 1984
+          },
+          "task_history_carry": {
+            "cpu_self_us": 3319.7620000002353,
+            "kernel_work_us": 159.10700000032375,
+            "direct_kernel_count": 96,
+            "cpu_operator_count": 544
+          },
+          "pose_state_carry": {
+            "cpu_self_us": 28074.872999999847,
+            "kernel_work_us": 2226.365999999398,
+            "direct_kernel_count": 416,
+            "cpu_operator_count": 7680
+          },
+          "final_observation": {
+            "cpu_self_us": 24434.654000000097,
+            "kernel_work_us": 1501.9909999952652,
+            "direct_kernel_count": 1096,
+            "cpu_operator_count": 3771
+          },
+          "amp_features_batched": {
+            "cpu_self_us": 3264.499000000069,
+            "kernel_work_us": 581.6049999999814,
+            "direct_kernel_count": 122,
+            "cpu_operator_count": 524
+          },
+          "amp_reward": {
+            "cpu_self_us": 362.8300000000745,
+            "kernel_work_us": 282.24200000055134,
+            "direct_kernel_count": 10,
+            "cpu_operator_count": 30
+          },
+          "amp_discriminator": {
+            "cpu_self_us": 352.4769999999553,
+            "kernel_work_us": 1303.1439999996219,
+            "direct_kernel_count": 6,
+            "cpu_operator_count": 32
+          },
+          "actor/critic_forward": {
+            "cpu_self_us": 427.125,
+            "kernel_work_us": 1831.530999999959,
+            "direct_kernel_count": 8,
+            "cpu_operator_count": 40
+          },
+          "actor_return": {
+            "cpu_self_us": 6791.524000000209,
+            "kernel_work_us": 585.4210000012536,
+            "direct_kernel_count": 357,
+            "cpu_operator_count": 1078
+          },
+          "backward/complete_update": {
+            "cpu_self_us": 86325.35500000278,
+            "kernel_work_us": 8851.867999987677,
+            "direct_kernel_count": 5396,
+            "cpu_operator_count": 22709
+          },
+          "backward/actor_return": {
+            "cpu_self_us": 10591.975000001956,
+            "kernel_work_us": 918.5810000027996,
+            "direct_kernel_count": 703,
+            "cpu_operator_count": 2826
+          },
+          "backward/actor/critic_forward": {
+            "cpu_self_us": 305.29299999959767,
+            "kernel_work_us": 1795.212999999756,
+            "direct_kernel_count": 7,
+            "cpu_operator_count": 42
+          },
+          "backward/amp_reward": {
+            "cpu_self_us": 424.53400000045076,
+            "kernel_work_us": 240.93200000049546,
+            "direct_kernel_count": 16,
+            "cpu_operator_count": 77
+          },
+          "backward/amp_discriminator": {
+            "cpu_self_us": 195.58200000040233,
+            "kernel_work_us": 1451.430999999633,
+            "direct_kernel_count": 5,
+            "cpu_operator_count": 32
+          },
+          "backward/amp_features_batched": {
+            "cpu_self_us": 7191.985999997472,
+            "kernel_work_us": 2831.504000001354,
+            "direct_kernel_count": 329,
+            "cpu_operator_count": 2182
+          },
+          "backward/final_observation": {
+            "cpu_self_us": 34393.997999998974,
+            "kernel_work_us": 3040.350000005681,
+            "direct_kernel_count": 2293,
+            "cpu_operator_count": 9313
+          },
+          "backward/unmatched_or_shared": {
+            "cpu_self_us": 182898.8790000023,
+            "kernel_work_us": 34734.29900000431,
+            "direct_kernel_count": 5222,
+            "cpu_operator_count": 16303
+          },
+          "backward/pose_state_carry": {
+            "cpu_self_us": 36881.38600000134,
+            "kernel_work_us": 1710.7319999970496,
+            "direct_kernel_count": 775,
+            "cpu_operator_count": 11542
+          },
+          "backward/native_events": {
+            "cpu_self_us": 311738.7529999993,
+            "kernel_work_us": 26468.24999999185,
+            "direct_kernel_count": 17268,
+            "cpu_operator_count": 89662
+          },
+          "backward/event_decode": {
+            "cpu_self_us": 32362.77500001155,
+            "kernel_work_us": 2131.787000000477,
+            "direct_kernel_count": 1876,
+            "cpu_operator_count": 12184
+          },
+          "backward/event_input_gathers": {
+            "cpu_self_us": 4337.613999999594,
+            "kernel_work_us": 473.2799999965355,
+            "direct_kernel_count": 247,
+            "cpu_operator_count": 1052
+          },
+          "backward/reward_termination_packed": {
+            "cpu_self_us": 271055.6190000016,
+            "kernel_work_us": 11423.710000011371,
+            "direct_kernel_count": 7316,
+            "cpu_operator_count": 14792
+          },
+          "backward/fk": {
+            "cpu_self_us": 163319.43299999926,
+            "kernel_work_us": 6811.803999996977,
+            "direct_kernel_count": 4474,
+            "cpu_operator_count": 10151
+          },
+          "backward/wm_event_features": {
+            "cpu_self_us": 12766.54999999865,
+            "kernel_work_us": 648.2990000017453,
+            "direct_kernel_count": 527,
+            "cpu_operator_count": 3410
+          },
+          "backward/action_targets": {
+            "cpu_self_us": 16524.839000004344,
+            "kernel_work_us": 1494.3499999986961,
+            "direct_kernel_count": 768,
+            "cpu_operator_count": 2848
+          },
+          "backward/actor_mlp": {
+            "cpu_self_us": 19341.416000000434,
+            "kernel_work_us": 4982.266999999061,
+            "direct_kernel_count": 950,
+            "cpu_operator_count": 4227
+          },
+          "backward/event_controller_carry": {
+            "cpu_self_us": 2822.1890000007115,
+            "kernel_work_us": 165.79199999780394,
+            "direct_kernel_count": 122,
+            "cpu_operator_count": 672
+          },
+          "backward/event_write_merge": {
+            "cpu_self_us": 3995.7619999984745,
+            "kernel_work_us": 219.9399999997113,
+            "direct_kernel_count": 121,
+            "cpu_operator_count": 609
+          },
+          "backward/event_encode": {
+            "cpu_self_us": 6849.9259999974165,
+            "kernel_work_us": 0.0,
+            "direct_kernel_count": 0,
+            "cpu_operator_count": 3339
+          },
+          "unattributed": {
+            "cpu_self_us": 1073.6440000012517,
+            "kernel_work_us": 0.0,
+            "direct_kernel_count": 0,
+            "cpu_operator_count": 673
+          },
+          "critic_targets": {
+            "cpu_self_us": 9250.577999999747,
+            "kernel_work_us": 291.3530000029132,
+            "direct_kernel_count": 257,
+            "cpu_operator_count": 1065
+          },
+          "actor/gradient_clip": {
+            "cpu_self_us": 1854.0830000001006,
+            "kernel_work_us": 51.83999999985099,
+            "direct_kernel_count": 17,
+            "cpu_operator_count": 93
+          },
+          "actor_adam": {
+            "cpu_self_us": 1205.7009999998845,
+            "kernel_work_us": 95.42100000055507,
+            "direct_kernel_count": 24,
+            "cpu_operator_count": 139
+          },
+          "critic/critic_forward": {
+            "cpu_self_us": 7274.412000000011,
+            "kernel_work_us": 9959.900999997277,
+            "direct_kernel_count": 160,
+            "cpu_operator_count": 800
+          },
+          "backward/critic/critic_forward": {
+            "cpu_self_us": 8057.747000000905,
+            "kernel_work_us": 15792.992999995593,
+            "direct_kernel_count": 420,
+            "cpu_operator_count": 2080
+          },
+          "critic/gradient_clip": {
+            "cpu_self_us": 13008.720999999903,
+            "kernel_work_us": 695.3049999931827,
+            "direct_kernel_count": 300,
+            "cpu_operator_count": 1440
+          },
+          "critic_adam": {
+            "cpu_self_us": 15237.39699999895,
+            "kernel_work_us": 2220.903999986127,
+            "direct_kernel_count": 480,
+            "cpu_operator_count": 2780
+          }
+        },
+        "device_timeline": {
+          "root_span_us": 2897391.328,
+          "device_activity_union_us": 256428.990999957,
+          "unobserved_device_gap_us": 2640962.337000043,
+          "device_activity_count": 91436,
+          "note": "Union across captured CUDA activities includes transfers; not SM utilization. Gaps require CPU/runtime correlation and graph-tracing coverage checks."
+        },
+        "notes": [
+          "CPU self sums across threads are not elapsed wall time.",
+          "GPU kernel duration sums are work, not exclusive critical-path time; streams may overlap.",
+          "Backward attribution uses sequence_nr plus fwd_thread; unmatched/shared work stays separate.",
+          "Chrome trace remains authoritative for GPU gaps, runtime synchronization and memcpy direction."
+        ]
+      }
+    },
+    "fused": {
+      "numeric_passed": true,
+      "scope_semantics_passed": true,
+      "capture_compile_delta": {
+        "unique_graphs": 0,
+        "frames": 0,
+        "graph_breaks": 0
+      },
+      "sample_sha256": "eb7a406b5e58f997c8cc86c3b9a245de04c3258c0a70cf78e32cbbe6260737a8",
+      "attribution": {
+        "groups": {
+          "complete_update": {
+            "cpu_self_us": 1300045.5250000022,
+            "kernel_work_us": 3979.847000006189,
+            "direct_kernel_count": 702,
+            "cpu_operator_count": 3117
+          },
+          "replay/sample": {
+            "cpu_self_us": 3749.642,
+            "kernel_work_us": 429.5989999999997,
+            "direct_kernel_count": 130,
+            "cpu_operator_count": 893
+          },
+          "fk": {
+            "cpu_self_us": 192769.79599999962,
+            "kernel_work_us": 5059.044000003592,
+            "direct_kernel_count": 4021,
+            "cpu_operator_count": 8311
+          },
+          "wm_event_features": {
+            "cpu_self_us": 8424.438000000018,
+            "kernel_work_us": 437.18899999919995,
+            "direct_kernel_count": 192,
+            "cpu_operator_count": 1664
+          },
+          "actor_physical_core": {
+            "cpu_self_us": 184468.66699999967,
+            "kernel_work_us": 37430.68999999575,
+            "direct_kernel_count": 3801,
+            "cpu_operator_count": 9012
+          },
+          "reward_termination_packed": {
+            "cpu_self_us": 221647.80399999928,
+            "kernel_work_us": 7257.044000007045,
+            "direct_kernel_count": 4504,
+            "cpu_operator_count": 9328
+          },
+          "event_active_selection": {
+            "cpu_self_us": 8336.861000000179,
+            "kernel_work_us": 332.31799999949,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 1216
+          },
+          "event_input_gathers": {
+            "cpu_self_us": 9063.47499999989,
+            "kernel_work_us": 2849.9959999989987,
+            "direct_kernel_count": 320,
+            "cpu_operator_count": 1536
+          },
+          "native_events": {
+            "cpu_self_us": 641126.9919999996,
+            "kernel_work_us": 38730.36800000747,
+            "direct_kernel_count": 22033,
+            "cpu_operator_count": 108255
+          },
+          "event_decode": {
+            "cpu_self_us": 69463.3909999998,
+            "kernel_work_us": 2988.7180000002554,
+            "direct_kernel_count": 1792,
+            "cpu_operator_count": 17344
+          },
+          "event_encode": {
+            "cpu_self_us": 13850.560000000303,
+            "kernel_work_us": 822.1089999979085,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 2912
+          },
+          "event_write_merge": {
+            "cpu_self_us": 5581.043000000565,
+            "kernel_work_us": 3901.0189999992144,
+            "direct_kernel_count": 256,
+            "cpu_operator_count": 800
+          },
+          "deterministic_apply": {
+            "cpu_self_us": 9553.342000000142,
+            "kernel_work_us": 106.19900000045163,
+            "direct_kernel_count": 32,
+            "cpu_operator_count": 192
+          },
+          "event_controller_carry": {
+            "cpu_self_us": 15185.662999999913,
+            "kernel_work_us": 3221.6979999999894,
+            "direct_kernel_count": 320,
+            "cpu_operator_count": 1984
+          },
+          "task_history_carry": {
+            "cpu_self_us": 3430.6859999997832,
+            "kernel_work_us": 159.71800000054645,
+            "direct_kernel_count": 96,
+            "cpu_operator_count": 544
+          },
+          "pose_state_carry": {
+            "cpu_self_us": 28039.974999999933,
+            "kernel_work_us": 2226.935000000565,
+            "direct_kernel_count": 416,
+            "cpu_operator_count": 7680
+          },
+          "final_observation": {
+            "cpu_self_us": 22872.67000000016,
+            "kernel_work_us": 1500.7159999995492,
+            "direct_kernel_count": 1096,
+            "cpu_operator_count": 3771
+          },
+          "amp_features_batched": {
+            "cpu_self_us": 3297.8829999999143,
+            "kernel_work_us": 583.4580000001006,
+            "direct_kernel_count": 122,
+            "cpu_operator_count": 524
+          },
+          "amp_reward": {
+            "cpu_self_us": 319.8800000001211,
+            "kernel_work_us": 287.2639999999665,
+            "direct_kernel_count": 10,
+            "cpu_operator_count": 30
+          },
+          "amp_discriminator": {
+            "cpu_self_us": 335.55099999997765,
+            "kernel_work_us": 1304.757000000216,
+            "direct_kernel_count": 6,
+            "cpu_operator_count": 32
+          },
+          "actor/critic_forward": {
+            "cpu_self_us": 426.0360000000801,
+            "kernel_work_us": 1853.7889999996405,
+            "direct_kernel_count": 8,
+            "cpu_operator_count": 40
+          },
+          "actor_return": {
+            "cpu_self_us": 6616.048000000184,
+            "kernel_work_us": 584.9359999990556,
+            "direct_kernel_count": 357,
+            "cpu_operator_count": 1078
+          },
+          "backward/complete_update": {
+            "cpu_self_us": 80638.73800000548,
+            "kernel_work_us": 8376.224000018323,
+            "direct_kernel_count": 5210,
+            "cpu_operator_count": 21996
+          },
+          "backward/actor_return": {
+            "cpu_self_us": 10075.099999996834,
+            "kernel_work_us": 916.9640000034124,
+            "direct_kernel_count": 703,
+            "cpu_operator_count": 2826
+          },
+          "backward/actor/critic_forward": {
+            "cpu_self_us": 253.50800000014715,
+            "kernel_work_us": 1794.87099999981,
+            "direct_kernel_count": 7,
+            "cpu_operator_count": 42
+          },
+          "backward/amp_reward": {
+            "cpu_self_us": 416.36599999968894,
+            "kernel_work_us": 241.55700000049546,
+            "direct_kernel_count": 16,
+            "cpu_operator_count": 77
+          },
+          "backward/amp_discriminator": {
+            "cpu_self_us": 171.20200000028126,
+            "kernel_work_us": 1415.0749999999534,
+            "direct_kernel_count": 5,
+            "cpu_operator_count": 32
+          },
+          "backward/amp_features_batched": {
+            "cpu_self_us": 6324.861999998568,
+            "kernel_work_us": 2847.8689999987837,
+            "direct_kernel_count": 329,
+            "cpu_operator_count": 2182
+          },
+          "backward/final_observation": {
+            "cpu_self_us": 31974.52499999595,
+            "kernel_work_us": 3041.150999999605,
+            "direct_kernel_count": 2293,
+            "cpu_operator_count": 9313
+          },
+          "backward/unmatched_or_shared": {
+            "cpu_self_us": 33598.081000003265,
+            "kernel_work_us": 2917.7689999989234,
+            "direct_kernel_count": 1288,
+            "cpu_operator_count": 8310
+          },
+          "backward/pose_state_carry": {
+            "cpu_self_us": 29911.816000000108,
+            "kernel_work_us": 1723.4800000011455,
+            "direct_kernel_count": 775,
+            "cpu_operator_count": 11542
+          },
+          "backward/native_events": {
+            "cpu_self_us": 305319.2910000107,
+            "kernel_work_us": 26466.03499998804,
+            "direct_kernel_count": 17267,
+            "cpu_operator_count": 89661
+          },
+          "backward/event_decode": {
+            "cpu_self_us": 31895.628000000026,
+            "kernel_work_us": 2133.1390000041574,
+            "direct_kernel_count": 1876,
+            "cpu_operator_count": 12184
+          },
+          "backward/event_input_gathers": {
+            "cpu_self_us": 4177.673000001116,
+            "kernel_work_us": 473.4099999994505,
+            "direct_kernel_count": 247,
+            "cpu_operator_count": 1052
+          },
+          "backward/reward_termination_packed": {
+            "cpu_self_us": 271749.52799999854,
+            "kernel_work_us": 11411.481999989832,
+            "direct_kernel_count": 7316,
+            "cpu_operator_count": 14792
+          },
+          "backward/fk": {
+            "cpu_self_us": 155599.73900000076,
+            "kernel_work_us": 6810.962000001455,
+            "direct_kernel_count": 4475,
+            "cpu_operator_count": 10152
+          },
+          "backward/actor_physical_core": {
+            "cpu_self_us": 158816.36399999866,
+            "kernel_work_us": 36791.16299999575,
+            "direct_kernel_count": 5138,
+            "cpu_operator_count": 10679
+          },
+          "backward/wm_event_features": {
+            "cpu_self_us": 13528.799000005238,
+            "kernel_work_us": 652.2069999992382,
+            "direct_kernel_count": 527,
+            "cpu_operator_count": 3410
+          },
+          "backward/event_controller_carry": {
+            "cpu_self_us": 2288.58499999973,
+            "kernel_work_us": 160.79300000076182,
+            "direct_kernel_count": 122,
+            "cpu_operator_count": 672
+          },
+          "backward/event_write_merge": {
+            "cpu_self_us": 3552.827999999514,
+            "kernel_work_us": 219.00299999839626,
+            "direct_kernel_count": 121,
+            "cpu_operator_count": 609
+          },
+          "backward/event_encode": {
+            "cpu_self_us": 6894.302000000374,
+            "kernel_work_us": 0.0,
+            "direct_kernel_count": 0,
+            "cpu_operator_count": 3339
+          },
+          "unattributed": {
+            "cpu_self_us": 982.5710000009276,
+            "kernel_work_us": 0.0,
+            "direct_kernel_count": 0,
+            "cpu_operator_count": 673
+          },
+          "critic_targets": {
+            "cpu_self_us": 10285.632999999914,
+            "kernel_work_us": 290.82000000588596,
+            "direct_kernel_count": 257,
+            "cpu_operator_count": 1065
+          },
+          "actor/gradient_clip": {
+            "cpu_self_us": 1995.4750000000931,
+            "kernel_work_us": 52.20100000081584,
+            "direct_kernel_count": 17,
+            "cpu_operator_count": 93
+          },
+          "actor_adam": {
+            "cpu_self_us": 923.8900000001304,
+            "kernel_work_us": 95.05900000082329,
+            "direct_kernel_count": 24,
+            "cpu_operator_count": 139
+          },
+          "critic/critic_forward": {
+            "cpu_self_us": 7163.017000000458,
+            "kernel_work_us": 9971.352000001818,
+            "direct_kernel_count": 160,
+            "cpu_operator_count": 800
+          },
+          "backward/critic/critic_forward": {
+            "cpu_self_us": 7975.041000000667,
+            "kernel_work_us": 15785.547999998089,
+            "direct_kernel_count": 420,
+            "cpu_operator_count": 2080
+          },
+          "critic/gradient_clip": {
+            "cpu_self_us": 13042.026999997906,
+            "kernel_work_us": 692.9999999930151,
+            "direct_kernel_count": 300,
+            "cpu_operator_count": 1440
+          },
+          "critic_adam": {
+            "cpu_self_us": 15246.630000000354,
+            "kernel_work_us": 2220.3179999971762,
+            "direct_kernel_count": 480,
+            "cpu_operator_count": 2780
+          }
+        },
+        "device_timeline": {
+          "root_span_us": 2797149.8400000003,
+          "device_activity_union_us": 253532.3560000104,
+          "unobserved_device_gap_us": 2543617.48399999,
+          "device_activity_count": 90091,
+          "note": "Union across captured CUDA activities includes transfers; not SM utilization. Gaps require CPU/runtime correlation and graph-tracing coverage checks."
+        },
+        "notes": [
+          "CPU self sums across threads are not elapsed wall time.",
+          "GPU kernel duration sums are work, not exclusive critical-path time; streams may overlap.",
+          "Backward attribution uses sequence_nr plus fwd_thread; unmatched/shared work stays separate.",
+          "Chrome trace remains authoritative for GPU gaps, runtime synchronization and memcpy direction."
+        ]
+      }
+    }
+  }
+}

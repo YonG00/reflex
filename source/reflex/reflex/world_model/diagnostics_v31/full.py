@@ -28,10 +28,12 @@ def distribution(values):
 
 
 @contextmanager
-def scopes(t):
+def scopes(t, *, allow_actor_core=False):
     """Only eager call boundaries; never patch inside compiled model/FK code."""
+    fused = t._actor_core is not None
     if (
-        t.cfg.fuse_actor_core
+        (t.cfg.fuse_actor_core or fused)
+        and not allow_actor_core
         or (t.cfg.compile_v24_step and t.cfg.v24_fusion_scope == "full")
         or t.cfg.compile_step
     ):
@@ -103,7 +105,15 @@ def scopes(t):
             (torch.nn.utils, "clip_grad_norm_", "gradient_clip"),
             (torch.nn.utils, "clip_grad_value_", "gradient_clip"),
         ):
+            # Never replace functions captured INSIDE a compiled Actor core.
+            if fused and (
+                (owner is t.actor and name == "forward")
+                or (owner is t and name == "targets")
+            ):
+                continue
             wrap(owner, name, label)
+        if fused:
+            wrap(t, "_actor_core", "actor_physical_core")
         if not t.cfg.compile_v24_step:
             wrap(t.task, "evaluate_step", "reward_termination_eager")
         yield
@@ -136,14 +146,17 @@ def compare(a, b):
     return {"passed": not failures, "max_abs": errors, "failures": failures}
 
 
-def semantic_probe(t, snapshot, extra_scopes=None):
+def semantic_probe(t, snapshot, extra_scopes=None, *, allow_actor_core=False):
     outputs = []
     coverage = {}
     for instrumented in (False, True):
         snapshot.reset()
         with freeze(t.model, t.termination, t.prior._disc, t.critic):
             if instrumented:
-                with scopes(t), extra_scopes(t) if extra_scopes else nullcontext():
+                with (
+                    scopes(t, allow_actor_core=allow_actor_core),
+                    extra_scopes(t) if extra_scopes else nullcontext(),
+                ):
                     batch = t.sample(starts=True, n=t.cfg.actor_batch or t.cfg.batch)
                     result = t.imagine(batch, trace=True)
             else:
@@ -213,6 +226,7 @@ def check(
     semantic=True,
     extra_scopes=None,
     extra_summary=None,
+    allow_actor_core=False,
 ):
     if repeats < 1 or warmups < 1:
         raise ValueError("Positive repeat and warmup counts are required")
@@ -282,7 +296,7 @@ def check(
         result["warmup_seconds"] = cold
         if semantic:
             result["scope_semantics"], result["coverage"] = semantic_probe(
-                t, snapshot, extra_scopes
+                t, snapshot, extra_scopes, allow_actor_core=allow_actor_core
             )
             if not result["scope_semantics"]["passed"]:
                 raise RuntimeError("Instrumentation changes trajectories or gradients")
@@ -318,7 +332,10 @@ def check(
         )
         snapshot.reset()
         scope_counts_before = compile_counts()
-        with scopes(t), extra_scopes(t) if extra_scopes else nullcontext():
+        with (
+            scopes(t, allow_actor_core=allow_actor_core),
+            extra_scopes(t) if extra_scopes else nullcontext(),
+        ):
             # Establish identical wrapper guards outside profiler, discard update.
             t.update_actor()
             observed.clear()

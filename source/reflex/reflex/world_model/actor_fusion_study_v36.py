@@ -7,6 +7,7 @@ import torch
 
 from .actor_execution_v32_check import check as paired_check
 from .diagnostic_watch_v35 import atomic_json, cold_watch
+from .diagnostics_v31.full import check as profile_check
 
 
 def check(t, output, repeats=20, warmups=2):
@@ -45,11 +46,11 @@ def check(t, output, repeats=20, warmups=2):
             label,
             progress,
             Path(output) / "cold_stacks.log",
-            int(os.environ.get("V36_STACK_SECONDS", "60")),
+            int(os.environ.get("V36_STACK_SECONDS", "0")),
         )
 
     try:
-        return paired_check(
+        result = paired_check(
             t,
             output,
             repeats,
@@ -60,5 +61,46 @@ def check(t, output, repeats=20, warmups=2):
             cold_context=watch,
             report_name=path.name,
         )
+        # Explicit research mode only. Full scopes annotate OUTSIDE the warmed
+        # core; internal Actor/target functions must retain their identities.
+        if os.environ.get("V36_PROFILE") == "1":
+            flags = t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk
+            profiles = {}
+            try:
+                for name in ("reference", "fused_no_fk"):
+                    t.cfg.fuse_actor_core = name != "reference"
+                    t.cfg.actor_core_include_fk = (
+                        include_fk if name == "reference" else False
+                    )
+                    apply(name)
+                    profiles[name] = profile_check(
+                        t,
+                        Path(output) / ("profile_" + name),
+                        repeats=repeats,
+                        warmups=1,
+                        allow_actor_core=True,
+                    )
+                result["profiles"] = {
+                    name: {
+                        "completed": report["completed"],
+                        "numeric_passed": report["numeric_passed"],
+                        "capture_excludes_compilation": report[
+                            "capture_excludes_compilation"
+                        ],
+                        "sample_sha256": report["sample_sha256"],
+                    }
+                    for name, report in profiles.items()
+                }
+                result["profile_inputs_match"] = (
+                    len(
+                        {p["sample_sha256"] for p in profiles.values()}
+                        | {result["sample_sha256"]}
+                    )
+                    == 1
+                )
+                atomic_json(path, result)
+            finally:
+                t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk = flags
+        return result
     finally:
         t._actor_core = original

@@ -17,6 +17,12 @@ mkdir -p "$output"
 output=$(cd "$output" && pwd)
 source "$ROOT/scripts/local/env.sh"
 export PYTHONPATH="$ROOT/source/reflex:$ROOT/source/whole_body_tracking${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONFAULTHANDLER=1
+# Optional diagnostic only: compare compiler worker count without changing math.
+if [[ -n ${V36_COMPILE_THREADS:-} ]]; then
+  [[ $V36_COMPILE_THREADS =~ ^[1-9][0-9]*$ ]] || exit 2
+  export TORCHINDUCTOR_COMPILE_THREADS=$V36_COMPILE_THREADS
+fi
 export TRITON_DEFAULT_FP_FUSION=1
 # An explicitly separate FMA=1 cache; never use V35's FMA=0 cache.
 export TORCHINDUCTOR_CACHE_DIR=${V36_INDUCTOR_CACHE:-/tmp/reflex_v36_fma1_inductor}

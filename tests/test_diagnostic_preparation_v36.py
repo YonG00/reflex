@@ -221,3 +221,93 @@ def test_supervisor_external_termination_cleans_child(tmp_path):
     saved = beat.read_text()
     time.sleep(0.15)
     assert beat.read_text() == saved
+
+
+def test_fused_profiler_preserves_inner_callables_and_restores_scopes(tmp_path):
+    from reflex.world_model.diagnostics_v31.full import check as profile_check
+    from reflex.world_model.diagnostics_v31.full import scopes
+    from test_analytic_soft_termination import new_trainer
+
+    source = fixture(tmp_path)
+    t = new_trainer(
+        source,
+        compile_v24_step=True,
+        v24_fusion_scope="packed_heads",
+        compile_backend="aot_eager",
+        fuse_actor_core=True,
+        actor_core_include_fk=False,
+    )
+    t.replay.load_state_dict(source.replay.state_dict())
+    actor_forward, targets, core = t.actor.forward, t.targets, t._actor_core
+    with pytest.raises(ValueError), scopes(t):
+        pass
+    with pytest.raises(RuntimeError, match="injected"), scopes(t, allow_actor_core=True):
+        assert t.actor.forward == actor_forward
+        assert t.targets == targets
+        assert t._actor_core is not core
+        raise RuntimeError("injected")
+    assert t._actor_core is core
+    assert t.actor.forward == actor_forward and t.targets == targets
+    report = profile_check(
+        t, tmp_path / "fused_profile", repeats=1, warmups=1, allow_actor_core=True
+    )
+    assert report["completed"] and report["numeric_passed"]
+    assert report["scope_semantics"]["passed"]
+    assert report["capture_excludes_compilation"], report["capture_compile_delta"]
+    assert report["model_unchanged"] and report["actor_restored"]
+    assert "actor_physical_core" in report["attribution"]["groups"]
+    assert t._actor_core is core
+
+
+def test_fusion_study_optional_profiles_match_inputs_and_restore(tmp_path, monkeypatch):
+    from reflex.world_model.actor_fusion_study_v36 import check as study
+    from test_analytic_soft_termination import new_trainer
+
+    source = fixture(tmp_path)
+    t = new_trainer(
+        source,
+        compile_v24_step=True,
+        v24_fusion_scope="packed_heads",
+        compile_backend="aot_eager",
+    )
+    t.replay.load_state_dict(source.replay.state_dict())
+    flags = t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk
+    actor = {k: v.clone() for k, v in t.actor.state_dict().items()}
+    monkeypatch.setenv("V36_PROFILE", "1")
+    report = study(t, tmp_path / "profiles", repeats=1, warmups=1)
+    assert report["completed"] and report["profile_inputs_match"]
+    for value in report["profiles"].values():
+        assert value["completed"] and value["numeric_passed"]
+        assert value["capture_excludes_compilation"]
+    assert flags == (t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk)
+    assert t._actor_core is None
+    assert_tree_equal(t.actor.state_dict(), actor)
+
+
+def test_profile_failure_restores_candidate_flags_and_handle(tmp_path, monkeypatch):
+    from reflex.world_model import actor_fusion_study_v36 as study
+    from test_analytic_soft_termination import new_trainer
+
+    source = fixture(tmp_path)
+    t = new_trainer(
+        source,
+        compile_v24_step=True,
+        v24_fusion_scope="packed_heads",
+        compile_backend="aot_eager",
+    )
+    flags = t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk
+    monkeypatch.setenv("V36_PROFILE", "1")
+    monkeypatch.setattr(study, "paired_check", lambda *a, **k: {})
+
+    def profile(trainer, *args, **kwargs):
+        if trainer.cfg.fuse_actor_core:
+            assert trainer._actor_core is not None
+            assert not trainer.cfg.actor_core_include_fk
+            raise RuntimeError("profile failed")
+        return {}
+
+    monkeypatch.setattr(study, "profile_check", profile)
+    with pytest.raises(RuntimeError, match="profile failed"):
+        study.check(t, tmp_path / "failed_profile", repeats=1, warmups=1)
+    assert flags == (t.cfg.fuse_actor_core, t.cfg.actor_core_include_fk)
+    assert t._actor_core is None
