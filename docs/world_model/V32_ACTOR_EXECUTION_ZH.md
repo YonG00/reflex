@@ -1,10 +1,10 @@
-# V32：精简 Actor 事件输入与 pose carry（本地准备）
+# V32：精简 Actor 事件输入与 pose carry
 
 ## 状态与范围
 
 基于 `cba5b2e` 的独立分支 `experiment/v32-actor-gathers`。按V31实际Profiler优先处理外层事件gather及pose/state carry，不重复修改已经生效的AMP、Critic批处理或FK复用。
 
-本轮用户要求先本地改完、再通知开卡。**未连接服务器，未启动GPU、正式训练或新checkpoint迁移。** 两项为默认关闭的独立执行开关；尚无实测GPU提速结论，也没有启用V31数值未通过的Actor/WM融合。
+本地完整CPU209项通过后，已在用户开卡的RTX4090完成四组GPU配对：组合完整Actor＋Critic中位1.8246→1.6424秒（约−10%），轨迹/梯度/实际更新最大差0。详见 [GPU结果](V32_GPU_RESULTS_20261108_ZH.md)。两个独立开关默认仍关闭，另提供显式 `joint_execution_v32_verified_actor_trial.json`；未启动正式训练或启用V31数值未通过的融合。
 
 ## 1. 事件输入依赖审计与精简
 
@@ -71,7 +71,7 @@ result = dict(zip(old_names, pack.unbind(dim=1)))
 
 首轮34项通过（70.19秒），补充编译/旧存档/失败恢复3项通过（44.26秒，含旧存档重测）。最终新增36项均包含在完整回归 **209 passed、1 warning、649.44秒** 中；警告为原有TorchScript弃用提示。日志见 [CPU记录](benchmarks_v32_cpu/README.md)。CPU测试不能验证CUDA Inductor的数值或实际收益。
 
-## 5. 开卡后的验收
+## 5. GPU验收与复跑
 
 ```bash
 export ISAACLAB_PY=/opt/conda/envs/isaaclab/bin/python
@@ -95,4 +95,4 @@ bash scripts/check_actor_v32.sh \
 
 `completed`、`numeric_passed`、`performance_usable`（稳态区间无重编译）及恢复检查任一失败，脚本非零退出并保留报告；各组独立结果仍可审查。即使全部通过也不自动启用正式训练，需要审查实际收益。若packed carry慢或数值超差，可只保留gather，反之亦然；无收益的开关不进入正式配置。
 
-GPU确认胜出组后，再对该组使用V31完整Profiler核对小kernel/索引/反向计数变化；不预先生成四份巨大trace，不自动扩大H32编译范围，不运行半小时训练。
+本轮已仅对胜出组合补充V31完整Profiler，确认kernel减少16.7%、事件gather和pose反向节点下降。未扩大H32编译范围，未运行半小时训练。配对脚本本身不自动启用正式配置；新增显式试验配置是结果审查后的可选入口。

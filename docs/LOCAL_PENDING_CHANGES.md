@@ -1,13 +1,14 @@
 # 待补改动
 
-## V32 Actor事件gather与pose carry（2026-11-08，本地实现、GPU待测）
+## V32 Actor事件gather与pose carry（2026-11-08，CPU/GPU验收完成）
 
 - 目的：依据V31实际热点，移除事件最小视图不读取的外层Replay/pose索引，将逐body pose mask压为组内操作。不预设GPU收益。
 - 代码与入口：`actor_execution_v32.py`、`actor_execution_v32_check.py`、Trainer两个默认false开关；`scripts/check_actor_v32.sh`。详见 [V32说明](world_model/V32_ACTOR_EXECUTION_ZH.md)。
 - 不变量：Actor2048/H32、WM3×2048/H8、网络/奖励/AMP/软存活、实际回调、完整来源环境时钟池、随机顺序、外部写入梯度和reset边界保持；未修改原生事件文件。
 - 出错症状：自定义视图丢字段、来源agent错位、截断后pose未冻结、发射对机器人位置梯度断开、Adam超差或新stride导致稳态重编译/变慢。
-- 快速回滚：两个开关关闭即原路径；不提供默认开启的训练配置、不覆盖旧模型或结果。
-- 验证入口：`tests/test_actor_execution_v32.py`新增36项；完整CPU回归209 passed、1条已有弃用警告、649.44秒，日志见 `docs/world_model/benchmarks_v32_cpu/`。GPU需用户再次开卡后才运行，不能声称已提速。
+- 快速回滚：两个开关关闭即原路径；默认配置不变，新增显式 `joint_execution_v32_verified_actor_trial.json`，不覆盖旧模型或结果。
+- 验证入口：`tests/test_actor_execution_v32.py`新增36项；完整CPU回归209 passed、1条已有弃用警告、649.44秒。GPU四组20轮：组合完整Actor＋Critic中位1.8246→1.6424秒（−9.99%），全部输出/原始梯度/实际更新最大差0，稳态无重编译。Profiler kernel97,596→81,310。详见 [V32 GPU结果](world_model/V32_GPU_RESULTS_20261108_ZH.md)。
+- 仍待解决：原生事件及1608次同步未减少，整轮1秒未达成，未启动正式训练。
 
 ## V31 Actor H32 诊断（2026-11-08，GPU 已测、新融合未验收）
 
