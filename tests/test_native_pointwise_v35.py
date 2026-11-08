@@ -47,3 +47,24 @@ def test_native_norm_clamp_boundaries_and_gradient(compiled):
 def test_trainable_statistics_are_rejected():
     with pytest.raises(ValueError, match="fixed statistics"):
         norm_native(torch.zeros(2), torch.zeros(2, requires_grad=True), torch.ones(2))
+
+
+def test_real_replay_h8_and_full_actor_check_restores_state(tmp_path):
+    from reflex.world_model.diagnostics_v31.state import digest
+    from reflex.world_model.physical_full_v35 import check
+    from test_actor_diagnostics_v31 import fixture
+
+    t = fixture(tmp_path)
+    t.cfg.model_window = 8
+    t.cfg.compile_backend = "aot_eager"
+    model = digest(t.model.state_dict())
+    actor = digest(t.actor.state_dict())
+    rng = torch.get_rng_state().clone()
+    result = check(t, tmp_path / "full", repeats=1, warmups=1)
+    assert result["completed"] and result["candidate_numeric_passed"], result
+    assert (
+        digest(t.model.state_dict()) == model and digest(t.actor.state_dict()) == actor
+    )
+    torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)
+    assert not hasattr(t.model, "_orig_mod")
+    assert "predict_physical" not in t.model.__dict__
