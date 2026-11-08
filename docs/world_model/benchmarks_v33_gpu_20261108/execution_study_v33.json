@@ -1,0 +1,39 @@
+{
+  "completed": true,
+  "numeric_passed": true,
+  "attribution_usable": true,
+  "checkpoint_saved": false,
+  "timings_usable": true,
+  "source_sha256": {
+    "execution_study_v33.py": "ac8b35a4117ee8d7ce6a7327878561e0a587a39447a423b3759955f35214472a",
+    "execution_phases.py": "4d67397129d3b3e206da68b6fdf7d3acd8c3ad737401f8c3a1009c807c5585ce",
+    "events_v24/fast_view.py": "5e5648adb4a09bbd70ad2dbbfac98f177948ff90f6ad48501ac8fcc5b8a1da4c"
+  },
+  "callbacks": [
+    {
+      "term": "push_robot",
+      "function": "isaaclab.envs.mdp.events.push_by_setting_velocity",
+      "first_line": 1024
+    },
+    {
+      "term": "box_hover_launch",
+      "function": "reflex.envs.teacher_terms.v38_walking_hover_and_launch",
+      "first_line": 309
+    },
+    {
+      "term": "hold_init_apply",
+      "function": "reflex.envs.throw.hold_init_apply",
+      "first_line": 1765
+    },
+    {
+      "term": "first_throw_realign",
+      "function": "reflex.envs.throw.first_throw_realign",
+      "first_line": 2124
+    },
+    {
+      "term": "v38_cradle_perturb",
+      "function": "reflex.envs.teacher_terms.v38_cradle_perturb",
+      "first_line": 607
+    }
+  ]
+}

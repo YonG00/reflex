@@ -1,3 +1,12 @@
+## V34 事件写回候选与融合误差定位（2026-11-08）
+
+- 改动：默认关闭的连续列WritePlan、子plan单次gather、移除候选无用before装配；可恢复的真实Actor配对验收入口；最小H32相同输入逐步误差探针；显式源码固定的checkpoint迁移。
+- 不变量：原生回调/顺序/RNG/梯度、Actor2048/H32、WM H8及网络、原奖励/软存活均保留。
+- 出错症状：轨迹/计划mask/梯度/Adam不一致；旧checkpoint被静默接受；冷编译或显存抵消收益。
+- 回滚：V32配置，contiguous_event_writes=false；无正式训练，不覆盖旧输出。未知源码变化仍拒绝迁移。
+- 入口：tests/test_actor_execution_v34.py；scripts/study_actor_v34.sh。CPU结果见world_model/benchmarks_v34_cpu；GPU待开卡，不宣称收益。
+- 双线研究和历史4096 batch核对见world_model/V34_EXECUTION_ORGANIZATION_ZH.md。
+
 # 待补改动
 
 ## V33 H32整体执行研究（2026-11-08，测量准备、GPU待测）

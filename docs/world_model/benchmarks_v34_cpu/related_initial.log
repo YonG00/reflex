@@ -1,0 +1,613 @@
+......................................................F................. [ 64%]
+.............................F.........                                  [100%]
+=================================== FAILURES ===================================
+_____________ test_native_adapter_interface_with_fixture_checkout ______________
+
+tmp_path = PosixPath('/private/var/folders/fv/5m6klxbn7nsfkgt85lbwpf6m0000gn/T/pytest-of-mac/pytest-244/test_native_adapter_interface_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3a49115b0>
+
+    def test_native_adapter_interface_with_fixture_checkout(tmp_path, monkeypatch):
+        import importlib
+        import subprocess
+        import sys
+    
+        from reflex.world_model.diagnostics_v31.tracker_native import factory_from_repo
+    
+        repo = tmp_path / "tracker"
+        (repo / "source/trackerLab").mkdir(parents=True)
+        path = repo / "source/trackerLab/networks.py"
+        source = """import torch
+    from torch import nn
+    AMP_DTYPE = torch.bfloat16
+    class WorldModel(nn.Module):
+        def __init__(self, num_joints):
+            super().__init__()
+            self.proj=nn.Linear(num_joints,num_joints)
+            nn.init.zeros_(self.proj.weight)
+            nn.init.zeros_(self.proj.bias)
+        def step(self,S,a,xi):
+            p,R,v,w,q,dq=S
+            return p+.02*v,R,v,w,q+.01*self.proj(a),dq+.01*a
+    class Policy(nn.Module):
+        def __init__(self, obs_dim, goal_dim, hist, num_joints):
+            super().__init__()
+            self.net=nn.Sequential(nn.Linear(obs_dim*hist+goal_dim,8),nn.SiLU(),nn.Linear(8,num_joints))
+        def forward(self,h,g):
+            return self.net(torch.cat((h.flatten(1),g),-1))
+    """
+        path.write_text(source)
+        module_spec = importlib.util.spec_from_file_location("v31_fixture_networks", path)
+        networks = importlib.util.module_from_spec(module_spec)
+        monkeypatch.setitem(sys.modules, networks.__name__, networks)
+        module_spec.loader.exec_module(networks)
+        spec = NS(num_joints=29, goal_frame_dim=6, context_dim=33, default_q=[0.0] * 29)
+        modules = {
+            "trackerLab.algorithms.supermimic.networks": networks,
+            "trackerLab.tracker_env.mdp.supermimic": NS(normalize_xi=lambda x: x),
+            "trackerLab.kinematics.supermimic.rotations": NS(
+                so3_exp=lambda x: torch.eye(3).expand(len(x), -1, -1).clone()
+            ),
+            "trackerTask.supermimic.robots": NS(get_robot=lambda _: spec),
+        }
+        original_import, original_run = importlib.import_module, subprocess.run
+        monkeypatch.setattr(
+            importlib,
+            "import_module",
+            lambda name, *a, **kw: (
+                modules[name] if name in modules else original_import(name, *a, **kw)
+            ),
+        )
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda args, **kw: (
+                NS(stdout="fixture-revision\n")
+                if args[:1] == ["git"]
+                else original_run(args, **kw)
+            ),
+        )
+        monkeypatch.setattr(sys, "path", list(sys.path))
+        monkeypatch.setenv("SUPERMIMIC_REPO_ROOT", str(repo))
+        factory, metadata = factory_from_repo(repo, "cpu", 2)
+        assert factory().perturbed_heads == 1
+>       report = minimal_check(
+            factory,
+            tmp_path / "native",
+            device="cpu",
+            horizon=4,
+            repeats=1,
+            warmups=1,
+            backend="aot_eager",
+            metadata=metadata,
+        )
+
+tests/test_actor_diagnostics_v31.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+source/reflex/reflex/world_model/diagnostics_v31/minimal.py:424: in check
+    "boundary_probe": boundary_probe(step, call, horizon),
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+step = TrackerStep(
+  (model): WorldModel(
+    (proj): Linear(in_features=29, out_features=29, bias=True)
+  )
+  (actor): Poli..., out_features=8, bias=True)
+      (1): SiLU()
+      (2): Linear(in_features=8, out_features=29, bias=True)
+    )
+  )
+)
+candidate_call = TrackerStep(
+  (model): WorldModel(
+    (proj): Linear(in_features=29, out_features=29, bias=True)
+  )
+  (actor): Poli..., out_features=8, bias=True)
+      (1): SiLU()
+      (2): Linear(in_features=8, out_features=29, bias=True)
+    )
+  )
+)
+horizon = 4
+
+    def boundary_probe(step, candidate_call, horizon):
+        """Separate same-input single-step drift from H32 error accumulation.
+    
+        Runs outside performance timing, without FK/event proxies being mistaken
+        for real task coverage. Does not relax comparison tolerances or alter math.
+        """
+        eager = copy.deepcopy(step)
+        eager.wm_call = None
+        state, previous, aux = eager.initial()
+        rows = []
+        for index in range(horizon):
+            expected = eager(state, previous, aux)
+            actual = candidate_call(state, previous, aux)
+            expected_cpu = {
+>               name: value.detach().cpu().clone()
+                      ^^^^^^^^^^^^
+                for name, value in zip(("state", "action", "aux"), expected)
+            }
+E           AttributeError: 'tuple' object has no attribute 'detach'
+
+source/reflex/reflex/world_model/diagnostics_v31/minimal.py:237: AttributeError
+________ test_v24_joint_train_save_load_and_h32_event_progression[True] ________
+
+tmp_path = PosixPath('/private/var/folders/fv/5m6klxbn7nsfkgt85lbwpf6m0000gn/T/pytest-of-mac/pytest-244/test_v24_joint_train_save_load1')
+deterministic = True
+
+    @pytest.mark.parametrize("deterministic", [False, True])
+    def test_v24_joint_train_save_load_and_h32_event_progression(tmp_path, deterministic):
+        import copy
+    
+        from reflex.world_model.diagnostics import gradient_audit
+        from reflex.world_model.trainer import Trainer
+    
+        old, b, runtime, event = setup(tmp_path)
+        old.fit_model()
+        source = tmp_path / "physical.pt"
+        old.save(source)
+        cfg = copy.deepcopy(old.cfg)
+        cfg.learn_external_events = True
+        cfg.condition_external_events = True
+        cfg.deterministic_event_apply = deterministic
+        cfg.minimal_event_view = deterministic
+        cfg.compact_event_inputs = deterministic
+        cfg.joint_predicted_termination = True
+        cfg.variable_model_windows = True
+        cfg.state_loss_reduction = "sum"
+        cfg.horizon = 32
+        cfg.model_window = 8
+        t = Trainer(
+            copy.deepcopy(old.bridge),
+            copy.deepcopy(old.action_map),
+            old.prior,
+            98,
+            6,
+            old.reward_names,
+            old.contract,
+            cfg=cfg,
+            task=copy.deepcopy(old.task),
+            event_scheduler=runtime,
+        )
+        runtime.task = t.task
+        t.warm_start_macro(source)
+        s = b["state"].clone()
+        pools = s.new_empty(len(s), 0, len(s))
+        for j in range(40):
+            bb = {
+                **b,
+                "state": s,
+                "phase": torch.full((len(s),), j),
+                "episode_steps": torch.full((len(s),), j),
+                "common_step": torch.full((len(s),), j),
+                "launched": runtime.codec.mode(event),
+                "learn_external_events": True,
+                "event_conditioned": True,
+            }
+            physical = s.clone()
+            physical[:, 80] -= 0.1962
+            physical[:, 71:74] += physical[:, 78:81] * 0.02
+            poses = t.bridge.fk(physical)
+            result = t.task.evaluate_step(
+                bb,
+                s,
+                physical,
+                b["action"],
+                b["previous_action"],
+                bb["phase"],
+                b["task_history"],
+                bb["episode_steps"],
+                b["next_external_event_seconds"],
+            )
+            plan, next_event, pools = runtime.step(
+                bb,
+                physical,
+                poses,
+                event,
+                pools,
+                bb["episode_steps"] + 1,
+                bb["common_step"] + 1,
+            )
+            post = torch.where(plan.mask, plan.targets, physical)
+            tr = {k: v for k, v in bb.items() if torch.is_tensor(v)}
+            tr.update(
+                next_state=post,
+                physical_next_state=physical,
+                event_state=event,
+                event_pool=pools[0],
+                event_targets=plan.targets,
+                event_mask=plan.mask,
+                next_event_state=next_event,
+                external_boundary=plan.mask.any(-1),
+                after_launched=runtime.codec.mode(next_event),
+                valid=torch.ones(len(s), dtype=torch.bool),
+                boundary=result.terminated | result.timeout,
+                terminated=result.terminated,
+                timeout=result.timeout,
+                reward_terms=result.rewards,
+                memory=torch.zeros(len(s), 6),
+                next_memory=torch.zeros(len(s), 6),
+                termination_features=result.termination_features,
+            )
+            t.replay.add(tr)
+            s, event = post, next_event
+        training_rng = runtime.rng.clone()
+        metrics = t.fit_model()
+        torch.testing.assert_close(runtime.rng, training_rng)
+        assert metrics["termination/probe_weighted_bce_wm_gradient_norm"] > 0
+        assert "wm/launch_mode_bce" not in metrics
+        if deterministic:
+            assert metrics["wm/post_control_in_objective"] == 0
+            assert metrics["wm/state_loss"] == pytest.approx(
+                metrics["wm/physical_state_loss"]
+            )
+            assert metrics["wm/loss"] == pytest.approx(
+                metrics["wm/physical_state_loss"]
+                + cfg.term_loss_weight * metrics["termination/train_bce"],
+                rel=1e-5,
+            )
+        assert t.model_updates == t.termination_updates == cfg.model_steps
+        # Explicitly start all imagined trajectories before launch.
+        start = {
+            k: v[0].clone()
+            for k, v in t.replay.data.items()
+            if k not in t.replay.global_fields
+        }
+        start["event_pool"] = (
+            t.replay.data["event_pool"][0].unsqueeze(0).expand(len(s), -1, -1).clone()
+        )
+        event_rng = runtime.rng.clone()
+        cpu_rng = torch.get_rng_state()
+        imagined = t.imagine(start, trace=True)
+        if deterministic:
+            runtime.rng = event_rng.clone()
+            torch.set_rng_state(cpu_rng)
+            t.cfg.batch_imagination_amp = True
+            batched = t.imagine(start, trace=True)
+            for key in imagined:
+                torch.testing.assert_close(imagined[key], batched[key])
+            parameters = tuple(t.actor.parameters())
+            old_grad = torch.autograd.grad(
+                imagined["reward"].sum(), parameters, retain_graph=True
+            )
+            new_grad = torch.autograd.grad(batched["reward"].sum(), parameters)
+            for old_value, new_value in zip(old_grad, new_grad):
+                torch.testing.assert_close(old_value, new_value)
+            t.cfg.batch_imagination_amp = False
+        assert not imagined["predicted_launch_probability"][0].bool().any()
+        assert imagined["predicted_launch_probability"][1].bool().all()
+        if deterministic:
+            from dataclasses import replace
+            from reflex.world_model.joint import returns
+    
+            original_evaluate = t.task.evaluate_step
+    
+            def terminal_step(*args, **kwargs):
+                result = original_evaluate(*args, **kwargs)
+                return replace(result, terminated=torch.ones_like(result.terminated))
+    
+            t.task.evaluate_step = terminal_step
+            t.cfg.hard_imagination_boundaries = True
+            stopped = t.imagine(start)
+            assert stopped["valid"][0].all()
+            assert not stopped["valid"][1:].any()
+            assert stopped["done"][0].eq(1).all()
+            # Terminal reward is counted once; all later reward and bootstrap vanish.
+            actual = returns(stopped, lambda x: torch.ones(*x.shape[:-1], 1), t.cfg.gamma)
+            torch.testing.assert_close(actual, stopped["reward"][0])
+            changed = {**stopped, "reward": stopped["reward"].clone()}
+            changed["reward"][1:] = 10000
+            torch.testing.assert_close(
+                returns(changed, lambda x: torch.ones(*x.shape[:-1], 1), t.cfg.gamma),
+                actual,
+            )
+            t.cfg.hard_imagination_boundaries = False
+            t.cfg.pure_soft_survival = True
+            soft = t.imagine(start)
+            assert soft["valid"][1].all()
+            assert (soft["done"][0] < 1).all()
+            assert soft["predicted_launch_probability"][1].bool().all()
+            t.cfg.pure_soft_survival = False
+            t.task.evaluate_step = original_evaluate
+        before_rng = runtime.rng.clone()
+        audit = gradient_audit(t)
+        torch.testing.assert_close(runtime.rng, before_rng)
+        assert audit["diagnostic/total_gradient_norm"] > 0
+        updated = t.update_actor()
+        assert updated["actor/gradient_norm"] > 0
+        path = tmp_path / "v24.pt"
+        t.save(path)
+        t.load(path)
+        assert t.actor_updates == 1
+        if deterministic:
+            # Explicit new-world resume retains all learned states but cannot reuse
+            # environment-indexed replay. Other contracts remain strict.
+            source_count = runtime.source_count
+            runtime.source_count = source_count + 1
+            with pytest.raises(ValueError, match="learning layout"):
+                t.load(path)
+            t.load(path, reinitialize_replay=True)
+            assert t.actor_updates == 1
+            assert t.replay.count == 0
+            assert t.iteration == 0
+            assert t.initialization["replay_reinitialization"]["optimizers_preserved"]
+            assert t.actor_opt.state_dict()["state"]
+            runtime.source_count = source_count
+            t.load(path)
+            t.cfg.pure_soft_survival = True
+            with pytest.raises(ValueError):
+                t.load(path)
+            t.load(path, migrate_soft_survival=True)
+            assert t.initialization["soft_survival_migration"]["optimizers_preserved"]
+            t.cfg.pure_soft_survival = False
+            t.load(path)
+            t.cfg.hard_imagination_boundaries = True
+            with pytest.raises(ValueError):
+                t.load(path)
+            t.load(path, migrate_imagination_boundaries=True)
+            assert t.actor_updates == 1
+            assert t.initialization["imagination_boundary_migration"][
+                "optimizers_preserved"
+            ]
+            t.cfg.hard_imagination_boundaries = False
+            t.load(path)
+            checkpoint = torch.load(path, weights_only=False)
+            t.cfg.save_replay = False
+            compact_checkpoint = tmp_path / "without_replay.pt"
+            t.save(compact_checkpoint)
+            with pytest.raises(ValueError, match="no WM replay"):
+                t.load(compact_checkpoint)
+            t.load(compact_checkpoint, reinitialize_replay=True)
+            assert t.replay.count == 0 and t.actor_updates == 1
+            t.cfg.save_replay = True
+            t.load(path)
+            schedule_trial = copy.deepcopy(checkpoint)
+            schedule_trial["config"]["schedule"] = "joint_reproduction"
+            schedule_path = tmp_path / "schedule_trial.pt"
+            torch.save(schedule_trial, schedule_path)
+            original_schedule, original_rate = t.cfg.schedule, t.cfg.updates_per_env_step
+            t.cfg.schedule, t.cfg.updates_per_env_step = "joint_reproduction", 0.1
+            with pytest.raises(ValueError):
+                t.load(schedule_path, reinitialize_replay=True)
+            t.load(schedule_path, reinitialize_replay=True, migrate_update_rate=True)
+            assert t.initialization["update_rate_migration"]["to"] == 0.1
+            assert t.replay.count == 0 and t.actor_updates == 1
+            t.cfg.schedule, t.cfg.updates_per_env_step = original_schedule, original_rate
+            t.load(path)
+            old_execution = copy.deepcopy(checkpoint)
+            old_execution["learning_contract"]["event_scheduler"]["source_sha256"][
+                "runtime.py"
+            ] = "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc"
+            old_execution_path = tmp_path / "old_event_execution.pt"
+            torch.save(old_execution, old_execution_path)
+            with pytest.raises(ValueError, match="learning layout"):
+                t.load(old_execution_path)
+>           t.load(old_execution_path, migrate_event_execution=True)
+
+tests/test_v24_events.py:426: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <reflex.world_model.trainer.Trainer object at 0x1136a8920>
+path = PosixPath('/private/var/folders/fv/5m6klxbn7nsfkgt85lbwpf6m0000gn/T/pytest-of-mac/pytest-244/test_v24_joint_train_save_load1/old_event_execution.pt')
+migrate_termination_training = False, reinitialize_replay = False
+migrate_imagination_boundaries = False, migrate_soft_survival = False
+migrate_event_execution = True, migrate_update_rate = False
+migrate_standing_profile = False, migrate_analytic_soft_termination = False
+migrate_critic_box_observation = False
+
+    def load(
+        self,
+        path,
+        migrate_termination_training=False,
+        reinitialize_replay=False,
+        migrate_imagination_boundaries=False,
+        migrate_soft_survival=False,
+        migrate_event_execution=False,
+        migrate_update_rate=False,
+        migrate_standing_profile=False,
+        migrate_analytic_soft_termination=False,
+        migrate_critic_box_observation=False,
+    ):
+        state = torch.load(path, map_location=self.device, weights_only=False)
+        if migrate_analytic_soft_termination or migrate_critic_box_observation:
+            from .termination_migration import migrate
+    
+            state = migrate(
+                state,
+                self,
+                migrate_analytic_soft_termination,
+                migrate_critic_box_observation,
+            )
+        saved_config = dict(state["config"])
+        if state.get("version") == 1:
+            saved_config.setdefault("wm_kind", "multitask")
+        loaded_config = asdict(TrainConfig(**saved_config))
+        requested_config = asdict(self.cfg)
+        # Execution optimizations and optional telemetry do not change weights,
+        # optimizers or task semantics. Contact metadata is migrated separately.
+        for key in (
+            "save_replay",
+            "native_collection_inputs",
+            "compact_event_inputs",
+            "real_parity_every",
+            "cache_physical_context",
+            "batch_imagination_amp",
+            "batch_imagination_amp_features",
+            "batch_imagination_critic",
+            "compact_actor_event_inputs",
+            "packed_pose_carry",
+            "contiguous_event_writes",
+            "reuse_post_event_fk",
+            "compact_event_pool_updates",
+            "collapse_full_event_subsets",
+            "compile_event_tensors",
+            "sparse_actor_bootstrap",
+            "fuse_actor_core",
+            "actor_core_include_fk",
+            "actor_core_compile_mode",
+            "compile_dynamics",
+            "compile_fk",
+            "compile_backend",
+            "compile_step",
+            "monitor_contacts",
+            "minimal_event_view",
+            "compile_v24_step",
+            "v24_fusion_scope",
+            "tf32",
+            "synchronize_replay_timing",
+            "replay_index_cache",
+            "compile_wm_rollout",
+            "compile_wm_training_step",
+            "minimal_termination_fk",
+            "wm_mlp_precision",
+            "wm_only_rounds",
+            "wm_compile_mode",
+            "tensorboard_flush_seconds",
+            "console_log_every",
+        ):
+            loaded_config.pop(key, None)
+            requested_config.pop(key, None)
+        standing_migration = None
+        if migrate_standing_profile:
+            if not reinitialize_replay:
+                raise ValueError("Reward migration requires fresh replay")
+            from .standing_profile import validate_migration
+    
+            standing_migration = validate_migration(
+                state, self.task, self.reward_names, self.cfg
+            )
+            for key in ("horizon", "reward_profile"):
+                loaded_config.pop(key)
+                requested_config.pop(key)
+        if not reinitialize_replay and state.get("replay") is None:
+            raise ValueError(
+                "Checkpoint has no WM replay; use explicit reinitialize_replay"
+            )
+        update_rate_migration = None
+        if migrate_update_rate:
+            if (
+                not reinitialize_replay
+                or self.cfg.schedule != "joint_reproduction"
+                or loaded_config["schedule"] != "joint_reproduction"
+                or not 0 < self.cfg.updates_per_env_step <= 1
+            ):
+                raise ValueError(
+                    "Explicit update-rate trial requires a fresh joint replay and rate in (0,1]"
+                )
+            update_rate_migration = {
+                "from": loaded_config.pop("updates_per_env_step"),
+                "to": requested_config.pop("updates_per_env_step"),
+                "optimizers_preserved": True,
+                "source": str(path),
+            }
+        if reinitialize_replay:
+            loaded_config.pop("capacity_steps", None)
+            requested_config.pop("capacity_steps", None)
+        if migrate_soft_survival:
+            if not self.cfg.pure_soft_survival or loaded_config["pure_soft_survival"]:
+                raise ValueError(
+                    "Soft-survival migration requires old to pure-soft configuration"
+                )
+            loaded_config.pop("pure_soft_survival")
+            requested_config.pop("pure_soft_survival")
+        if migrate_imagination_boundaries:
+            if (
+                not self.cfg.hard_imagination_boundaries
+                or loaded_config["hard_imagination_boundaries"]
+            ):
+                raise ValueError(
+                    "Boundary migration requires explicit old-soft to hard-boundary configuration"
+                )
+            loaded_config.pop("hard_imagination_boundaries")
+            requested_config.pop("hard_imagination_boundaries")
+        migration = None
+        if migrate_termination_training:
+            if (
+                state.get("version") != 3
+                or not self.cfg.joint_predicted_termination
+                or loaded_config["joint_predicted_termination"]
+            ):
+                raise ValueError(
+                    "Explicit migration requires old separate-head v3 to joint predicted training"
+                )
+            migration = {
+                "from": "separate_real_features",
+                "to": "joint_predicted_features",
+                "source": str(path),
+                "optimizers_preserved": True,
+            }
+            for key in (
+                "joint_predicted_termination",
+                "variable_model_windows",
+                "state_loss_reduction",
+                "term_loss_weight",
+            ):
+                loaded_config.pop(key)
+                requested_config.pop(key)
+        if (
+            state.get("version") not in (1, 2, 3)
+            or state["contract"] != self.contract
+            or loaded_config != requested_config
+            or (state["reward_names"] != self.reward_names and not standing_migration)
+        ):
+            raise ValueError(
+                "Checkpoint model schema/config/physical contract mismatch; v1 multitask cannot silently resume pure dynamics"
+            )
+        requested_learning = dict(self.learning_contract)
+        if migration:
+            for key in (
+                "termination_training",
+                "variable_model_windows",
+                "state_loss_reduction",
+                "term_loss_weight",
+            ):
+                requested_learning.pop(key, None)
+        import copy
+    
+        if migrate_soft_survival:
+            requested_learning.pop("soft_survival", None)
+        if migrate_imagination_boundaries:
+            requested_learning.pop("imagination_boundaries", None)
+        saved_learning = copy.deepcopy(state.get("learning_contract"))
+        requested_learning = copy.deepcopy(requested_learning)
+        event_migration = None
+        if migrate_event_execution:
+            old_sources = saved_learning.get("event_scheduler", {}).get(
+                "source_sha256", {}
+            )
+            new_sources = requested_learning.get("event_scheduler", {}).get(
+                "source_sha256", {}
+            )
+            old_hash, new_hash = (
+                old_sources.get("runtime.py"),
+                new_sources.get("runtime.py"),
+            )
+            if old_hash != new_hash:
+                approved = (
+                    "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc",
+                    "c69efde1fc6aa47681aa03c69c3aba5ac9df80c6eb211639fe3d97d545f189a0",
+                )
+                if (old_hash, new_hash) != approved:
+>                   raise ValueError("Unverified event execution source migration")
+E                   ValueError: Unverified event execution source migration
+
+source/reflex/reflex/world_model/trainer.py:2762: ValueError
+----------------------------- Captured stdout call -----------------------------
+[AMP] context set: expert pairs (32, 2, 83), w_style 1.0 w_task 1.0 disc_steps 1
+[AMP checkpoint] restored discriminator/Adam, iter=1, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+[AMP checkpoint] restored discriminator/Adam, iter=2, replay=0/64; simulator transition pairs reset
+=========================== short test summary info ============================
+FAILED tests/test_actor_diagnostics_v31.py::test_native_adapter_interface_with_fixture_checkout
+FAILED tests/test_v24_events.py::test_v24_joint_train_save_load_and_h32_event_progression[True]
+2 failed, 109 passed in 490.09s (0:08:10)

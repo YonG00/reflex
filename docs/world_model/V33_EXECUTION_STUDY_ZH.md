@@ -86,6 +86,6 @@ bash scripts/study_actor_v33.sh \
 
 固定V32 verified、4096环境、2048/H32、FP32。输出 `run/phases.json`、`run/full/actor_full_v31.json`（新增`execution_sites`）、完整trace及排除GPU用户标记的trace summary。
 
-脚本拒绝覆盖输出，设置超时；检查完成、数值、无重编译/归属可用状态，不只看退出码。沿用默认dtype容差；检查原始轨迹、Actor梯度、实际参数更新和恢复。完整CPU回归215 passed、1条原有弃用警告（715.36秒）；随后连续测量器最终6项复测通过（68.58秒）。GPU仍待测，日志见 [CPU记录](benchmarks_v33_cpu/README.md)。
+脚本拒绝覆盖输出，设置超时；检查完成、数值、无重编译/归属可用状态，不只看退出码。沿用默认dtype容差；检查原始轨迹、Actor梯度、实际参数更新和恢复。完整CPU回归215 passed、1条原有弃用警告（715.36秒）；随后连续测量器最终6项复测通过（68.58秒）。GPU诊断已完成，门控通过；没有新增执行加速。原始结果见 [GPU记录](benchmarks_v33_gpu_20261108/README.md)，解释及下一步见 [V34](V34_EXECUTION_ORGANIZATION_ZH.md)。CPU日志见 [CPU记录](benchmarks_v33_cpu/README.md)。
 
 回滚：继续V32入口，不选择 `execution_study_v33`；不会替换正式训练的事件执行器。

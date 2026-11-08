@@ -79,6 +79,7 @@ class TrainConfig:
     batch_imagination_critic: bool = False
     compact_actor_event_inputs: bool = False
     packed_pose_carry: bool = False
+    contiguous_event_writes: bool = False
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
     collapse_full_event_subsets: bool = False
@@ -253,6 +254,16 @@ class Trainer:
                 self.terminal_reward_cost = specs[0].weight * task.dt
 
         self.event_scheduler = event_scheduler
+        if c.contiguous_event_writes:
+            if event_scheduler is None or not (
+                c.condition_external_events and c.deterministic_event_apply
+            ):
+                raise ValueError(
+                    "Contiguous writes require deterministic native events"
+                )
+            from .events_v24.writes import ContiguousWritePlan
+
+            event_scheduler.event_plan_factory = ContiguousWritePlan
         if c.compact_actor_event_inputs and not (
             event_scheduler is not None
             and c.condition_external_events
@@ -2596,6 +2607,7 @@ class Trainer:
             "batch_imagination_critic",
             "compact_actor_event_inputs",
             "packed_pose_carry",
+            "contiguous_event_writes",
             "reuse_post_event_fk",
             "compact_event_pool_updates",
             "collapse_full_event_subsets",
@@ -2737,24 +2749,11 @@ class Trainer:
             new_sources = requested_learning.get("event_scheduler", {}).get(
                 "source_sha256", {}
             )
-            old_hash, new_hash = (
-                old_sources.get("runtime.py"),
-                new_sources.get("runtime.py"),
-            )
-            if old_hash != new_hash:
-                approved = (
-                    "95e25b24ebf61455b80b43f5b1287dc39e6a1f81fa2d0230f2f7b1d0ead249fc",
-                    "c69efde1fc6aa47681aa03c69c3aba5ac9df80c6eb211639fe3d97d545f189a0",
-                )
-                if (old_hash, new_hash) != approved:
-                    raise ValueError("Unverified event execution source migration")
-                event_migration = {
-                    "source": str(path),
-                    "from_runtime_sha256": old_hash,
-                    "to_runtime_sha256": new_hash,
-                    "optimizers_preserved": True,
-                }
-                old_sources["runtime.py"] = new_hash
+            # Explicit, source-pinned execution migrations only. Unknown event
+            # math, callback, schema or constant changes still fail below.
+            from .event_execution_migration import migrate_sources
+
+            event_migration = migrate_sources(old_sources, new_sources, str(path))
 
         if reinitialize_replay:
             for contract in (saved_learning, requested_learning):

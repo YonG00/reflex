@@ -7,6 +7,7 @@ from ..task import Asset
 
 
 class WritePlan:
+    needs_before = True
     condition_dim = 84 + 82
 
     def __init__(self, physical):
@@ -69,13 +70,19 @@ class PlannedAsset(Asset):
     def write_root_pose_to_sim(self, pose, env_ids=None):
         ids = self._ids(env_ids)
         d = self.data
-        before = torch.cat(
-            (d.root_pos_w[ids] - self.origins[ids], d.root_quat_w[ids]), -1
+        before = (
+            torch.cat((d.root_pos_w[ids] - self.origins[ids], d.root_quat_w[ids]), -1)
+            if self.plan.needs_before
+            else None
         )
         local = torch.cat((pose[:, :3] - self.origins[ids], pose[:, 3:]), -1)
         slots = list(range(7)) if self.robot else list(range(71, 78))
         self.plan.record(
-            before, local, ids, slots, getattr(self, "_reflex_event_write_mask", None)
+            before,
+            local,
+            env_ids,
+            slots,
+            getattr(self, "_reflex_event_write_mask", None),
         )
         d.root_pos_w = d.root_pos_w.index_copy(0, ids, pose[:, :3])
         d.root_quat_w = d.root_quat_w.index_copy(0, ids, pose[:, 3:])
@@ -85,9 +92,9 @@ class PlannedAsset(Asset):
         ids = self._ids(env_ids)
         d = self.data
         self.plan.record(
-            d.root_vel_w[ids],
+            d.root_vel_w[ids] if self.plan.needs_before else None,
             vel,
-            ids,
+            env_ids,
             list(range(36, 42)) if self.robot else list(range(78, 84)),
             getattr(self, "_reflex_event_write_mask", None),
         )
@@ -190,3 +197,42 @@ def event_condition(physical, targets, mask):
         -1,
     )
     return torch.cat((mask.float(), delta), -1)
+
+
+class ContiguousWritePlan(WritePlan):
+    """Opt-in contiguous-column writes; never infer CUDA index contents.
+
+    Native full-batch root writes need no row/column index tensors. Partial,
+    permuted, repeated or tensor-valued slots retain the original recorder.
+    No RNG, callback or target-gradient semantics change.
+    """
+
+    needs_before = False
+
+    def record(self, before, requested, env_ids, slots, intervention=None):
+        if not (
+            env_ids is None
+            and isinstance(slots, (list, tuple))
+            and slots
+            and list(slots) == list(range(slots[0], slots[0] + len(slots)))
+            and 0 <= slots[0] < slots[-1] + 1 <= self.targets.shape[-1]
+        ):
+            return super().record(before, requested, env_ids, slots, intervention)
+        columns = slice(slots[0], slots[-1] + 1)
+        active = (
+            torch.ones_like(requested, dtype=torch.bool)
+            if intervention is None
+            else intervention.expand_as(requested)
+        )
+        self.targets[:, columns] = torch.where(
+            active, requested, self.targets[:, columns]
+        )
+        self.mask[:, columns] |= active
+
+    def select(self, ids):
+        # No zero-initialized temporary plan or duplicate gather; clones retain
+        # independent mutable storage and exactly the original autograd path.
+        result = type(self).__new__(type(self))
+        result.targets = self.targets[ids].clone()
+        result.mask = self.mask[ids].clone()
+        return result

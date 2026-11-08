@@ -102,7 +102,7 @@ def compact_pool_step(
             )
     values, timers = self.codec.decode(state)
     n = len(physical)
-    plan = WritePlan(physical)
+    plan = getattr(self, "event_plan_factory", WritePlan)(physical)
     updated_pools = [None] * len(self.pool_terms)
     for i, term in enumerate(self.terms):
         lower, upper = term.interval

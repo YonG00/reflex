@@ -220,6 +220,48 @@ def rollout(step, call, horizon):
     return loss, state_loss, states, actions, first
 
 
+def boundary_probe(step, candidate_call, horizon):
+    """Separate same-input single-step drift from H32 error accumulation.
+
+    Runs outside performance timing, without FK/event proxies being mistaken
+    for real task coverage. Does not relax comparison tolerances or alter math.
+    """
+    eager = copy.deepcopy(step)
+    eager.wm_call = None
+    state, previous, aux = eager.initial()
+    rows = []
+    for index in range(horizon):
+        expected = eager(state, previous, aux)
+        actual = candidate_call(state, previous, aux)
+        expected_cpu = {
+            key: tensor.detach().cpu().clone()
+            for name, value in zip(("state", "action", "aux"), expected)
+            for key, tensor in flatten_tensors(value, name).items()
+        }
+        actual_cpu = {
+            key: tensor.detach().cpu().clone()
+            for name, value in zip(("state", "action", "aux"), actual)
+            for key, tensor in flatten_tensors(value, name).items()
+        }
+        rows.append({"step": index + 1, **compare(expected_cpu, actual_cpu)})
+
+        def detach(value):
+            if torch.is_tensor(value):
+                return value.detach()
+            if isinstance(value, dict):
+                return {key: detach(item) for key, item in value.items()}
+            return type(value)(detach(item) for item in value)
+
+        state, previous, aux = detach(expected)
+    return {
+        "same_input_per_step": rows,
+        "first_failed_step": next(
+            (row["step"] for row in rows if not row["passed"]), None
+        ),
+        "note": "Teacher-forced eager inputs; accumulated rollout and actual Adam are checked separately.",
+    }
+
+
 def common_adam(actor):
     opt = torch.optim.Adam(actor.parameters(), lr=2e-4, betas=(0.9, 0.95))
     # Allocate identical zero moments outside timed intervals (also for native).
@@ -389,6 +431,7 @@ def check(
             numeric = compare(reference, actual)
             result["drivers"][driver] = {
                 "numeric": numeric,
+                "boundary_probe": boundary_probe(step, call, horizon),
                 "warmup": rows[:warmups],
                 "steady": rows[warmups:],
                 "wall_seconds": distribution(

@@ -298,7 +298,7 @@ class NativeEventScheduler:
                 )
         values, timers = self.codec.decode(state)
         n = len(physical)
-        plan = WritePlan(physical)
+        plan = getattr(self, "event_plan_factory", WritePlan)(physical)
         next_pools = pools.clone()
         for i, term in enumerate(self.terms):
             lower, upper = term.interval
