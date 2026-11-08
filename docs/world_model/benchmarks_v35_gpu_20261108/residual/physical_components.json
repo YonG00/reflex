@@ -1,0 +1,103 @@
+{
+  "completed": true,
+  "steps": [
+    6
+  ],
+  "rows": [
+    {
+      "step": 6,
+      "components": {
+        "features": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 0.0
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.0913936421275139e-11,
+              "1": 0.0,
+              "2": 0.0,
+              "3": 0.0
+            },
+            "failures": {}
+          }
+        },
+        "normalization": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11
+            },
+            "failures": {}
+          }
+        },
+        "mlp": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.430511474609375e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 2.9103830456733704e-11
+            },
+            "failures": {}
+          }
+        },
+        "integrate": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.1920928955078125e-07
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 7.275957614183426e-12,
+              "1": 9.094947017729282e-13,
+              "2": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        },
+        "encoder": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.0186340659856796e-10,
+              "1": 7.275957614183426e-12,
+              "2": 1.4551915228366852e-11,
+              "3": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        }
+      }
+    }
+  ],
+  "note": "Isolated components at identical eager inputs; not timings or proof of a whole fused graph. All state/context derivatives are probed; H32/actual Adam checked separately.",
+  "model_unchanged": true
+}

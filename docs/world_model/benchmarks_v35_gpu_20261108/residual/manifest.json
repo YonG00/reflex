@@ -1,0 +1,15 @@
+{
+  "capsule_sha256": "620b9d69c1121394e55eb8579007540732ef7b0dfd0a4feb0685455e0aa1502d",
+  "torch": "2.7.0+cu128",
+  "backend": "inductor",
+  "fp_fusion_env": "0",
+  "training_changes": false,
+  "source_sha256": {
+    "physical_compile_v35.py": "9900665c005e5dbe95bd869028f5e35b4564d48af2d73cdac6977b623f48aeec",
+    "native_pointwise_v35.py": "4b050a16c1ba46a1871da703071899465f0e2c9e9fbdee9f27da76aafa99c6f1",
+    "physical_numerics_v35.py": "7469d6e5bbb170318efdd3c0c5f9cdb8988909777e0fe818ba026835a1f8107e",
+    "models.py": "562787aba51c4590d4619fded2b739e6065d40559c0d392ef69137115d590fe2",
+    "physics.py": "d0dc79f4d01c39901a85eb843504685b68d69a759448db3c28ba63a2b05a462e",
+    "diagnostics_v31/minimal.py": "caa868eb7f1e64104d9aa2d31bcfc6d7c379e5e855cf30688cb216b7b007cd12"
+  }
+}

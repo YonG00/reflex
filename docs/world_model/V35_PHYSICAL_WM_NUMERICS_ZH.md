@@ -77,3 +77,18 @@ PYTHONPATH=source/reflex /opt/conda/envs/isaaclab/bin/python \
 ## CPU证据与回滚
 
 最终16项CPU专项通过（25.33秒），40项相关回归通过（95.04秒，包含重叠检查）。MLP-only与layerwise另覆盖真实Replay H8条件化监督的WM梯度及实际WM Adam，保留原mask和梯度裁剪。CPU使用aot_eager，验证图捕获、数学链、VJP与实际更新，不能证明CUDA/Inductor的舍入行为。测试和结果见`benchmarks_v35_cpu/README.md`。未更改旧事件源码哈希，无新增checkpoint迁移。回滚时继续V34/V32入口，不选V35显式driver即可。
+
+## GPU执行中增加的候选和验收入口
+
+GPU分项已确认FMA=0使features与eager输出完全一致、encoder恢复通过，但完整H32仍失败。由此增加显式`native_pointwise_v35.py`：SiLU forward/backward都调用原ATen算子；标准化只将除法及其输入反向保留为原生ATen节点，减法和clamp沿用框架，避免手写边界导数。mean/std必须是固定buffer，否则明确拒绝。没有detach或代理梯度；当前验收覆盖一阶BPTT，未验证二阶导数。
+
+初版手写norm反向在CPU的clamp边界用例失败，已撤回该表达式，最终使用框架原clamp。原始失败日志`native_initial.log`保留，修复后的23项通过；残差边界版本25项通过。真实Replay/完整Actor诊断的恢复用例1项通过，详见CPU目录。实际WM激活为SiLU，文档不再误称ELU。
+
+- `wm_native_silu`：整图保留原生SiLU。
+- `wm_native_pointwise`：同时保留原生标准化除法，其他继续融合。
+- `wm_native_materialized`：在前者基础上返回82维残差以测试物化边界。
+- `wm_native_split`：编译编码/MLP且保留原生SiLU/除法，原积分在图外完整执行。这是已通过最小链的一条候选，不代表完整任务通过或正式训练加速。
+
+`physical_full_v35_check`模式使用真实40步采集的Replay：同H8序列比较原物理损失/WM原始梯度/裁剪后实际Adam；完整H32比较奖励/AMP/事件/存活/状态/Actor梯度与真实Actor/Critic更新。参考为eager Physical WM，配置中的已编译WM作为另一对照，所有其他任务计算保持同组设置。结束恢复模型、WM/Actor/Critic优化器及RNG，不写checkpoint；完整训练吞吐并非本检查目标。
+
+可复用 `scripts/study_physical_full_v35.sh CHECKPOINT NEW_OUTPUT_DIR`。入口显式固定PYTHONPATH并验证import来源，加载已有Isaac初始化环境，避免误调用预装旧包。FMA=0采用独立缓存；数值完成/通过分开记录。GPU最终结果另归档，不提前写入通过结论。

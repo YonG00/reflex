@@ -1,0 +1,114 @@
+..FF...................                                                  [100%]
+=================================== FAILURES ===================================
+____________ test_native_norm_clamp_boundaries_and_gradient[False] _____________
+
+compiled = False
+
+    @pytest.mark.parametrize("compiled", [False, True])
+    def test_native_norm_clamp_boundaries_and_gradient(compiled):
+        model = Standardizer(7)
+        model.mean.copy_(torch.arange(7.0) / 10)
+        model.std.copy_(torch.arange(7.0) / 10 + 0.01)
+        value = (
+            model.mean
+            + model.std * torch.tensor([-21.0, -20.0, -1e-6, 0.0, 1e-6, 20.0, 21.0])
+        ).requires_grad_()
+        call = (
+            torch.compile(norm_native, fullgraph=True, backend="aot_eager")
+            if compiled
+            else norm_native
+        )
+        expected = model(value)
+        actual = call(value, model.mean, model.std)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        a = torch.autograd.grad(actual.sum(), value)[0]
+        b = torch.autograd.grad(expected.sum(), value)[0]
+>       torch.testing.assert_close(a, b, atol=0, rtol=0)
+E       AssertionError: Tensor-likes are not equal!
+E       
+E       Mismatched elements: 2 / 7 (28.6%)
+E       Greatest absolute difference: 9.090909004211426 at index (1,)
+E       Greatest relative difference: inf at index (1,)
+
+tests/test_native_pointwise_v35.py:44: AssertionError
+_____________ test_native_norm_clamp_boundaries_and_gradient[True] _____________
+
+compiled = True
+
+    @pytest.mark.parametrize("compiled", [False, True])
+    def test_native_norm_clamp_boundaries_and_gradient(compiled):
+        model = Standardizer(7)
+        model.mean.copy_(torch.arange(7.0) / 10)
+        model.std.copy_(torch.arange(7.0) / 10 + 0.01)
+        value = (
+            model.mean
+            + model.std * torch.tensor([-21.0, -20.0, -1e-6, 0.0, 1e-6, 20.0, 21.0])
+        ).requires_grad_()
+        call = (
+            torch.compile(norm_native, fullgraph=True, backend="aot_eager")
+            if compiled
+            else norm_native
+        )
+        expected = model(value)
+        actual = call(value, model.mean, model.std)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        a = torch.autograd.grad(actual.sum(), value)[0]
+        b = torch.autograd.grad(expected.sum(), value)[0]
+>       torch.testing.assert_close(a, b, atol=0, rtol=0)
+E       AssertionError: Tensor-likes are not equal!
+E       
+E       Mismatched elements: 2 / 7 (28.6%)
+E       Greatest absolute difference: 9.090909004211426 at index (1,)
+E       Greatest relative difference: inf at index (1,)
+
+tests/test_native_pointwise_v35.py:44: AssertionError
+------------------------------ Captured log call -------------------------------
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:guards.py:6378 
+DEBUG    torch.__trace:convert_frame.py:309 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:meta_utils.py:298 
+DEBUG    torch.__trace:meta_utils.py:537 
+DEBUG    torch.__trace:meta_utils.py:2385 
+DEBUG    torch.__trace:meta_utils.py:298 
+DEBUG    torch.__trace:meta_utils.py:537 
+DEBUG    torch.__trace:meta_utils.py:2385 
+DEBUG    torch.__trace:meta_utils.py:298 
+DEBUG    torch.__trace:meta_utils.py:537 
+DEBUG    torch.__trace:meta_utils.py:2385 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:output_graph.py:2993 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:graph_compile.py:1861 
+DEBUG    torch.__trace:graph_compile.py:1882 
+DEBUG    torch.__trace:graph_compile.py:1932 
+DEBUG    torch.__trace:graph_compile.py:1950 
+DEBUG    torch.__trace:graph_compile.py:1954 
+DEBUG    torch.__trace:codegen.py:131 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:guards.py:5383 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2132 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2473 
+DEBUG    torch.__trace:utils.py:2132
+=========================== short test summary info ============================
+FAILED tests/test_native_pointwise_v35.py::test_native_norm_clamp_boundaries_and_gradient[False]
+FAILED tests/test_native_pointwise_v35.py::test_native_norm_clamp_boundaries_and_gradient[True]
+2 failed, 21 passed in 31.40s

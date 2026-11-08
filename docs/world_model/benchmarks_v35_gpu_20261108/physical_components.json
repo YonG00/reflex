@@ -1,0 +1,393 @@
+{
+  "completed": true,
+  "steps": [
+    1,
+    6,
+    16,
+    32
+  ],
+  "rows": [
+    {
+      "step": 1,
+      "components": {
+        "features": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 2.384185791015625e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11,
+              "1": 0.0,
+              "2": 0.0,
+              "3": 0.0
+            },
+            "failures": {}
+          }
+        },
+        "normalization": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11
+            },
+            "failures": {}
+          }
+        },
+        "mlp": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 5.7220458984375e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 2.1827872842550278e-11
+            },
+            "failures": {}
+          }
+        },
+        "integrate": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 2.9103830456733704e-11,
+              "1": 2.7284841053187847e-12,
+              "2": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        },
+        "encoder": {
+          "value": {
+            "passed": false,
+            "max_abs": {
+              "output": 3.1412277166964486e-05
+            },
+            "failures": {
+              "output": "Tensor-likes are not close!\n\nMismatched elements: 159 / 503808 (0.0%)\nGreatest absolute difference: 3.1412277166964486e-05 at index (886, 3) (up to 1e-05 allowed)\nGreatest relative difference: 157.1626434326172 at index (988, 3) (up to 1.3e-06 allowed)"
+            }
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.0186340659856796e-10,
+              "1": 7.275957614183426e-12,
+              "2": 1.4551915228366852e-11,
+              "3": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        }
+      }
+    },
+    {
+      "step": 6,
+      "components": {
+        "features": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.0913936421275139e-11,
+              "1": 0.0,
+              "2": 0.0,
+              "3": 0.0
+            },
+            "failures": {}
+          }
+        },
+        "normalization": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11
+            },
+            "failures": {}
+          }
+        },
+        "mlp": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.430511474609375e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 3.2741809263825417e-11
+            },
+            "failures": {}
+          }
+        },
+        "integrate": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 4.76837158203125e-07
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 2.1827872842550278e-11,
+              "1": 2.7284841053187847e-12,
+              "2": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        },
+        "encoder": {
+          "value": {
+            "passed": false,
+            "max_abs": {
+              "output": 3.2448151614516973e-05
+            },
+            "failures": {
+              "output": "Tensor-likes are not close!\n\nMismatched elements: 132 / 503808 (0.0%)\nGreatest absolute difference: 3.2448151614516973e-05 at index (428, 3) (up to 1e-05 allowed)\nGreatest relative difference: 102.77945709228516 at index (831, 3) (up to 1.3e-06 allowed)"
+            }
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.1641532182693481e-10,
+              "1": 7.275957614183426e-12,
+              "2": 1.4551915228366852e-11,
+              "3": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        }
+      }
+    },
+    {
+      "step": 16,
+      "components": {
+        "features": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 2.6226043701171875e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 5.820766091346741e-10,
+              "1": 0.0,
+              "2": 0.0,
+              "3": 0.0
+            },
+            "failures": {}
+          }
+        },
+        "normalization": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11
+            },
+            "failures": {}
+          }
+        },
+        "mlp": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.430511474609375e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 5.820766091346741e-11
+            },
+            "failures": {}
+          }
+        },
+        "integrate": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 7.152557373046875e-07
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 8.731149137020111e-10,
+              "1": 3.183231456205249e-12,
+              "2": 2.2737367544323206e-13
+            },
+            "failures": {}
+          }
+        },
+        "encoder": {
+          "value": {
+            "passed": false,
+            "max_abs": {
+              "output": 3.971813930547796e-05
+            },
+            "failures": {
+              "output": "Tensor-likes are not close!\n\nMismatched elements: 147 / 503808 (0.0%)\nGreatest absolute difference: 3.971813930547796e-05 at index (1736, 3) (up to 1e-05 allowed)\nGreatest relative difference: 40.33392333984375 at index (1, 3) (up to 1.3e-06 allowed)"
+            }
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 3.208697307854891e-09,
+              "1": 7.275957614183426e-12,
+              "2": 1.4551915228366852e-11,
+              "3": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        }
+      }
+    },
+    {
+      "step": 32,
+      "components": {
+        "features": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 7.867813110351562e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 3.725290298461914e-09,
+              "1": 0.0,
+              "2": 0.0,
+              "3": 0.0
+            },
+            "failures": {}
+          }
+        },
+        "normalization": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.4551915228366852e-11
+            },
+            "failures": {}
+          }
+        },
+        "mlp": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 1.9073486328125e-06
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 5.820766091346741e-11
+            },
+            "failures": {}
+          }
+        },
+        "integrate": {
+          "value": {
+            "passed": true,
+            "max_abs": {
+              "output": 9.5367431640625e-07
+            },
+            "failures": {}
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 2.7939677238464355e-09,
+              "1": 8.185452315956354e-12,
+              "2": 2.2737367544323206e-13
+            },
+            "failures": {}
+          }
+        },
+        "encoder": {
+          "value": {
+            "passed": false,
+            "max_abs": {
+              "output": 3.0506684197462164e-05
+            },
+            "failures": {
+              "output": "Tensor-likes are not close!\n\nMismatched elements: 134 / 503808 (0.0%)\nGreatest absolute difference: 3.0506684197462164e-05 at index (1712, 3) (up to 1e-05 allowed)\nGreatest relative difference: 205.5648956298828 at index (1009, 3) (up to 1.3e-06 allowed)"
+            }
+          },
+          "input_vjp": {
+            "passed": true,
+            "max_abs": {
+              "0": 1.0244548320770264e-08,
+              "1": 7.275957614183426e-12,
+              "2": 1.4551915228366852e-11,
+              "3": 4.547473508864641e-13
+            },
+            "failures": {}
+          }
+        }
+      }
+    }
+  ],
+  "note": "Isolated components at identical eager inputs; not timings or proof of a whole fused graph. All state/context derivatives are probed; H32/actual Adam checked separately.",
+  "model_unchanged": true
+}
