@@ -4,7 +4,7 @@
 - 不变量：原生回调/顺序/RNG/梯度、Actor2048/H32、WM H8及网络、原奖励/软存活均保留。
 - 出错症状：轨迹/计划mask/梯度/Adam不一致；旧checkpoint被静默接受；冷编译或显存抵消收益。
 - 回滚：V32配置，contiguous_event_writes=false；无正式训练，不覆盖旧输出。未知源码变化仍拒绝迁移。
-- 入口：tests/test_actor_execution_v34.py；scripts/study_actor_v34.sh。CPU结果见world_model/benchmarks_v34_cpu；GPU待开卡，不宣称收益。
+- 入口：tests/test_actor_execution_v34.py；scripts/study_actor_v34.sh。CPU结果见world_model/benchmarks_v34_cpu；GPU已测：事件/完整更新数值通过，候选中位收益约1.85%且有波动，未提升正式路径；融合误差定位到Physical WM，见V34_GPU_RESULTS_20261108_ZH.md。
 - 双线研究和历史4096 batch核对见world_model/V34_EXECUTION_ORGANIZATION_ZH.md。
 
 # 待补改动
