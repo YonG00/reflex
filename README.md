@@ -209,3 +209,8 @@ Training data includes Motion Data by [Bones Studio](https://bones.studio/) and 
       url={https://arxiv.org/abs/2610.12772},
 }
 ```
+
+
+### 本仓库世界模型训练扩展
+
+WM稳定编码、H8融合和训练专用CUDA Graph已提供独立配置及联合验收入口。新组合需先完成GPU验收，旧模型保持原编码；不能直接给旧checkpoint切换编码。详见 [WM Graph接线与checkpoint规则](docs/world_model/WM_GRAPH_TRAINING_INTEGRATION_ZH.md)。

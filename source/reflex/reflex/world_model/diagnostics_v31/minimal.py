@@ -157,7 +157,9 @@ class ReflexStep(nn.Module):
         }
         self.model = (
             CompactContextWorldModel(
-                ContextSpec.from_contract(capsule["contract"]), **kwargs
+                ContextSpec.from_contract(capsule["contract"]),
+                encoding=cfg.get("wm_encoding", "legacy"),
+                **kwargs,
             )
             if cfg["wm_context_mode"] != "full"
             else DeterministicEventWorldModel(

@@ -1,0 +1,13 @@
+{
+  "joint_budget_seconds": 1800.0,
+  "wm_only_rounds": 500,
+  "joint_clock_starts_after_first_actor_update": true,
+  "state": "completed",
+  "warmup_completed_wall_seconds": 652.3217650316656,
+  "pre_joint_wall_seconds": 719.8435291275382,
+  "actor_updates_at_clock_start": 1,
+  "wm_rounds_at_clock_start": 501,
+  "joint_wall_seconds": 1800.0790356844664,
+  "actor_updates": 805,
+  "wm_rounds": 1305
+}

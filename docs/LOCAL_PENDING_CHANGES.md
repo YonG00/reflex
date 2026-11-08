@@ -141,3 +141,13 @@ r9退出0，两组打点自等价、实际更新与捕获期间无新增编译�
 ### V37 GPU验收结果（2026-11-08）
 
 四组各20轮严格轨迹/原始Actor梯度/实际Actor和Critic参数更新最大差均0，steady无新增编译，完整对照退出0。性能中位1.585129/1.631642/1.583892/1.595805s，没有可靠收益；两个实验开关保持false，不进入正式训练。GPU结果、冷启动超时与证据见V37_GPU_RESULTS_20261108_ZH.md。后续研究应关注更大的事件视图装配/刷新边界，而不是将本轮纯局部改动合入生产配置。
+
+
+## H16与双4096训练试验（2026-11-08）
+
+用户将Actor horizon32→16，要求从零试训半小时。H32/4096满Replay实测AMP特征拼接OOM；H16独立容量测试进行中。新增仅容量模式的显式batch/horizon覆盖，不放宽正常checkpoint恢复检查；CPU成功/OOM后恢复测试通过。通过完整4轮和有限性门槛后，worker从零WM预热500轮+联合1800秒+15秒视频，正式结果待验收。配置、路径和状态见V37_H16_BATCH4096_JOINT30_20261108_ZH.md。
+
+
+## WM训练Graph接线与main整理（2026-11-08）
+
+新增持久stable_heading_v1编码和学习合同、独立wm_training_compile_mode，H8 Graph可接普通训练；旧默认legacy及checkpoint保持兼容，跨编码在加载权重前拒绝，不做静默normalizer/Adam迁移。联合GPU验收入口包含同Replay/权重/RNG的WM+Actor/Critic配对、WM更新后完整轨迹/梯度、实际参数更新、Graph launch和显存检查；当前无卡，新GPU门槛待验。CPU相关91项及新增编码/联合恢复检查通过。默认训练配置未启用候选；回滚为legacy旧配置或同编码关闭训练编译，模型/Adam保留。说明见WM_GRAPH_TRAINING_INTEGRATION_ZH.md。分支在main包含全部提交并推送后清理，旧工作目录与资料不删除。

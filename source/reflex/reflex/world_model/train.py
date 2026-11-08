@@ -49,6 +49,7 @@ parser.add_argument(
         "actor_v31_diagnostics",
         "actor_minimal_v31_export",
         "wm_rollout_v30_check",
+        "wm_graph_joint_check",
         "soft_termination_check",
     ),
     default="preflight",
@@ -138,6 +139,8 @@ parser.add_argument(
 parser.add_argument("--save_every", type=int, default=25)
 parser.add_argument("--preflight_steps", type=int, default=512)
 parser.add_argument("--benchmark_steps", type=int, default=24)
+parser.add_argument("--capacity_batch_override", type=int, default=0)
+parser.add_argument("--capacity_horizon_override", type=int, default=0)
 parser.add_argument("--diagnostic_repeats", type=int, default=20)
 parser.add_argument("--diagnostic_warmups", type=int, default=2)
 parser.add_argument(
@@ -154,6 +157,14 @@ parser.add_argument(
 )
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
+if args.capacity_horizon_override and (
+    args.mode != "efficiency_capacity_check" or args.capacity_horizon_override < 1
+):
+    parser.error("capacity_horizon_override is a positive horizon for capacity tests only")
+if args.capacity_batch_override and (
+    args.mode != "efficiency_capacity_check" or args.capacity_batch_override < 1
+):
+    parser.error("capacity_batch_override is a positive batch for capacity tests only")
 if (
     sum(
         bool(x) for x in (args.checkpoint, args.warm_start_actor, args.warm_start_macro)
@@ -488,6 +499,13 @@ def main():
                 report["capsule"] = capsule
             print(json.dumps(report), flush=True)
             return
+        if args.mode == "wm_graph_joint_check":
+            from .wm_graph_joint_check import check
+
+            for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
+                trainer.collect(adapter)
+            print(json.dumps(check(trainer, out, repeats=args.diagnostic_repeats, warmups=args.diagnostic_warmups)), flush=True)
+            return
         if args.mode == "wm_rollout_v30_check":
             from .wm_rollout_benchmark import check
 
@@ -623,7 +641,7 @@ def main():
         if args.mode == "efficiency_capacity_check":
             from .efficiency_benchmark import capacity_check
 
-            print(json.dumps(capacity_check(trainer, adapter, out)), flush=True)
+            print(json.dumps(capacity_check(trainer, adapter, out, batch_override=args.capacity_batch_override, horizon_override=args.capacity_horizon_override)), flush=True)
             return
         if args.mode == "efficiency_benchmark":
             from .efficiency_benchmark import check

@@ -70,6 +70,14 @@ def canonical(s):
     )
 
 
+def stable_canonical(s):
+    """Versioned unit-quaternion encoding: de-yawed R[1,0] is exactly zero."""
+    encoded = canonical(s)
+    return torch.cat(
+        (encoded[..., :3], torch.zeros_like(encoded[..., 3:4]), encoded[..., 4:]), -1
+    )
+
+
 def integrate(s, delta, dt, root_com=None, box_com=None):
     """82 residuals: dv,dw,djoint_vel,dp,dtheta,djoint_pos, box equivalents.
 

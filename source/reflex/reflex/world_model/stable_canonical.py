@@ -5,18 +5,13 @@ from contextlib import contextmanager
 import torch
 
 from .models import CompactContextWorldModel
-from .physics import canonical
+from .physics import stable_canonical
 
 
 def stable_features(self, state, target, physical_context, event):
     if physical_context.shape[-1] != self.full_context_dim:
         raise ValueError("Full analytical physical context is required")
-    encoded = canonical(state)
-    # For unit root quaternions, Rz(-yaw) @ R has R[1,0] == 0.
-    # Keep all other columns and continuous derivatives exactly as implemented.
-    encoded = torch.cat(
-        (encoded[..., :3], torch.zeros_like(encoded[..., 3:4]), encoded[..., 4:]), -1
-    )
+    encoded = stable_canonical(state)
     context = physical_context.index_select(-1, self.wm_context_columns)
     return torch.cat((encoded, target, context, event), -1)
 

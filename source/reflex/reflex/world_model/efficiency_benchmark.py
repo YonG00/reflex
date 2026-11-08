@@ -468,11 +468,27 @@ def check(
     return records
 
 
-def capacity_check(t, adapter, output):
+def capacity_check(t, adapter, output, batch_override=0, horizon_override=0):
     """Independent capacity trial; collect full ring, run bounded updates, no save."""
     out = Path(output)
+    keys = ("batch", "actor_batch", "actor_microbatch")
+    original_batches = {key: getattr(t.cfg, key) for key in keys}
+    original_horizon = t.cfg.horizon
+    for name, value in (("batch", batch_override), ("horizon", horizon_override)):
+        if value and (not isinstance(value, int) or value < 1):
+            raise ValueError(f"Capacity {name} must be a positive integer")
+    if batch_override:
+        for key in keys:
+            setattr(t.cfg, key, batch_override)
+    if horizon_override:
+        t.cfg.horizon = horizon_override
     result = {
         "capacity_steps": t.cfg.capacity_steps,
+        "loaded_checkpoint_batches": original_batches,
+        "effective_batches": {key: getattr(t.cfg, key) for key in keys},
+        "batch_override": batch_override,
+        "loaded_checkpoint_horizon": original_horizon,
+        "effective_horizon": t.cfg.horizon,
         "checkpoint_saved": False,
         "trial_weights_discarded": True,
     }
@@ -487,22 +503,34 @@ def capacity_check(t, adapter, output):
             torch.cuda.reset_peak_memory_stats()
             start = timestamp(t.device)
             model = t.fit_model()
+            after_model = timestamp(t.device)
+            model_peak = torch.cuda.max_memory_allocated()
+            model_reserved = torch.cuda.max_memory_reserved()
+            result["last_completed_wm"] = model
+            result["last_wm10_including_amp_seconds"] = after_model - start
             actor = t.update_actor()
             elapsed = timestamp(t.device) - start
             row = {
                 "trial": j,
+                "excluded_compile_warmup": j == 0,
+                "wm10_including_amp_seconds": after_model - start,
+                "actor_critic_seconds": elapsed - (after_model - start),
                 "model": model,
                 "actor": actor,
                 "update_seconds": elapsed,
-                "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
-                "peak_reserved_bytes": torch.cuda.max_memory_reserved(),
+                "peak_allocated_bytes": max(model_peak, torch.cuda.max_memory_allocated()),
+                "peak_reserved_bytes": max(model_reserved, torch.cuda.max_memory_reserved()),
             }
             result["rows"].append(row)
+            (out / "capacity_check.json").write_text(json.dumps(result, indent=2))
             print(json.dumps({"capacity_update": j, "seconds": elapsed}), flush=True)
         result["passed"] = True
     except Exception as e:
         result.update(passed=False, error=repr(e))
         raise
     finally:
+        for key, value in original_batches.items():
+            setattr(t.cfg, key, value)
+        t.cfg.horizon = original_horizon
         (out / "capacity_check.json").write_text(json.dumps(result, indent=2))
     return result

@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from .physics import canonical, integrate
+from .physics import canonical, integrate, stable_canonical
 
 
 class PrecisionMLP(nn.Sequential):
@@ -336,8 +336,11 @@ class DeterministicEventWorldModel(ConditionedWorldModel):
 class CompactContextWorldModel(DeterministicEventWorldModel):
     """Independent V28 encoder; full physical context is an analytical sidecar."""
 
-    def __init__(self, spec, **kwargs):
+    def __init__(self, spec, encoding="legacy", **kwargs):
+        if encoding not in ("legacy", "stable_heading_v1"):
+            raise ValueError("Unknown WM encoding")
         super().__init__(spec.wm_dim, **kwargs)
+        self.encoding = encoding
         self.full_context_dim = spec.full_dim
         self.wm_context_spec = spec.specification()
         self.register_buffer(
@@ -350,7 +353,12 @@ class CompactContextWorldModel(DeterministicEventWorldModel):
                 "Full analytical context must remain available for integration"
             )
         wm_context = physical_context.index_select(-1, self.wm_context_columns)
-        return torch.cat((canonical(state), target, wm_context, event), -1)
+        encoded = (
+            stable_canonical(state)
+            if self.encoding == "stable_heading_v1"
+            else canonical(state)
+        )
+        return torch.cat((encoded, target, wm_context, event), -1)
 
     def warm_start_physical(self, old):
         raise ValueError(

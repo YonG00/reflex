@@ -1,0 +1,35 @@
+{
+  "envs": 1,
+  "vector_steps": 751,
+  "mean_step_task_reward": 0.06049409770554356,
+  "physical_terminations": 5,
+  "strict_success_envs": 0,
+  "strict_success_env_steps": 0,
+  "actor_updates_in_checkpoint": 805,
+  "evaluation_seed": 42,
+  "evaluation_rng_reset": true,
+  "wall_seconds": 94.71470798924565,
+  "fresh_episode_metrics": {
+    "experience/completed_episodes": 5,
+    "experience/launches": 2,
+    "experience/completed_strict_successes": 0,
+    "experience/completed_observed_throws": 1,
+    "experience/termination_reasons_measured": 1.0,
+    "experience/episode_return": 8.81764554977417,
+    "experience/episode_length": 146.2,
+    "experience/completed_strict_success_rate": 0.0,
+    "experience/clean2_interception_per_completed_throw": 0.0,
+    "experience/strict_hold_per_completed_throw": 0.0,
+    "experience/original_loose_catch_per_measured_throw": 0.0,
+    "experience/termination_reason_0": 0,
+    "experience/termination_reason_1": 5,
+    "experience/termination_reason_2": 0,
+    "experience/termination_reason_3": 0
+  },
+  "termination_names": [
+    "time_out",
+    "anchor_pos",
+    "anchor_ori",
+    "ee_body_pos"
+  ]
+}

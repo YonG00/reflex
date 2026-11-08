@@ -110,6 +110,8 @@ class TrainConfig:
     synchronize_replay_timing: bool = True
     replay_index_cache: bool = True
     wm_context_mode: str = "full"
+    wm_encoding: str = "legacy"
+    wm_training_compile_mode: str | None = None
     compile_wm_rollout: bool = False
     compile_wm_training_step: bool = False
     minimal_termination_fk: bool = False
@@ -210,6 +212,24 @@ class Trainer:
             not c.compile_dynamics or c.compile_backend != "inductor"
         ):
             raise ValueError("WM compile mode requires compile_dynamics with Inductor")
+        training_mode = c.wm_training_compile_mode or c.wm_compile_mode
+        if training_mode not in (
+            "default",
+            "reduce-overhead",
+            "max-autotune-no-cudagraphs",
+        ):
+            raise ValueError("Unknown WM training compile mode")
+        if c.wm_training_compile_mode not in (None, "default") and (
+            c.compile_backend != "inductor"
+            or not (c.compile_wm_rollout or c.compile_wm_training_step)
+        ):
+            raise ValueError(
+                "WM training Graph mode requires a compiled training path and Inductor"
+            )
+        if c.wm_encoding not in ("legacy", "stable_heading_v1") or (
+            c.wm_encoding != "legacy" and c.wm_context_mode != "stage1_dr_v1"
+        ):
+            raise ValueError("Stable WM encoding requires compact physical context")
         if c.analytic_soft_termination and (
             c.learned_termination
             or c.joint_predicted_termination
@@ -379,6 +399,7 @@ class Trainer:
         if self.context_spec is not None:
             self.model = CompactContextWorldModel(
                 self.context_spec,
+                encoding=c.wm_encoding,
                 hidden_layers=c.wm_hidden_dims or [2048] * 3,
                 com_indices=contract.get("com_indices"),
             ).to(device)
@@ -524,11 +545,7 @@ class Trainer:
                 fullgraph=True,
                 backend=c.compile_backend,
                 dynamic=False,
-                **(
-                    {"mode": c.wm_compile_mode}
-                    if c.compile_backend == "inductor"
-                    else {}
-                ),
+                **({"mode": training_mode} if c.compile_backend == "inductor" else {}),
             )
             if c.compile_wm_training_step
             else None
@@ -549,11 +566,7 @@ class Trainer:
                 fullgraph=True,
                 dynamic=False,
                 backend=c.compile_backend,
-                **(
-                    {"mode": c.wm_compile_mode}
-                    if c.compile_backend == "inductor"
-                    else {}
-                ),
+                **({"mode": training_mode} if c.compile_backend == "inductor" else {}),
             )
             if c.compile_wm_rollout
             else None
@@ -1159,11 +1172,12 @@ class Trainer:
         last = {}
         for update_index in range(self.cfg.model_steps):
             if (
-                self._wm_rollout is not None
-                and self.cfg.wm_compile_mode == "reduce-overhead"
+                str(self.device).startswith("cuda")
+                and (self.cfg.wm_training_compile_mode or self.cfg.wm_compile_mode)
+                == "reduce-overhead"
+                and (self._wm_rollout is not None or self._wm_training_step is not None)
             ):
-                # One complete forward/backward finishes before the next WM update.
-                # No previous graph output is consumed by the next iteration.
+                # Finish one full WM forward/backward before reusing Graph storage.
                 torch.compiler.cudagraph_mark_step_begin()
             seq = self.sample(self.cfg.model_window)
             s, m = seq["state"][0], seq["memory"][0]
@@ -2489,6 +2503,11 @@ class Trainer:
                 "tilt_temperature": 0.04,
                 "reference_clock": "physical_next_phase_clamped_at_reference_end",
             }
+        if self.cfg.wm_encoding != "legacy":
+            result["wm_encoding"] = {
+                "name": self.cfg.wm_encoding,
+                "exact_zero_column": 3,
+            }
         if self.context_spec is not None:
             result["wm_context"] = self.context_spec.specification()
         if self.cfg.condition_external_events:
@@ -2635,6 +2654,10 @@ class Trainer:
             saved_config.setdefault("wm_kind", "multitask")
         loaded_config = asdict(TrainConfig(**saved_config))
         requested_config = asdict(self.cfg)
+        if loaded_config["wm_encoding"] != requested_config["wm_encoding"]:
+            raise ValueError(
+                "WM encoding mismatch: retain legacy mode for old checkpoints; stable encoding requires fresh WM/normalizer/Adam, not silent weight migration"
+            )
         # Execution optimizations and optional telemetry do not change weights,
         # optimizers or task semantics. Contact metadata is migrated separately.
         for key in (
@@ -2676,6 +2699,7 @@ class Trainer:
             "wm_mlp_precision",
             "wm_only_rounds",
             "wm_compile_mode",
+            "wm_training_compile_mode",
             "tensorboard_flush_seconds",
             "console_log_every",
         ):
