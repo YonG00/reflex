@@ -15,6 +15,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from .actor_execution_v32 import gather_event_inputs, packed_pose_carry
 from .diagnostics_v31.regions import region
 from .models import (
     CompactContextWorldModel,
@@ -76,6 +77,8 @@ class TrainConfig:
     batch_imagination_amp: bool = False
     batch_imagination_amp_features: bool = False
     batch_imagination_critic: bool = False
+    compact_actor_event_inputs: bool = False
+    packed_pose_carry: bool = False
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
     collapse_full_event_subsets: bool = False
@@ -250,6 +253,14 @@ class Trainer:
                 self.terminal_reward_cost = specs[0].weight * task.dt
 
         self.event_scheduler = event_scheduler
+        if c.compact_actor_event_inputs and not (
+            event_scheduler is not None
+            and c.condition_external_events
+            and c.deterministic_event_apply
+        ):
+            raise ValueError("V32 event gathers require deterministic native events")
+        if c.packed_pose_carry and c.wm_kind != "state":
+            raise ValueError("Packed pose carry requires the physical state WM")
         if (
             c.reuse_post_event_fk
             or c.compact_event_pool_updates
@@ -2060,20 +2071,29 @@ class Trainer:
                                 "phase": task.phase,
                                 "task_history": task.history,
                             }
-                            event_b = {
-                                k: (
-                                    v[ids]
-                                    if torch.is_tensor(v)
-                                    and v.ndim
-                                    and len(v) == len(s)
-                                    else v
+                            if self.cfg.compact_actor_event_inputs:
+                                event_b, pp = gather_event_inputs(
+                                    self.event_scheduler,
+                                    event_b,
+                                    physical_poses,
+                                    ids,
+                                    len(s),
                                 )
-                                for k, v in event_b.items()
-                            }
-                            pp = tuple(
-                                {k: v[ids] for k, v in group.items()}
-                                for group in physical_poses
-                            )
+                            else:
+                                event_b = {
+                                    k: (
+                                        v[ids]
+                                        if torch.is_tensor(v)
+                                        and v.ndim
+                                        and len(v) == len(s)
+                                        else v
+                                    )
+                                    for k, v in event_b.items()
+                                }
+                                pp = tuple(
+                                    {k: v[ids] for k, v in group.items()}
+                                    for group in physical_poses
+                                )
                             event_inputs = (
                                 event_b,
                                 physical[ids],
@@ -2170,10 +2190,16 @@ class Trainer:
             truncations.append(trunc)
             with region(self, "pose_state_carry"):
                 if self.model.state_only:
-                    poses = tuple(
-                        {k: torch.where(valid[:, None], pred[k], old[k]) for k in old}
-                        for old, pred in zip(poses, next_poses)
-                    )
+                    if self.cfg.packed_pose_carry:
+                        poses = packed_pose_carry(poses, next_poses, valid)
+                    else:
+                        poses = tuple(
+                            {
+                                k: torch.where(valid[:, None], pred[k], old[k])
+                                for k in old
+                            }
+                            for old, pred in zip(poses, next_poses)
+                        )
                 else:
                     poses = self._fk(torch.where(valid[:, None], ns, s))
                 s = torch.where(valid[:, None], ns, s)
@@ -2568,6 +2594,8 @@ class Trainer:
             "batch_imagination_amp",
             "batch_imagination_amp_features",
             "batch_imagination_critic",
+            "compact_actor_event_inputs",
+            "packed_pose_carry",
             "reuse_post_event_fk",
             "compact_event_pool_updates",
             "collapse_full_event_subsets",
