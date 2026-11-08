@@ -153,6 +153,7 @@ def main():
             ).hexdigest()
             for name in (
                 "physical_compile_v35.py",
+                "native_pointwise_v35.py",
                 "physical_numerics_v35.py",
                 "models.py",
                 "physics.py",

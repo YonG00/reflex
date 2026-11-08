@@ -18,7 +18,7 @@ V34最小链表明：WM单独编译和Actor＋WM融合均在相同参考输入�
 4. integrate：原82维残差到84维状态的积分，保留root/box COM、坐标系和四元数处理。
 5. encoder：features＋normalization，识别跨边界融合才发生的差异。
 
-各阶段单独比较FP32输出和固定非均匀cotangent的输入VJP。没有用候选状态推进参考序列，不混入前一步误差。梯度针对同一组独立叶输入隔离检查；这是数值探针，不是Actor训练detach。`--mlp-layers`可追加各Linear/ELU层的同输入/VJP检查。局部通过不证明整个融合图通过，因为返回中间量/分段会改变编译边界。
+各阶段单独比较FP32输出和固定非均匀cotangent的输入VJP。没有用候选状态推进参考序列，不混入前一步误差。梯度针对同一组独立叶输入隔离检查；这是数值探针，不是Actor训练detach。`--mlp-layers`可追加各Linear/SiLU层的同输入/VJP检查。局部通过不证明整个融合图通过，因为返回中间量/分段会改变编译边界。
 
 进度写`physical_components.partial.json`，完成写`physical_components.json`。manifest保存capsule SHA、Torch版本、源码SHA及FMA请求环境。模型/normalizer不更新；RNG与TF32在CLI结束时恢复。无Isaac初始化、无采集、无训练checkpoint写入。
 

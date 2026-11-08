@@ -19,6 +19,8 @@ DRIVERS = (
     "wm_encoder_mlp",
     "wm_mlp_integrate",
     "wm_layerwise",
+    "wm_native_silu",
+    "wm_native_pointwise",
 )
 
 
@@ -56,6 +58,29 @@ def build(model, driver, backend="inductor"):
     if driver not in DRIVERS:
         raise ValueError(f"Unknown Physical WM boundary: {driver}")
     c = components(model)
+    if driver in ("wm_native_silu", "wm_native_pointwise"):
+        from .models import Standardizer
+        from .native_pointwise_v35 import norm_native, silu_native
+
+        if type(model.inputs) is not Standardizer:
+            raise ValueError("Require the original fixed-statistic Standardizer")
+        if any(isinstance(layer, nn.SiLU) and layer.inplace for layer in model.net):
+            raise ValueError("In-place SiLU is outside the verified diagnostic")
+
+        def physical(state, target, context, event):
+            features = model.features(state, target, context, event)
+            value = (
+                norm_native(features, model.inputs.mean, model.inputs.std)
+                if driver == "wm_native_pointwise"
+                else model.inputs(features)
+            )
+            for layer in model.net:
+                value = (
+                    silu_native(value) if isinstance(layer, nn.SiLU) else layer(value)
+                )
+            return c["integrate"](state, value, context)
+
+        return torch.compile(physical, fullgraph=True, dynamic=False, backend=backend)
     compile_fn = lambda fn: torch.compile(
         fn, fullgraph=True, dynamic=False, backend=backend
     )
