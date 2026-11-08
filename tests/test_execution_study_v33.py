@@ -107,6 +107,7 @@ def test_coarse_phase_checks_preserve_adam_rng_and_gc_callbacks(tmp_path):
         "actor_forward",
         "actor_backward",
         "actor_clip_adam",
+        "native_event_step",
     }
     for name in initial.names:
         assert_tree_equal(getattr(t, name).state_dict(), initial.weights[name])

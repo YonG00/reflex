@@ -272,6 +272,36 @@ class PhaseRecorder:
         }
 
 
+@contextmanager
+def native_phases(t):
+    recorder = getattr(t, "_v33_phase_recorder", None)
+    if recorder is None:
+        yield
+        return
+    scheduler = t.event_scheduler
+    present, saved = "step" in scheduler.__dict__, scheduler.__dict__.get("step")
+    original = scheduler.step
+    depth = 0
+
+    def step(*args, **kwargs):
+        nonlocal depth
+        depth += 1
+        try:
+            with recorder.phase("native_event_step") if depth == 1 else nullcontext():
+                return original(*args, **kwargs)
+        finally:
+            depth -= 1
+
+    scheduler.step = step
+    try:
+        yield
+    finally:
+        if present:
+            scheduler.step = saved
+        else:
+            del scheduler.step
+
+
 def phase_check(t, output, repeats):
     if repeats < 1 or Path(output).exists():
         raise ValueError("Positive repeats and a new phase report path required")
@@ -291,7 +321,8 @@ def phase_check(t, output, repeats):
         for recorded in (False, True):
             snap.reset()
             t._v33_phase_recorder = PhaseRecorder(t.device) if recorded else None
-            t.update_actor()  # warm instrumentation guards outside measurements
+            with native_phases(t):
+                t.update_actor()  # warm instrumentation guards outside measurements
         before = compile_counts()
         for recorded in (False, True):
             snap.reset()
@@ -304,7 +335,8 @@ def phase_check(t, output, repeats):
                     gc.callbacks.append(recorder.gc_callback)
                 try:
                     begin = timestamp(t.device)
-                    metrics = t.update_actor()
+                    with native_phases(t):
+                        metrics = t.update_actor()
                     elapsed = timestamp(t.device) - begin
                 finally:
                     if recorded:

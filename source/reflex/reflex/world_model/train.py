@@ -40,6 +40,7 @@ parser.add_argument(
         "actor_execution_v30_check",
         "actor_execution_v32_check",
         "execution_study_v33",
+        "execution_phases_v33",
         "actor_full_v31_profile",
         "actor_v31_diagnostics",
         "actor_minimal_v31_export",
@@ -171,6 +172,7 @@ if args.mode in (
     "actor_v31_diagnostics",
     "actor_execution_v32_check",
     "execution_study_v33",
+    "execution_phases_v33",
 ):
     if not args.checkpoint:
         parser.error("Actor diagnostics require an explicit trained checkpoint")
@@ -507,17 +509,17 @@ def main():
                 flush=True,
             )
             return
-        if args.mode == "execution_study_v33":
-            from .execution_study_v33 import check
+        if args.mode in ("execution_study_v33", "execution_phases_v33"):
+            from .execution_study_v33 import check, phase_check
 
             for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
                 trainer.collect(adapter)
-            print(
-                json.dumps(
-                    check(trainer, out, args.diagnostic_repeats, args.diagnostic_warmups)
-                ),
-                flush=True,
+            result = (
+                phase_check(trainer, out / "phases.json", args.diagnostic_repeats)
+                if args.mode == "execution_phases_v33"
+                else check(trainer, out, args.diagnostic_repeats, args.diagnostic_warmups)
             )
+            print(json.dumps(result), flush=True)
             return
         if args.mode == "actor_execution_v30_check":
             from .imagination_batching import check
