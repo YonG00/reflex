@@ -1,3 +1,12 @@
+## V35 Physical WM数值修复候选（2026-11-08）
+
+- 改动：同输入features/normalization/MLP/integrate输出与VJP探针；保留原运算边界的MLP-only/layerwise等候选；H32实际Adam漂移坐标及对应梯度记录。
+- 不变量：原公式/模型/归一化/FP32/默认容差/Adam、完整梯度；正式训练和原事件代码不改。
+- 出错症状：局部值接近但H32/Adam仍失败；候选单独比自己导致假通过；误把组件图等价当整图通过。
+- 回滚：不选V35 driver，旧默认三边界及正式训练继续原路径。
+- 验证入口：tests/test_physical_numerics_v35.py；scripts/study_physical_wm_v35.sh；先同一capsule GPU定位，再完整Actor/WM H8验收。
+- 状态：CPU已验证，GPU待测；未宣称问题已解决。细节见world_model/V35_PHYSICAL_WM_NUMERICS_ZH.md。
+
 ## V34 事件写回候选与融合误差定位（2026-11-08）
 
 - 改动：默认关闭的连续列WritePlan、子plan单次gather、移除候选无用before装配；可恢复的真实Actor配对验收入口；最小H32相同输入逐步误差探针；显式源码固定的checkpoint迁移。

@@ -287,6 +287,13 @@ def check(
     drivers=("eager", "segmented", "single_step"),
     metadata=None,
 ):
+    from ..physical_compile_v35 import DRIVERS as physical_drivers
+    from ..physical_compile_v35 import build, update_drift
+
+    if not drivers:
+        raise ValueError("At least one comparison driver required")
+    if any(driver in physical_drivers for driver in drivers) and drivers[0] != "eager":
+        raise ValueError("Physical boundary trials require eager as first reference")
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "minimal_actor_v31.json"
@@ -315,7 +322,7 @@ def check(
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
         for driver in drivers:
-            if driver not in ("eager", "segmented", "single_step"):
+            if driver not in ("eager", "segmented", "single_step", *physical_drivers):
                 raise ValueError("Unknown driver")
             torch.set_rng_state(original_rng)
             if cuda_rng is not None:
@@ -352,6 +359,10 @@ def check(
                 if driver == "segmented"
                 else None
             )
+            if driver in physical_drivers:
+                if not isinstance(step, ReflexStep):
+                    raise ValueError("Physical boundaries require a Reflex capsule")
+                step.wm_call = build(step.model, driver, backend)
             call = (
                 torch.compile(step, fullgraph=True, dynamic=False, backend=backend)
                 if driver == "single_step"
@@ -432,6 +443,9 @@ def check(
             result["drivers"][driver] = {
                 "numeric": numeric,
                 "boundary_probe": boundary_probe(step, call, horizon),
+                "parameter_update_drift": update_drift(
+                    reference, actual, tuple(step.actor.named_parameters())
+                ),
                 "warmup": rows[:warmups],
                 "steady": rows[warmups:],
                 "wall_seconds": distribution(
