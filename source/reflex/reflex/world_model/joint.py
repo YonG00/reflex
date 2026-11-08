@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 
+from .execution_phases import phase
 from .timing import timestamp
 
 
@@ -73,18 +74,19 @@ def _update_actor(t):
             k: v[offset : offset + (c.actor_microbatch or n)] for k, v in starts.items()
         }
         with freeze(t.model, t.termination, t.prior._disc, t.critic):
-            imagined = t.imagine(start_batch=b)
-            values = imagined.get("actor_values")
-            if values is None and c.batch_imagination_critic:
-                observation = imagined.get("critic_obs", imagined["obs"])
-                values = t.critic(observation.flatten(0, 1)).reshape(
-                    observation.shape[:2]
-                )
-            loss = -returns(imagined, t.critic, c.gamma, values).mean()
-            if c.actor_horizon_scale:
-                loss = loss / c.horizon
-            scaled = loss * len(b["state"]) / n
-            with torch.profiler.record_function("actor/BPTT"):
+            with phase(t, "actor_forward"):
+                imagined = t.imagine(start_batch=b)
+                values = imagined.get("actor_values")
+                if values is None and c.batch_imagination_critic:
+                    observation = imagined.get("critic_obs", imagined["obs"])
+                    values = t.critic(observation.flatten(0, 1)).reshape(
+                        observation.shape[:2]
+                    )
+                loss = -returns(imagined, t.critic, c.gamma, values).mean()
+                if c.actor_horizon_scale:
+                    loss = loss / c.horizon
+                scaled = loss * len(b["state"]) / n
+            with phase(t, "actor_backward"), torch.profiler.record_function("actor/BPTT"):
                 scaled.backward()
             loss_total += float(scaled.detach())
             target = critic_targets(
@@ -105,10 +107,11 @@ def _update_actor(t):
                 flush=True,
             )
     params = list(t.actor.parameters())
-    norm = nn.utils.clip_grad_norm_(params, 1.0, error_if_nonfinite=True)
-    if c.actor_grad_clip_value:
-        nn.utils.clip_grad_value_(params, c.actor_grad_clip_value)
-    t.actor_opt.step()
+    with phase(t, "actor_clip_adam"):
+        norm = nn.utils.clip_grad_norm_(params, 1.0, error_if_nonfinite=True)
+        if c.actor_grad_clip_value:
+            nn.utils.clip_grad_value_(params, c.actor_grad_clip_value)
+        t.actor_opt.step()
     t.actor_updates += 1
     actor_seconds = timestamp(t.device) - begin
     x, y = torch.cat(x), torch.cat(y)

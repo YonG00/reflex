@@ -5,7 +5,7 @@ import hashlib
 import json
 import statistics
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import torch
@@ -136,14 +136,14 @@ def compare(a, b):
     return {"passed": not failures, "max_abs": errors, "failures": failures}
 
 
-def semantic_probe(t, snapshot):
+def semantic_probe(t, snapshot, extra_scopes=None):
     outputs = []
     coverage = {}
     for instrumented in (False, True):
         snapshot.reset()
         with freeze(t.model, t.termination, t.prior._disc, t.critic):
             if instrumented:
-                with scopes(t):
+                with scopes(t), extra_scopes(t) if extra_scopes else nullcontext():
                     batch = t.sample(starts=True, n=t.cfg.actor_batch or t.cfg.batch)
                     result = t.imagine(batch, trace=True)
             else:
@@ -205,7 +205,15 @@ def sampling_audit(t, snapshot, sampler, repeats):
     }
 
 
-def check(t, output, repeats=20, warmups=2, semantic=True):
+def check(
+    t,
+    output,
+    repeats=20,
+    warmups=2,
+    semantic=True,
+    extra_scopes=None,
+    extra_summary=None,
+):
     if repeats < 1 or warmups < 1:
         raise ValueError("Positive repeat and warmup counts are required")
     out = Path(output)
@@ -273,7 +281,9 @@ def check(t, output, repeats=20, warmups=2, semantic=True):
             observed.clear()
         result["warmup_seconds"] = cold
         if semantic:
-            result["scope_semantics"], result["coverage"] = semantic_probe(t, snapshot)
+            result["scope_semantics"], result["coverage"] = semantic_probe(
+                t, snapshot, extra_scopes
+            )
             if not result["scope_semantics"]["passed"]:
                 raise RuntimeError("Instrumentation changes trajectories or gradients")
             observed.clear()
@@ -308,7 +318,7 @@ def check(t, output, repeats=20, warmups=2, semantic=True):
         )
         snapshot.reset()
         scope_counts_before = compile_counts()
-        with scopes(t):
+        with scopes(t), extra_scopes(t) if extra_scopes else nullcontext():
             # Establish identical wrapper guards outside profiler, discard update.
             t.update_actor()
             observed.clear()
@@ -342,6 +352,8 @@ def check(t, output, repeats=20, warmups=2, semantic=True):
         )
         result["profiled_metrics_not_speed_benchmark"] = profiled_metrics
         result["attribution"] = summarize(profiler.events())
+        if extra_summary is not None:
+            result["execution_sites"] = extra_summary(profiler.events())
         result["operators"] = [
             {
                 "name": e.key,

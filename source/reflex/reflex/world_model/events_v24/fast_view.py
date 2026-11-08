@@ -1,12 +1,25 @@
 """Minimal native-event-only facade; no reward/reference/FK construction."""
 
 import copy
+from contextlib import nullcontext
 
 from ..task import HISTORY_FIELDS, NS, Scene
 from .writes import PlannedAsset
 
 
 def build(scheduler, b, physical, poses, values, episode, common, plan):
+    import torch
+
+    scope = (
+        torch.profiler.record_function("v33/view_prepare")
+        if getattr(scheduler, "_v33_regions", False)
+        else nullcontext()
+    )
+    with scope:
+        return _build(scheduler, b, physical, poses, values, episode, common, plan)
+
+
+def _build(scheduler, b, physical, poses, values, episode, common, plan):
     del poses  # Supported native events use root/joint data, never body FK.
     import torch
 
@@ -34,7 +47,12 @@ def build(scheduler, b, physical, poses, values, episode, common, plan):
         copied_values = {name: value.clone() for name, value in values.items()}
     else:
         r, x, counters, copied_values = preparer(
-            physical, plan.targets, plan.mask.clone(), origins, b["task_history"], values
+            physical,
+            plan.targets,
+            plan.mask.clone(),
+            origins,
+            b["task_history"],
+            values,
         )
     robot = NS(
         **dict(
