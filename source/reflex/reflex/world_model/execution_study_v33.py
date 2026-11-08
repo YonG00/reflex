@@ -1,6 +1,8 @@
 """Complete-chain source-site profiler and unprofiled coarse execution timeline."""
 
+import copy
 import gc
+import hashlib
 import json
 import sys
 import time
@@ -132,7 +134,24 @@ def source_summary(events):
 
     def forward(e):
         return next(
-            (p.name for p in ancestry(e) if p.name.startswith((PREFIX, CALLBACK))), None
+            (
+                p.name
+                for p in ancestry(e)
+                if p.name.startswith(
+                    (
+                        PREFIX,
+                        CALLBACK,
+                        "v33/view_prepare",
+                        "v33/plan_",
+                        "v33/asset_refresh",
+                        "v33/invoke/",
+                        "v31/event_decode",
+                        "v31/event_encode",
+                        "v31/native_events",
+                    )
+                )
+            ),
+            None,
         )
 
     sequence = defaultdict(set)
@@ -254,6 +273,8 @@ class PhaseRecorder:
 
 
 def phase_check(t, output, repeats):
+    if repeats < 1 or Path(output).exists():
+        raise ValueError("Positive repeats and a new phase report path required")
     snap = Snapshot(t)
     present, saved = (
         "_v33_phase_recorder" in t.__dict__,
@@ -263,14 +284,20 @@ def phase_check(t, output, repeats):
         "completed": False,
         "reference": [],
         "recorded": [],
-        "note": "Coarse CUDA event spans include idle gaps; host spans overlap GPU execution; do not add them.",
+        "note": "Two continuous update runs from identical weights/RNG; no per-update snapshots. CUDA spans include idle gaps and overlap host time. Not joint WM/environment training.",
     }
     reference = None
     try:
+        for recorded in (False, True):
+            snap.reset()
+            t._v33_phase_recorder = PhaseRecorder(t.device) if recorded else None
+            t.update_actor()  # warm instrumentation guards outside measurements
         before = compile_counts()
-        for _ in range(repeats):
-            for recorded in (False, True):
-                snap.reset()
+        for recorded in (False, True):
+            snap.reset()
+            t.event_scheduler.static = copy.deepcopy(snap.static)
+            gc.collect()  # outside timing; discard warmup/snapshot garbage
+            for _ in range(repeats):
                 recorder = PhaseRecorder(t.device)
                 t._v33_phase_recorder = recorder if recorded else None
                 if recorded:
@@ -282,22 +309,27 @@ def phase_check(t, output, repeats):
                 finally:
                     if recorded:
                         gc.callbacks.remove(recorder.gc_callback)
-                if reference is None:
-                    reference = parameter_result(t)
                 row = {"wall_seconds": elapsed, "metrics": metrics}
                 if recorded:
                     row.update(recorder.result())
-                    row["numeric"] = compare(reference, parameter_result(t))
                 result["recorded" if recorded else "reference"].append(row)
+            if not recorded:
+                reference = parameter_result(t)
+            else:
+                result["actual_parameter_and_gradient"] = compare(
+                    reference, parameter_result(t)
+                )
         result["compile_delta"] = count_delta(compile_counts(), before)
         result["completed"] = True
-        result["numeric_passed"] = all(
-            x["numeric"]["passed"] for x in result["recorded"]
-        )
+        result["numeric_passed"] = result["actual_parameter_and_gradient"]["passed"]
         for name in ("reference", "recorded"):
             result[name + "_wall"] = distribution(
                 [x["wall_seconds"] for x in result[name]]
             )
+        result["per_step_recording_wall_differences_seconds"] = [
+            b["wall_seconds"] - a["wall_seconds"]
+            for a, b in zip(result["reference"], result["recorded"])
+        ]
     finally:
         if present:
             t._v33_phase_recorder = saved
@@ -309,7 +341,23 @@ def phase_check(t, output, repeats):
 
 
 def check(t, output, repeats=20, warmups=2):
+    if not (
+        t.cfg.actor_batch
+        and t.cfg.actor_steps == 1
+        and t.cfg.condition_external_events
+        and t.cfg.deterministic_event_apply
+        and t.cfg.minimal_event_view
+        and t.cfg.batch_imagination_critic
+        and t.model.state_only
+    ):
+        raise ValueError("Use the verified chunked native Actor update configuration")
+    if t.cfg.compile_event_tensors:
+        raise ValueError("Native source-site study requires eager event tensors")
     out = Path(output)
+    out.mkdir(parents=True, exist_ok=True)
+    # Measure before building large Profiler event trees: their delayed GC must
+    # not be mistaken for ordinary update-loop overhead.
+    phases = phase_check(t, out / "phases.json", repeats)
     report = full_check(
         t,
         out / "full",
@@ -318,12 +366,34 @@ def check(t, output, repeats=20, warmups=2):
         extra_scopes=detailed_scopes,
         extra_summary=source_summary,
     )
-    phases = phase_check(t, out / "phases.json", repeats)
     result = {
         "completed": report["completed"] and phases["completed"],
         "numeric_passed": report["numeric_passed"] and phases["numeric_passed"],
         "attribution_usable": report["attribution_usable"],
         "checkpoint_saved": False,
+        "timings_usable": not any(phases["compile_delta"].values()),
+        "source_sha256": {
+            str(p.relative_to(Path(__file__).parent)): hashlib.sha256(
+                p.read_bytes()
+            ).hexdigest()
+            for p in (
+                Path(__file__),
+                Path(__file__).with_name("execution_phases.py"),
+                Path(__file__).parent / "events_v24/fast_view.py",
+            )
+        },
+        "callbacks": [
+            {
+                "term": term.name,
+                "function": getattr(term.function, "__module__", "")
+                + "."
+                + getattr(term.function, "__name__", type(term.function).__name__),
+                "first_line": getattr(
+                    getattr(term.function, "__code__", None), "co_firstlineno", None
+                ),
+            }
+            for term in t.event_scheduler.terms
+        ],
     }
     (out / "execution_study_v33.json").write_text(json.dumps(result, indent=2))
     return result

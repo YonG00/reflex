@@ -1,5 +1,14 @@
 # 待补改动
 
+## V33 H32整体执行研究（2026-11-08，测量准备、GPU待测）
+
+- 目标：量化同步等待、CPU/Autograd调度与GPU工作，之后才决定固定Batch事件程序的具体实现；不把kernel次数当作实际耗时。
+- 入口：`scripts/study_actor_v33.sh` / `execution_study_v33` mode。说明见 [V33研究](world_model/V33_EXECUTION_STUDY_ZH.md)。
+- 不变量：原生事件、时序、随机数语义、状态更新、全部梯度与H32不变；没有省略回调，局部clone/固定计时器/初始化no-op候选已撤出主线。
+- 出错症状：源码hook导致编译失效、source未覆盖却被猜测归属、记录器改变更新或RNG、Profiler/快照GC被误当普通训练开销。
+- 验证：完整CPU215项通过、1条已有弃用警告（715.36秒），随后最新连续测量器6项复测通过（68.58秒）。日志见 `docs/world_model/benchmarks_v33_cpu/`。GPU尚未运行，不报告新收益。
+- 回滚：不启用诊断mode；Tensor方法/回调范围临时hook在正常与异常退出时均恢复，默认训练只保留关闭的记录边界。
+
 ## V32 Actor事件gather与pose carry（2026-11-08，CPU/GPU验收完成）
 
 - 目的：依据V31实际热点，移除事件最小视图不读取的外层Replay/pose索引，将逐body pose mask压为组内操作。不预设GPU收益。
