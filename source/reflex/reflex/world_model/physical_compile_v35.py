@@ -21,6 +21,8 @@ DRIVERS = (
     "wm_layerwise",
     "wm_native_silu",
     "wm_native_pointwise",
+    "wm_native_materialized",
+    "wm_native_split",
 )
 
 
@@ -58,7 +60,12 @@ def build(model, driver, backend="inductor"):
     if driver not in DRIVERS:
         raise ValueError(f"Unknown Physical WM boundary: {driver}")
     c = components(model)
-    if driver in ("wm_native_silu", "wm_native_pointwise"):
+    if driver in (
+        "wm_native_silu",
+        "wm_native_pointwise",
+        "wm_native_materialized",
+        "wm_native_split",
+    ):
         from .models import Standardizer
         from .native_pointwise_v35 import norm_native, silu_native
 
@@ -71,16 +78,35 @@ def build(model, driver, backend="inductor"):
             features = model.features(state, target, context, event)
             value = (
                 norm_native(features, model.inputs.mean, model.inputs.std)
-                if driver == "wm_native_pointwise"
+                if driver != "wm_native_silu"
                 else model.inputs(features)
             )
             for layer in model.net:
                 value = (
                     silu_native(value) if isinstance(layer, nn.SiLU) else layer(value)
                 )
-            return c["integrate"](state, value, context)
+            if driver == "wm_native_split":
+                return value
+            physical_state = c["integrate"](state, value, context)
+            return (
+                (physical_state, value)
+                if driver == "wm_native_materialized"
+                else physical_state
+            )
 
-        return torch.compile(physical, fullgraph=True, dynamic=False, backend=backend)
+        compiled = torch.compile(
+            physical, fullgraph=True, dynamic=False, backend=backend
+        )
+        if driver == "wm_native_materialized":
+            # Materialize the original 82 residuals at this graph's output,
+            # preventing dead-output removal from erasing their boundary.
+            return lambda *args: compiled(*args)[0]
+        if driver == "wm_native_split":
+            # Diagnostic numerical fence: original integration, not a surrogate.
+            return lambda state, target, context, event: c["integrate"](
+                state, compiled(state, target, context, event), context
+            )
+        return compiled
     compile_fn = lambda fn: torch.compile(
         fn, fullgraph=True, dynamic=False, backend=backend
     )

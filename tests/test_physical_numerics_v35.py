@@ -96,6 +96,8 @@ def test_h32_boundaries_actual_adam_and_bptt(tmp_path):
             "wm_encoder_mlp",
             "wm_native_silu",
             "wm_native_pointwise",
+            "wm_native_materialized",
+            "wm_native_split",
         ),
     )
     assert result["completed"] and result["numeric_passed"], result
