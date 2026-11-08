@@ -1,6 +1,6 @@
 # V35：Physical WM编译数值定位与保留运算边界的修复候选
 
-状态：本地实现/CPU验证，GPU待测；没有宣称数值问题已解决、没有新性能结果、未改正式训练或checkpoint。继承V34同一capsule、FP32/TF32关闭和默认dtype容差。
+状态：GPU最小链已验证一条分段候选；真实完整任务回归冷编译超时，未通过最终验收。后续改用V36分阶段保存/生产Actor研究对照，见[V36](V36_FULL_ACTOR_RESEARCH_GATE_ZH.md)。未改正式训练或checkpoint。继承V34同一capsule、FP32/TF32关闭和默认dtype容差。
 
 ## 已知问题与假设边界
 

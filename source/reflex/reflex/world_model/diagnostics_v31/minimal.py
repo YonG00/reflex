@@ -440,7 +440,17 @@ def check(
             if reference is None:
                 reference = actual
             numeric = compare(reference, actual)
+            from ..numerical_risk_v35 import actor_risk, physical_summary
+
+            risk = actor_risk(
+                reference, actual, actor_initial, tuple(step.actor.named_parameters())
+            )
+            if isinstance(step, ReflexStep):
+                risk["physical_state"] = physical_summary(
+                    reference["states"], actual["states"]
+                )
             result["drivers"][driver] = {
+                "numerical_risk": risk,
                 "numeric": numeric,
                 "boundary_probe": boundary_probe(step, call, horizon),
                 "parameter_update_drift": update_drift(

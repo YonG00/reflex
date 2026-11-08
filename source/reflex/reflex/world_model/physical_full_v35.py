@@ -1,19 +1,21 @@
 """Real-Replay H8 and complete-task H32 numerical gates, no checkpoint writes."""
 
 import copy
-import json
 from pathlib import Path
 
 import torch
 
 from .actor_execution_v32_check import rollout
+from .diagnostic_watch_v35 import atomic_json, cold_watch
 from .diagnostics_v31.full import compare, distribution
 from .diagnostics_v31.state import Snapshot, digest, parameter_result
 from .physical_compile_v35 import build
 from .timing import timestamp
 
 
-def check(t, output, repeats=3, warmups=1):
+def check(t, output, repeats=3, warmups=1, stage="all", trace_seconds=0):
+    if stage not in ("all", "wm", "actor"):
+        raise ValueError("Unknown verification stage")
     if not t.cfg.analytic_soft_termination or t.cfg.fuse_actor_core:
         raise ValueError("Use the analytic packed-head baseline, not Actor core fusion")
     if repeats < 1 or warmups < 1:
@@ -42,12 +44,28 @@ def check(t, output, repeats=3, warmups=1):
     }
     result = {
         "completed": False,
+        "requested_stage": stage,
+        "model_restored": False,
         "checkpoint_saved": False,
         "config": copy.deepcopy(vars(t.cfg)),
-        "variants": {},
+        "variants": {name: {} for name in variants},
         "scope": "actual Replay H8 WM and complete Actor/AMP/critic/reward/events",
         "timing_note": "Short frozen-update control; not end-to-end training throughput",
     }
+
+    def save():
+        atomic_json(path, result)
+
+    def progress(value):
+        result["active_operation"] = value
+        save()
+
+    def watching(label):
+        result["current_stage"] = label
+        save()
+        return cold_watch(t, label, progress, out / "cold_stacks.log", trace_seconds)
+
+    save()
 
     def reset(call):
         snapshot.reset()
@@ -92,29 +110,42 @@ def check(t, output, repeats=3, warmups=1):
         return values
 
     try:
-        reset(original_predict)
-        seq = t.sample(t.cfg.model_window)
-        result["wm_sequence_sha256"] = digest(seq)
-        expected_wm = None
-        for name, call in variants.items():
-            reset(call)
-            actual = wm_step(seq)
-            if expected_wm is None:
-                expected_wm = actual
-            result["variants"][name] = {
-                "wm_h8_gradient_and_adam": compare(expected_wm, actual)
-            }
-            print(f"[V35 full] {name} WM done", flush=True)
-        del expected_wm
+        if stage != "actor":
+            reset(original_predict)
+            seq = t.sample(t.cfg.model_window)
+            result["wm_sequence_sha256"] = digest(seq)
+            expected_wm = None
+            for name, call in variants.items():
+                reset(call)
+                with watching(f"wm/{name}"):
+                    actual = wm_step(seq)
+                if expected_wm is None:
+                    expected_wm = actual
+                result["variants"][name].update(
+                    {"wm_h8_gradient_and_adam": compare(expected_wm, actual)}
+                )
+                save()
+                print(f"[V35 full] {name} WM done", flush=True)
+            del expected_wm
+            if stage == "wm":
+                result["completed"] = True
+                result["candidate_wm_numeric_passed"] = result["variants"][
+                    "native_split"
+                ]["wm_h8_gradient_and_adam"]["passed"]
+                save()
+                return result
         for name, call in variants.items():
             for _ in range(warmups):
                 reset(call)
-                t.update_actor()
+                with watching(f"warm/{name}"):
+                    t.update_actor()
+            save()
             print(f"[V35 full] {name} warm", flush=True)
         expected_rollout = expected_update = None
         for name, call in variants.items():
             reset(call)
-            actual, details = rollout(t)
+            with watching(f"trajectory/{name}"):
+                actual, details = rollout(t)
             if expected_rollout is None:
                 expected_rollout = actual
             result["variants"][name].update(
@@ -123,6 +154,7 @@ def check(t, output, repeats=3, warmups=1):
                 steady=[],
             )
             del actual
+            save()
         del expected_rollout
         for _ in range(repeats):
             for name, call in variants.items():
@@ -137,23 +169,25 @@ def check(t, output, repeats=3, warmups=1):
                     expected_update = actual
                 entry["actual_actor_critic_update"] = compare(expected_update, actual)
                 print(f"[V35 full] {name} actual update", flush=True)
-            path.write_text(json.dumps(result, indent=2))
+            save()
         for entry in result["variants"].values():
-            entry["numeric_passed"] = all(
-                entry[key]["passed"]
-                for key in (
-                    "wm_h8_gradient_and_adam",
-                    "trajectory_and_raw_actor_gradient",
-                    "actual_actor_critic_update",
-                )
-            )
+            keys = ["trajectory_and_raw_actor_gradient", "actual_actor_critic_update"]
+            if stage == "all":
+                keys.append("wm_h8_gradient_and_adam")
+            entry["numeric_passed"] = all(entry[key]["passed"] for key in keys)
             entry["wall_seconds"] = distribution(
                 [row["seconds"] for row in entry["steady"]]
             )
         result["completed"] = True
-        result["candidate_numeric_passed"] = result["variants"]["native_split"][
-            "numeric_passed"
-        ]
+        result[
+            "candidate_numeric_passed"
+            if stage == "all"
+            else "candidate_actor_numeric_passed"
+        ] = result["variants"]["native_split"]["numeric_passed"]
+    except BaseException as exc:
+        result["failure"] = {"type": type(exc).__name__, "message": str(exc)}
+        save()
+        raise
     finally:
         t.model.load_state_dict(model_state)
         t.model_opt.load_state_dict(model_opt)
@@ -166,5 +200,5 @@ def check(t, output, repeats=3, warmups=1):
         t._dynamics = original_dynamics
         snapshot.restore()
         result["model_restored"] = digest(t.model.state_dict()) == initial_model_hash
-        path.write_text(json.dumps(result, indent=2))
+        save()
     return result

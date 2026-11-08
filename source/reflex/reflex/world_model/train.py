@@ -41,6 +41,7 @@ parser.add_argument(
         "actor_execution_v32_check",
         "actor_execution_v34_check",
         "physical_full_v35_check",
+        "actor_fusion_study_v36",
         "execution_study_v33",
         "execution_phases_v33",
         "actor_full_v31_profile",
@@ -175,6 +176,7 @@ if args.mode in (
     "actor_execution_v32_check",
     "actor_execution_v34_check",
     "physical_full_v35_check",
+    "actor_fusion_study_v36",
     "execution_study_v33",
     "execution_phases_v33",
 ):
@@ -501,6 +503,20 @@ def main():
                 flush=True,
             )
             return
+        if args.mode == "actor_fusion_study_v36":
+            from .actor_fusion_study_v36 import check
+
+            for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
+                trainer.collect(adapter)
+            print(
+                json.dumps(
+                    check(
+                        trainer, out, args.diagnostic_repeats, args.diagnostic_warmups
+                    )
+                ),
+                flush=True,
+            )
+            return
         if args.mode == "physical_full_v35_check":
             from .physical_full_v35 import check
 
@@ -509,7 +525,12 @@ def main():
             print(
                 json.dumps(
                     check(
-                        trainer, out, args.diagnostic_repeats, args.diagnostic_warmups
+                        trainer,
+                        out,
+                        args.diagnostic_repeats,
+                        args.diagnostic_warmups,
+                        stage=os.environ.get("V35_FULL_STAGE", "all"),
+                        trace_seconds=int(os.environ.get("V35_STACK_SECONDS", "60")),
                     )
                 ),
                 flush=True,

@@ -2,14 +2,16 @@
 
 import copy
 import hashlib
-import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
 
 from . import joint
+from .diagnostic_watch_v35 import atomic_json
 from .diagnostics_v31.full import compare, compile_counts, count_delta, distribution
 from .diagnostics_v31.state import Snapshot, digest, parameter_result
+from .numerical_risk_v35 import actor_risk, trajectory_risk
 from .timing import timestamp
 from .trainer import freeze
 
@@ -57,7 +59,26 @@ def rollout(t):
     }
 
 
-def check(t, output, repeats=20, warmups=2):
+def check(
+    t,
+    output,
+    repeats=20,
+    warmups=2,
+    *,
+    variants=None,
+    flag_names=None,
+    apply_variant=None,
+    cold_context=None,
+    report_name="actor_execution_v32.json",
+):
+    variants = VARIANTS if variants is None else variants
+    flag_names = FLAGS if flag_names is None else flag_names
+    if not variants or next(iter(variants)) != "reference":
+        raise ValueError("First variant must be the common reference")
+
+    def context(label, result):
+        return nullcontext() if cold_context is None else cold_context(label, result)
+
     if repeats < 1 or warmups < 1:
         raise ValueError("Positive repeats and warmups required")
     if not (
@@ -70,11 +91,11 @@ def check(t, output, repeats=20, warmups=2):
         raise ValueError("Use the verified native state-WM/packed-critic configuration")
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / "actor_execution_v32.json"
+    path = out / report_name
     if path.exists():
         raise FileExistsError(path)
     snapshot = Snapshot(t)
-    original_flags = tuple(getattr(t.cfg, name) for name in FLAGS)
+    original_flags = tuple(getattr(t.cfg, name) for name in flag_names)
     model_before = digest(t.model.state_dict())
     actor_before = digest(t.actor.state_dict())
     result = {
@@ -84,7 +105,7 @@ def check(t, output, repeats=20, warmups=2):
         "torch": str(torch.__version__),
         "checkpoint_saved": False,
         "timing": "Interleaved full real update; snapshot restoration excluded; cold warmups separate",
-        "variants": {name: {"warmup": [], "steady": []} for name in VARIANTS},
+        "variants": {name: {"warmup": [], "steady": []} for name in variants},
         "source_sha256": {
             name: hashlib.sha256(
                 Path(__file__).with_name(name).read_bytes()
@@ -111,9 +132,12 @@ def check(t, output, repeats=20, warmups=2):
         snapshot.reset()
         # Native callbacks may cache posture ids. Do not inherit trial mutations.
         t.event_scheduler.static = copy.deepcopy(snapshot.static)
-        for key, value in zip(FLAGS, VARIANTS[name]):
+        for key, value in zip(flag_names, variants[name]):
             setattr(t.cfg, key, value)
+        if apply_variant is not None:
+            apply_variant(name)
 
+    atomic_json(path, result)
     t.sample = sample
     reference_update = None
     try:
@@ -122,21 +146,26 @@ def check(t, output, repeats=20, warmups=2):
             for _ in range(warmups):
                 reset(name)
                 begin = timestamp(t.device)
-                t.update_actor()
+                with context(f"warm/{name}", result):
+                    t.update_actor()
                 entry["warmup"].append(timestamp(t.device) - begin)
                 observed.clear()
         reset("reference")
-        expected, details = rollout(t)
+        with context("trajectory/reference", result):
+            expected, details = rollout(t)
         result["variants"]["reference"]["rollout"] = details
         result["sample_sha256"] = details["sample_sha256"]
         for name, entry in result["variants"].items():
             reset(name)
-            actual, entry["rollout"] = rollout(t)
+            with context(f"trajectory/{name}", result):
+                actual, entry["rollout"] = rollout(t)
             entry["trajectory_and_raw_gradient"] = compare(expected, actual)
+            entry["numerical_risk"] = trajectory_risk(expected, actual)
+            atomic_json(path, result)
             del actual
             observed.clear()
         del expected
-        names = list(VARIANTS)
+        names = list(variants)
         before = compile_counts()
         for j in range(repeats):
             # Rotate order to avoid systematically assigning boost/thermal drift.
@@ -164,11 +193,31 @@ def check(t, output, repeats=20, warmups=2):
                     entry["actual_parameter_and_gradient"] = compare(
                         reference_update, actual_update
                     )
+                    names_and_params = tuple(t.actor.named_parameters())
+
+                    def convert_update(value, names_and_params=names_and_params):
+                        return {
+                            **{
+                                f"parameter/{key}": value[f"actor/{key}"]
+                                for key, _ in names_and_params
+                            },
+                            **{
+                                f"gradient/{i}": value[f"actor/grad/{i}"]
+                                for i in range(len(names_and_params))
+                            },
+                        }
+
+                    entry["update_risk"] = actor_risk(
+                        convert_update(reference_update),
+                        convert_update(actual_update),
+                        snapshot.weights["actor"],
+                        names_and_params,
+                    )
                     entry["sample_sha256"] = digest(observed["starts"])
                     if actual_update is not reference_update:
                         del actual_update
                 observed.clear()
-            path.write_text(json.dumps(result, indent=2))
+            atomic_json(path, result)
             print(f"[V32] paired round {j + 1}/{repeats}", flush=True)
         result["steady_compile_delta"] = count_delta(compile_counts(), before)
         for entry in result["variants"].values():
@@ -197,7 +246,7 @@ def check(t, output, repeats=20, warmups=2):
         else:
             del t.sample
         observed.clear()
-        for key, value in zip(FLAGS, original_flags):
+        for key, value in zip(flag_names, original_flags):
             setattr(t.cfg, key, value)
         snapshot.restore()
         result["model_unchanged"] = digest(t.model.state_dict()) == model_before
@@ -206,5 +255,5 @@ def check(t, output, repeats=20, warmups=2):
             result["numeric_passed"] &= (
                 result["model_unchanged"] and result["actor_restored"]
             )
-        path.write_text(json.dumps(result, indent=2))
+        atomic_json(path, result)
     return result
