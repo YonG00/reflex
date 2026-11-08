@@ -125,3 +125,19 @@ CPU 回归测试通过：保存/恢复后的下一次判别器更新，loss、�
 ### V36完整Profiler GPU验收（2026-11-08）
 
 r9退出0，两组打点自等价、实际更新与捕获期间无新增编译检查通过；5组配对中位1.57766→1.56907s。融合对分段严格轨迹检查仍失败，未进入正式训练。原始trace已本地备份。GPU研究入口已验证，优化收益和训练等价性未通过；详细报告V36_FULL_PROFILER_RESULTS_20261108_ZH.md。
+
+
+## V37事件写入/状态携带执行候选（2026-11-08）
+
+- 改动：BlockWritePlan functional分块写入、独立carry小图；两个新开关默认false，四候选配对诊断模式和有界脚本。
+- 本意：针对V36实测事件/写回与反向碎片化，探索减少整84维写入节点，不重复V34连续切片或已完成的AMP/Critic批处理。
+- 不变量：原生回调、RNG调用顺序/数量、事件状态、奖励、软终止、H32/H8、模型与完整梯度链不变。
+- 风险症状：materialize/cat反而更慢；事件mask/gradient/Adam不一致；新编译进入稳态；异常后工厂/flags未恢复。CPU已测，GPU未测。
+- 快速回滚：两个开关false；默认正式配置没有启用。仅运行actor_execution_v37_check研究模式，不自动训练。
+- 验证：tests/test_actor_execution_v37.py；V32/V34回归58项通过。GPU需同checkpoint/Replay四组配对，严格数值和端到端速度都通过后再考虑正式路径。
+- 记录：docs/world_model/V37_EVENT_BLOCKS_AND_CARRY_ZH.md，CPU日志benchmarks_v37_cpu/verification.log。
+
+
+### V37 GPU验收结果（2026-11-08）
+
+四组各20轮严格轨迹/原始Actor梯度/实际Actor和Critic参数更新最大差均0，steady无新增编译，完整对照退出0。性能中位1.585129/1.631642/1.583892/1.595805s，没有可靠收益；两个实验开关保持false，不进入正式训练。GPU结果、冷启动超时与证据见V37_GPU_RESULTS_20261108_ZH.md。后续研究应关注更大的事件视图装配/刷新边界，而不是将本轮纯局部改动合入生产配置。

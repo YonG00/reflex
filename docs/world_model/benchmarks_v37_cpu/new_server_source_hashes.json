@@ -1,0 +1,8 @@
+{
+  "source/reflex/reflex/world_model/train.py": "9bdd90b0608a1ecf27d2bd2c0f26c4352d904467312e8202f63ce53aa1afc11f",
+  "source/reflex/reflex/world_model/trainer.py": "c46e90fbde95c5770275886db737c3383f6e0a379200f3db592be9c8a1ff3266",
+  "source/reflex/reflex/world_model/actor_carry_v37.py": "9bffc5a55bd6812204e29ba188d60572038fe92497cab9b7d9c30ff6b33900c3",
+  "source/reflex/reflex/world_model/actor_execution_v37_check.py": "f003e685ce7b1b418b4f03d4ef9eeadddfb66f745a684b90e6002d09b85ce248",
+  "source/reflex/reflex/world_model/events_v24/blocks_v37.py": "2281c5ebb45601480a0927930da7b8c5702f67d7b21f3ae6b34ab4051c0c5c76",
+  "scripts/study_event_blocks_v37.sh": "b5bf54ce688e3031bba252886b22f5a4029b011b66eb7c796b00ab9636f44010"
+}

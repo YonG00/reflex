@@ -80,6 +80,8 @@ class TrainConfig:
     compact_actor_event_inputs: bool = False
     packed_pose_carry: bool = False
     contiguous_event_writes: bool = False
+    block_event_writes: bool = False
+    fused_actor_carry: bool = False
     reuse_post_event_fk: bool = False
     compact_event_pool_updates: bool = False
     collapse_full_event_subsets: bool = False
@@ -264,6 +266,27 @@ class Trainer:
             from .events_v24.writes import ContiguousWritePlan
 
             event_scheduler.event_plan_factory = ContiguousWritePlan
+        if c.block_event_writes:
+            if (
+                event_scheduler is None
+                or not (c.condition_external_events and c.deterministic_event_apply)
+                or c.contiguous_event_writes
+            ):
+                raise ValueError(
+                    "Block writes require deterministic events and a single plan factory"
+                )
+            from .events_v24.blocks_v37 import BlockWritePlan
+
+            event_scheduler.event_plan_factory = BlockWritePlan
+        self._actor_carry = None
+        if c.fused_actor_carry:
+            if not (c.wm_kind == "state" and c.packed_pose_carry):
+                raise ValueError("Fused carry requires state WM and packed poses")
+            from .actor_carry_v37 import carry
+
+            self._actor_carry = torch.compile(
+                carry, fullgraph=True, dynamic=False, backend=c.compile_backend
+            )
         if c.compact_actor_event_inputs and not (
             event_scheduler is not None
             and c.condition_external_events
@@ -2200,7 +2223,20 @@ class Trainer:
             validity.append(valid)
             truncations.append(trunc)
             with region(self, "pose_state_carry"):
-                if self.model.state_only:
+                if self.cfg.fused_actor_carry:
+                    from .actor_carry_v37 import apply as apply_carry
+
+                    s, carried_action, poses = apply_carry(
+                        self._actor_carry,
+                        valid,
+                        ns,
+                        s,
+                        raw,
+                        previous,
+                        next_poses,
+                        poses,
+                    )
+                elif self.model.state_only:
                     if self.cfg.packed_pose_carry:
                         poses = packed_pose_carry(poses, next_poses, valid)
                     else:
@@ -2213,7 +2249,8 @@ class Trainer:
                         )
                 else:
                     poses = self._fk(torch.where(valid[:, None], ns, s))
-                s = torch.where(valid[:, None], ns, s)
+                if not self.cfg.fused_actor_carry:
+                    s = torch.where(valid[:, None], ns, s)
                 if (
                     self.cfg.learn_external_events
                     and not self.cfg.condition_external_events
@@ -2225,7 +2262,11 @@ class Trainer:
                     predicted_modes.append(
                         self.event_scheduler.codec.mode(event_state).float()
                     )
-                previous = torch.where(valid[:, None], raw, previous)
+                previous = (
+                    carried_action
+                    if self.cfg.fused_actor_carry
+                    else torch.where(valid[:, None], raw, previous)
+                )
                 phase = torch.where(valid, next_phase, phase)
                 valid = valid & ~trunc
                 if not self.cfg.analytic_soft_termination:
@@ -2608,6 +2649,8 @@ class Trainer:
             "compact_actor_event_inputs",
             "packed_pose_carry",
             "contiguous_event_writes",
+            "block_event_writes",
+            "fused_actor_carry",
             "reuse_post_event_fk",
             "compact_event_pool_updates",
             "collapse_full_event_subsets",

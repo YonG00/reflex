@@ -1,0 +1,96 @@
+{
+  "archive": "/Users/mac/Documents/skills/\u8d44\u6599/2026-11-08_205818_Reflex_V37\u56db\u7ec4\u6027\u80fd\u5bf9\u7167/reflex_v37_four_way_r2_results.tar.gz",
+  "sha256": "50d1eb9615b62cfe57f6902dcbe53d1c3baf3174f88298770ce8ce7dd347849c",
+  "completed": true,
+  "numeric_passed": true,
+  "performance_usable": true,
+  "steady_compile_delta": {
+    "unique_graphs": 0,
+    "frames": 0,
+    "graph_breaks": 0
+  },
+  "model_unchanged": true,
+  "actor_restored": true,
+  "variants": {
+    "reference": {
+      "wall_seconds": {
+        "median": 1.5851289350539446,
+        "p90": 2.7962927371263504,
+        "min": 1.5538622289896011,
+        "max": 2.9029456302523613
+      },
+      "numeric_passed": true,
+      "rounds": 20,
+      "median_speedup_percent": 0.0,
+      "paired_median_ratio": 1.0,
+      "trajectory_and_gradient_max_abs": 0.0,
+      "parameter_and_gradient_max_abs": 0.0,
+      "coverage": {
+        "waiting_to_launch": 44,
+        "return_to_waiting": 2,
+        "truncations": 501
+      },
+      "peak_allocated_GiB": 15.581305503845215
+    },
+    "block_writes": {
+      "wall_seconds": {
+        "median": 1.6316417753696442,
+        "p90": 2.877066019922495,
+        "min": 1.5507700853049755,
+        "max": 2.8926621228456497
+      },
+      "numeric_passed": true,
+      "rounds": 20,
+      "median_speedup_percent": -2.9343253590987217,
+      "paired_median_ratio": 0.9988123264154141,
+      "trajectory_and_gradient_max_abs": 0.0,
+      "parameter_and_gradient_max_abs": 0.0,
+      "coverage": {
+        "waiting_to_launch": 44,
+        "return_to_waiting": 2,
+        "truncations": 501
+      },
+      "peak_allocated_GiB": 15.58029842376709
+    },
+    "fused_carry": {
+      "wall_seconds": {
+        "median": 1.5838916897773743,
+        "p90": 1.721226330846548,
+        "min": 1.5645418465137482,
+        "max": 2.99733142927289
+      },
+      "numeric_passed": true,
+      "rounds": 20,
+      "median_speedup_percent": 0.0780532894964936,
+      "paired_median_ratio": 1.004803270700474,
+      "trajectory_and_gradient_max_abs": 0.0,
+      "parameter_and_gradient_max_abs": 0.0,
+      "coverage": {
+        "waiting_to_launch": 44,
+        "return_to_waiting": 2,
+        "truncations": 501
+      },
+      "peak_allocated_GiB": 15.581305503845215
+    },
+    "combined": {
+      "wall_seconds": {
+        "median": 1.5958054456859827,
+        "p90": 1.6896275281906128,
+        "min": 1.544056598097086,
+        "max": 1.7478336915373802
+      },
+      "numeric_passed": true,
+      "rounds": 20,
+      "median_speedup_percent": -0.6735420946482717,
+      "paired_median_ratio": 0.9943984301391438,
+      "trajectory_and_gradient_max_abs": 0.0,
+      "parameter_and_gradient_max_abs": 0.0,
+      "coverage": {
+        "waiting_to_launch": 44,
+        "return_to_waiting": 2,
+        "truncations": 501
+      },
+      "peak_allocated_GiB": 15.58029842376709
+    }
+  }
+}

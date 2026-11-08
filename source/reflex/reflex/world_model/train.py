@@ -42,6 +42,7 @@ parser.add_argument(
         "actor_execution_v34_check",
         "physical_full_v35_check",
         "actor_fusion_study_v36",
+        "actor_execution_v37_check",
         "execution_study_v33",
         "execution_phases_v33",
         "actor_full_v31_profile",
@@ -177,6 +178,7 @@ if args.mode in (
     "actor_execution_v34_check",
     "physical_full_v35_check",
     "actor_fusion_study_v36",
+    "actor_execution_v37_check",
     "execution_study_v33",
     "execution_phases_v33",
 ):
@@ -503,8 +505,11 @@ def main():
                 flush=True,
             )
             return
-        if args.mode == "actor_fusion_study_v36":
-            from .actor_fusion_study_v36 import check
+        if args.mode in ("actor_fusion_study_v36", "actor_execution_v37_check"):
+            if args.mode == "actor_execution_v37_check":
+                from .actor_execution_v37_check import check
+            else:
+                from .actor_fusion_study_v36 import check
 
             for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
                 trainer.collect(adapter)

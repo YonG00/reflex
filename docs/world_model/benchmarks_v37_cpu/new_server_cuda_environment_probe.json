@@ -1,0 +1,11 @@
+{
+  "completed": true,
+  "isaaclab_source": "/root/gpufree-data/IsaacLab-2.3.1/source/isaaclab/isaaclab/__init__.py",
+  "torch": "2.7.0+cu128",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "numpy": "1.26.4",
+  "seconds": 17.657787211239338,
+  "block_write_cuda_gradient": true,
+  "small_carry_inductor_values_and_vjp": true,
+  "full_task_benchmark": false
+}
