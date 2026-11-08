@@ -264,3 +264,29 @@ def test_previous_source_checkpoint_requires_explicit_migration(tmp_path):
     t.load(path, migrate_event_execution=True)
     assert digest(t.actor.state_dict()) == before
     assert t.initialization["event_execution_migration"]["optimizers_preserved"]
+
+
+def test_same_input_probe_preserves_recurrent_gradient_metadata():
+    class Step(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(1))
+            self.wm_call = None
+
+        def initial(self):
+            return (torch.zeros(2, 1),) * 3
+
+        def forward(self, state, previous, aux):
+            return state + self.weight, previous + self.weight, aux + 1
+
+    step = Step()
+    count = [0]
+
+    def candidate(state, previous, aux):
+        if count[0]:
+            assert state.requires_grad and previous.requires_grad
+            assert not aux.requires_grad
+        count[0] += 1
+        return step(state, previous, aux)
+
+    assert boundary_probe(step, candidate, 4)["first_failed_step"] is None

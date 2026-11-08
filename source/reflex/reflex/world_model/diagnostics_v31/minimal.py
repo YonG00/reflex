@@ -247,7 +247,7 @@ def boundary_probe(step, candidate_call, horizon):
 
         def detach(value):
             if torch.is_tensor(value):
-                return value.detach()
+                return value.detach().requires_grad_(value.requires_grad)
             if isinstance(value, dict):
                 return {key: detach(item) for key, item in value.items()}
             return type(value)(detach(item) for item in value)
