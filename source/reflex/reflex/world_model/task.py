@@ -456,6 +456,7 @@ class AnalyticTask(nn.Module):
         fk_before=None,
         fk_after=None,
         initial_step=None,
+        diagnostic_view=None,
     ):
         required = (
             "task_history",
@@ -470,20 +471,33 @@ class AnalyticTask(nn.Module):
                 "Task v2 context missing; v1 replay is valid for dynamics fitting but not full imagination resume"
             )
         episode_next = episode_steps + 1
-        view = self._view(
-            b,
-            before,
-            after,
-            action,
-            previous,
-            phase,
-            history,
-            episode_next,
-            step,
-            fk_before,
-            fk_after,
-            initial_step,
-        )
+        if diagnostic_view is None:
+            view = self._view(
+                b,
+                before,
+                after,
+                action,
+                previous,
+                phase,
+                history,
+                episode_next,
+                step,
+                fk_before,
+                fk_after,
+                initial_step,
+            )
+        else:
+            # Only the real-adapter parity check supplies ground-truth geometry.
+            # Imagined rollouts/replay never receive this diagnostic facade.
+            if not getattr(diagnostic_view, "_native_parity_only", False):
+                raise ValueError(
+                    "Native geometry is restricted to adapter parity diagnostics"
+                )
+            if any(value.requires_grad for value in (before, after, action)):
+                raise ValueError(
+                    "Native parity geometry must not enter the learning graph"
+                )
+            view = diagnostic_view
         cmd = view.command_manager.get_term("motion")
         gravity = view.scene["robot"].data.GRAVITY_VEC_W
         term_features = torch.cat(

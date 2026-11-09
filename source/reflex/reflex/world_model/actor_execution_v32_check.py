@@ -33,7 +33,11 @@ def rollout(t):
         values = imagined.get("actor_values")
         if values is None and t.cfg.batch_imagination_critic:
             obs = imagined.get("critic_obs", imagined["obs"])
-            values = t.critic(obs.flatten(0, 1)).reshape(obs.shape[:2])
+            from .critic_values import evaluate
+
+            values = evaluate(
+                t.critic, obs, t.cfg.critic_value_chunk, t.cfg.checkpoint_actor_critic
+            )
         objective = -joint.returns(imagined, t.critic, t.cfg.gamma, values).mean()
         if t.cfg.actor_horizon_scale:
             objective = objective / t.cfg.horizon

@@ -148,6 +148,7 @@ def test_joint_acceptance_restores_all_state_on_cpu(tmp_path):
     t.cfg.wm_only_rounds = 500
     result = check(t, tmp_path, repeats=2, warmups=1)
     assert result["completed"] and result["numeric_passed"], result
+    assert result["continuous_update_numeric_passed"]
     assert result["model_restored"] and result["actor_restored"]
     assert not t.wm_warmup_inherited
     assert_tree_equal(t.model.state_dict(), weights)

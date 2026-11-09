@@ -15,7 +15,7 @@ export TORCHINDUCTOR_CACHE_DIR=${WM_GRAPH_INDUCTOR_CACHE:-/tmp/reflex_stable_tra
 export TRITON_CACHE_DIR=${WM_GRAPH_TRITON_CACHE:-/tmp/reflex_stable_training_triton}
 "$ISAACLAB_PY" "$ROOT/scripts/local/run_diagnostic_group.py" --timeout 900 --grace 10 -- \
   bash "$ROOT/scripts/train_stage1_world_model.sh" --mode wm_graph_joint_check \
-  --num_envs 4096 --config "$ROOT/configs/world_model/joint_h16_batch4096_wm_graph.json" \
+  --num_envs 4096 --config "${WM_GRAPH_CONFIG:-$ROOT/configs/world_model/joint_h16_batch4096_wm_graph.json}" \
   --diagnostic_repeats 5 --diagnostic_warmups 2 --no_debug_vis --output "$output" \
   > "$output/run.log" 2>&1
 "$ISAACLAB_PY" - "$output/wm_graph_joint.json" <<'PY'

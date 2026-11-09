@@ -72,11 +72,15 @@ class TrainConfig:
     hard_imagination_boundaries: bool = False
     initial_collect_steps: int = 40
     updates_per_env_step: float = 0.4
+    joint_updates_per_env_step: float | None = None
+    return_reset_max_step_reward: float | None = None
     actor_batch: int = 0
     actor_microbatch: int = 0
     batch_imagination_amp: bool = False
     batch_imagination_amp_features: bool = False
     batch_imagination_critic: bool = False
+    critic_value_chunk: int = 0
+    checkpoint_actor_critic: bool = False
     compact_actor_event_inputs: bool = False
     packed_pose_carry: bool = False
     contiguous_event_writes: bool = False
@@ -709,6 +713,8 @@ class Trainer:
         self.probe_transitions = 0
         self.actor_updates = 0
         self.model_updates = 0
+        self.return_reset = None
+        self.joint_phase_start_iteration = None
         self.wm_rounds_completed = 0
         self.wm_warmup_inherited = False
         self.termination_updates = 0
@@ -1434,6 +1440,12 @@ class Trainer:
                 self.termination_updates += 1
             last["termination/train_bce"] = float(loss.detach())
         self.wm_rounds_completed += 1
+        if (
+            self.cfg.joint_updates_per_env_step is not None
+            and self.joint_phase_start_iteration is None
+            and self.wm_rounds_completed >= self.cfg.wm_only_rounds
+        ):
+            self.joint_phase_start_iteration = self.iteration + 1
         last.update(probe)
         end_model = timestamp(self.device)
         last["time/model_fit_seconds"] = end_model - start
@@ -1597,11 +1609,32 @@ class Trainer:
                 group["lr"] = (self.cfg.model_lr or self.cfg.lr) * ratio
         return (self.cfg.model_lr or self.cfg.lr) * ratio
 
+    def joint_phase_active(self):
+        return (
+            self.wm_warmup_inherited
+            or self.cfg.wm_only_rounds == 0
+            or self.wm_rounds_completed >= self.cfg.wm_only_rounds
+        )
+
     def updates_due(self):
         if self.cfg.schedule != "joint_reproduction":
             return 1
         import math
 
+        if (
+            self.cfg.joint_updates_per_env_step is not None
+            and self.joint_phase_active()
+        ):
+            rate = self.cfg.joint_updates_per_env_step
+            if not 0 < rate <= 1:
+                raise ValueError("joint_updates_per_env_step must be in (0, 1]")
+            anchor = self.joint_phase_start_iteration
+            if anchor is None:
+                anchor = self.cfg.initial_collect_steps
+            k = self.iteration + 1 - anchor
+            if k <= 0:
+                return 0
+            return math.floor(k * rate + 1e-9) - math.floor((k - 1) * rate + 1e-9)
         j = self.iteration + 1 - self.cfg.initial_collect_steps
         if j < 0:
             return 0
@@ -2580,8 +2613,12 @@ class Trainer:
             "probe_transitions": self.probe_transitions,
             "actor_updates": self.actor_updates,
             "model_updates": self.model_updates,
+            "return_reset": self.return_reset.state_dict()
+            if self.return_reset
+            else None,
             "wm_warmup": {
                 "rounds_completed": self.wm_rounds_completed,
+                "joint_phase_start_iteration": self.joint_phase_start_iteration,
                 "inherited_trained_actor": self.wm_warmup_inherited,
             },
             "last_diagnostic_seconds": self.last_diagnostic_seconds,
@@ -2669,6 +2706,8 @@ class Trainer:
             "batch_imagination_amp",
             "batch_imagination_amp_features",
             "batch_imagination_critic",
+            "critic_value_chunk",
+            "checkpoint_actor_critic",
             "compact_actor_event_inputs",
             "packed_pose_carry",
             "contiguous_event_writes",
@@ -2952,6 +2991,11 @@ class Trainer:
         self.probe_transitions = state["probe_transitions"]
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)
+        reset_state = state.get("return_reset")
+        if self.cfg.return_reset_max_step_reward is not None:
+            if self.return_reset is None or reset_state is None:
+                raise ValueError("Return reset sampler state required for resume")
+            self.return_reset.load_state_dict(reset_state)
         progress = state.get("wm_warmup")
         if progress is None:
             # Old trained policies must not silently repeat initialization.
@@ -2964,6 +3008,18 @@ class Trainer:
             )
             if self.wm_rounds_completed < 0:
                 raise ValueError("Invalid WM warmup progress")
+        self.joint_phase_start_iteration = (
+            None if progress is None else progress.get("joint_phase_start_iteration")
+        )
+        if reinitialize_replay:
+            self.joint_phase_start_iteration = None
+        elif (
+            self.cfg.joint_updates_per_env_step is not None
+            and self.joint_phase_active()
+            and self.cfg.wm_only_rounds > 0
+            and self.joint_phase_start_iteration is None
+        ):
+            raise ValueError("Missing joint UTD phase anchor in checkpoint")
         self.termination_updates = state.get("termination_updates", 0)
         random.setstate(state["python_rng"])
         np.random.set_state(state["numpy_rng"])

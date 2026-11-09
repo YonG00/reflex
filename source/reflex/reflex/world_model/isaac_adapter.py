@@ -172,6 +172,9 @@ class IsaacAdapter:
         self.task = None
         self.task_parity_steps = 0
         self.task_parity_max = torch.zeros(len(self.reward_names), device=self.device)
+        self.task_compact_parity_max = torch.zeros_like(self.task_parity_max)
+        self.task_compact_termination_disagreements = 0
+        self.task_fk_position_max = torch.zeros((), device=self.device)
         # Capture exactly the post-physics state used for real rewards, before
         # Isaac automatically resets terminated environments or injects a throw.
         original_reward = e.reward_manager.compute
@@ -208,6 +211,13 @@ class IsaacAdapter:
                 pair_peak = data.force_matrix_w_history.norm(dim=-1).flatten(1).amax(1)
                 net_peak = data.net_forces_w_history.norm(dim=-1).flatten(1).amax(1)
             previous_history = self.task_history()
+            parity_geometry = (
+                self.native_parity_geometry()
+                if self.task is not None
+                and self._before is not None
+                and self.parity_due()
+                else None
+            )
             result = original_reward(dt)
             self.pre_reset = {
                 "state": self.physical(),
@@ -285,6 +295,62 @@ class IsaacAdapter:
                     atol=2e-4,
                     rtol=1e-5,
                 )
+                compact_err = (
+                    (analytic.rewards - self.pre_reset["reward_terms"]).abs().amax(0)
+                )
+                self.task_compact_parity_max = torch.maximum(
+                    self.task_compact_parity_max, compact_err.detach()
+                )
+                self.task_compact_termination_disagreements += int(
+                    (analytic.terminated != self.pre_reset["terminated"]).sum()
+                )
+                if bool((compact_err[self.task_exact_mask] > 2e-4).any()):
+                    target = getattr(self, "parity_failure_path", None)
+                    if target is not None:
+                        self.capture_task_parity_failure(
+                            b,
+                            analytic,
+                            previous_history,
+                            Path(target).with_name("compact_geometry_difference.json"),
+                        )
+                # Separate FK approximation from equality of the original task
+                # functions. Hard predicates can jump for sub-tolerance pose error.
+                view = self.task._view(
+                    b,
+                    b["state"],
+                    self.pre_reset["state"],
+                    self.term.raw_actions,
+                    b["previous_action"],
+                    b["phase"],
+                    previous_history,
+                    b["episode_steps"] + 1,
+                    0,
+                )
+                fk_positions = view.scene["robot"].data.body_pos_w
+                gt_positions = (
+                    parity_geometry["robot"]["body_pos_w"]
+                    - parity_geometry["origins"][:, None, :]
+                )
+                torch.testing.assert_close(
+                    fk_positions, gt_positions, atol=2e-4, rtol=1e-5
+                )
+                self.task_fk_position_max = torch.maximum(
+                    self.task_fk_position_max, (fk_positions - gt_positions).abs().max()
+                )
+                self.apply_native_parity_geometry(view, parity_geometry)
+                analytic = self.task.evaluate_step(
+                    b,
+                    b["state"],
+                    self.pre_reset["state"],
+                    self.term.raw_actions,
+                    b["previous_action"],
+                    b["phase"],
+                    previous_history,
+                    b["episode_steps"],
+                    b["next_external_event_seconds"],
+                    0,
+                    diagnostic_view=view,
+                )
                 err = (analytic.rewards - self.pre_reset["reward_terms"]).abs().amax(0)
                 self.task_parity_max = torch.maximum(self.task_parity_max, err.detach())
                 exact = self.task_exact_mask
@@ -294,8 +360,10 @@ class IsaacAdapter:
                         for name, error in zip(self.reward_names, err)
                         if float(error) > 2e-4
                     }
+                    self.capture_task_parity_failure(b, analytic, previous_history)
                     raise RuntimeError(f"Analytic task reward parity failed: {report}")
                 if not torch.equal(analytic.terminated, self.pre_reset["terminated"]):
+                    self.capture_task_parity_failure(b, analytic, previous_history)
                     raise RuntimeError("Analytic termination parity failed")
                 # Interval-event counters are updated later. These reward-history
                 # counters must already match the pre-reset reward snapshot.
@@ -660,11 +728,20 @@ class IsaacAdapter:
                 expanded = PrivilegedObservation(
                     self.bridge, self.command.cfg.body_names, include_all_actor=True
                 ).to(self.device)(
-                    b["state"], b["previous_action"], b["phase"], b["yaw"],
-                    b["launched"], b["dimensions"], b["mass"], b["default_q"], b["default_dq"],
+                    b["state"],
+                    b["previous_action"],
+                    b["phase"],
+                    b["yaw"],
+                    b["launched"],
+                    b["dimensions"],
+                    b["mass"],
+                    b["default_q"],
+                    b["default_dq"],
                 )
                 expected = torch.cat((observed, actual[..., 166:]), -1)
-                errors["critic305_observation_max"] = float((expanded - expected).abs().max())
+                errors["critic305_observation_max"] = float(
+                    (expanded - expected).abs().max()
+                )
         if max(errors.values()) > atol:
             raise RuntimeError(f"FK / observation parity failed: {errors}")
         return errors
@@ -782,6 +859,120 @@ class IsaacAdapter:
             else amp_features(b["state"], self.bridge.fk)
         )
 
+    def native_parity_geometry(self):
+        """Read-only real geometry, used only to audit the task facade's formulas."""
+        robot_fields = (
+            "root_pos_w",
+            "root_quat_w",
+            "root_lin_vel_w",
+            "root_ang_vel_w",
+            "root_lin_vel_b",
+            "root_ang_vel_b",
+            "body_pos_w",
+            "body_quat_w",
+            "body_lin_vel_w",
+            "body_ang_vel_w",
+            "joint_pos",
+            "joint_vel",
+            "projected_gravity_b",
+        )
+        command_fields = (
+            "joint_pos",
+            "joint_vel",
+            "anchor_pos_w",
+            "anchor_quat_w",
+            "body_pos_w",
+            "body_quat_w",
+            "body_pos_relative_w",
+            "body_quat_relative_w",
+            "body_lin_vel_w",
+            "body_ang_vel_w",
+            "robot_body_pos_w",
+            "robot_body_quat_w",
+            "robot_body_lin_vel_w",
+            "robot_body_ang_vel_w",
+            "robot_anchor_pos_w",
+            "robot_anchor_quat_w",
+            "robot_anchor_lin_vel_w",
+            "robot_anchor_ang_vel_w",
+        )
+        box_fields = ("root_pos_w", "root_quat_w", "root_lin_vel_w", "root_ang_vel_w")
+        return {
+            "robot": {k: getattr(self.robot.data, k).clone() for k in robot_fields},
+            "box": {k: getattr(self.box.data, k).clone() for k in box_fields},
+            "command": {k: getattr(self.command, k).clone() for k in command_fields},
+            "origins": self.env.scene.env_origins.clone(),
+        }
+
+    @staticmethod
+    def apply_native_parity_geometry(view, geometry):
+        view._native_parity_only = True
+        for name, value in geometry["robot"].items():
+            setattr(view.scene["robot"].data, name, value)
+        for name, value in geometry["box"].items():
+            setattr(view.scene["balloon"].data, name, value)
+        command = view.command_manager.get_term("motion")
+        for name, value in geometry["command"].items():
+            setattr(command, name, value)
+        view.scene.env_origins = geometry["origins"]
+
+    def capture_task_parity_failure(self, b, analytic, history, path=None):
+        """Save offending rows before raising; never suppress the parity gate."""
+        path = path or getattr(self, "parity_failure_path", None)
+        if path is None:
+            return
+        import json
+
+        p = self.pre_reset
+        error = (analytic.rewards - p["reward_terms"]).abs().amax(-1)
+        ids = (
+            ((error > 2e-4) | (analytic.terminated != p["terminated"]))
+            .nonzero()
+            .flatten()[:32]
+        )
+        view = self.task._view(
+            b,
+            b["state"],
+            p["state"],
+            self.term.raw_actions,
+            b["previous_action"],
+            b["phase"],
+            history,
+            b["episode_steps"] + 1,
+            0,
+        )
+        term_values = {
+            spec.name: spec.function(view, **spec.params)[ids].detach().cpu().tolist()
+            for spec in self.task.terminations
+        }
+        from reflex.envs.base.chest_v5_terms import compute_strict_components
+
+        native_bit = compute_strict_components(self.env)["ball_in_torso"]
+        compact_bit = compute_strict_components(view)["ball_in_torso"]
+        data = {
+            "native_box_torso_distance": native_bit[ids].norm(dim=-1).cpu().tolist(),
+            "compact_box_torso_distance": compact_bit[ids].norm(dim=-1).cpu().tolist(),
+            "native_box_in_torso": native_bit[ids].cpu().tolist(),
+            "compact_box_in_torso": compact_bit[ids].cpu().tolist(),
+            "env_ids": ids.cpu().tolist(),
+            "reward_names": self.reward_names,
+            "body_names": list(self.command.cfg.body_names),
+            "termination_names": list(self.env.termination_manager.active_terms),
+            "analytic_term_flags": term_values,
+            "native_termination_features": p["termination_features"][ids]
+            .cpu()
+            .tolist(),
+            "analytic_termination_features": analytic.termination_features[ids]
+            .detach()
+            .cpu()
+            .tolist(),
+            "native_term_flags": p["termination_reasons"][ids].cpu().tolist(),
+            "native_rewards": p["reward_terms"][ids].cpu().tolist(),
+            "analytic_rewards": analytic.rewards[ids].detach().cpu().tolist(),
+            "terminations": self.task.specification()["terminations"],
+        }
+        Path(path).write_text(json.dumps(data, indent=2))
+
     def manifest(self):
         e = self.env
         result = {
@@ -809,6 +1000,17 @@ class IsaacAdapter:
                 "Original Torch formulas; configured force-only proxy is explicitly labeled. Neural WM learns state only."
             )
             result["task_parity_checked_transitions"] = self.task_parity_steps
+            result["compact_fk_reward_difference_max"] = {
+                n: float(v)
+                for n, v in zip(self.reward_names, self.task_compact_parity_max)
+            }
+            result["fk_position_max_error"] = float(self.task_fk_position_max)
+            result["compact_fk_termination_disagreements"] = (
+                self.task_compact_termination_disagreements
+            )
+            result["parity_scope"] = (
+                "original formulas on identical native geometry; compact FK continuous features checked independently"
+            )
             result["task_parity_max"] = {
                 n: float(v) for n, v in zip(self.reward_names, self.task_parity_max)
             }

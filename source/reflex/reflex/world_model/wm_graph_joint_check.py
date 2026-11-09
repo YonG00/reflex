@@ -173,6 +173,32 @@ def check(t, output, repeats=5, warmups=2):
                 expected_trajectory, actual
             )
             save()
+        # Consecutive optimizer updates without restoration between rounds.
+        # Preserve component-level failures: this is an additional downstream
+        # update gate, not a replacement or tolerance change for strict traces.
+        expected_continuous = []
+        for name, entry in result["variants"].items():
+            reset(name)
+            rows = []
+            for index in range(3):
+                cycle()
+                actual = tensors()
+                actual.update(
+                    {
+                        "amp/" + k: v.detach().cpu().clone()
+                        for k, v in t.prior._disc.state_dict().items()
+                    }
+                )
+                if name == "eager_wm":
+                    expected_continuous.append(actual)
+                rows.append(compare(expected_continuous[index], actual))
+                entry["continuous_updates"] = rows
+                save()
+        result["continuous_update_numeric_passed"] = all(
+            row["passed"]
+            for entry in result["variants"].values()
+            for row in entry["continuous_updates"]
+        )
         result["numeric_passed"] = all(
             e["actual_parameters_and_gradients"]["passed"]
             and e["post_wm_trajectory_and_gradient"]["passed"]

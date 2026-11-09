@@ -50,6 +50,7 @@ parser.add_argument(
         "actor_minimal_v31_export",
         "wm_rollout_v30_check",
         "wm_graph_joint_check",
+        "return_reset_check",
         "soft_termination_check",
     ),
     default="preflight",
@@ -160,7 +161,9 @@ args = parser.parse_args()
 if args.capacity_horizon_override and (
     args.mode != "efficiency_capacity_check" or args.capacity_horizon_override < 1
 ):
-    parser.error("capacity_horizon_override is a positive horizon for capacity tests only")
+    parser.error(
+        "capacity_horizon_override is a positive horizon for capacity tests only"
+    )
 if args.capacity_batch_override and (
     args.mode != "efficiency_capacity_check" or args.capacity_batch_override < 1
 ):
@@ -300,7 +303,28 @@ def main():
             video_length=args.play_steps,
             disable_logger=True,
         )
+    graph_monitor = None
+    if os.environ.get("REFLEX_GRAPH_REPLAY_MONITOR") == "1":
+        from .graph_monitor import GraphReplayMonitor
+
+        graph_monitor = GraphReplayMonitor()
     try:
+        return_reset = None
+        if config.return_reset_max_step_reward is not None:
+            from .return_reset import NativeReturnReset
+
+            live_scale = env.unwrapped.step_dt * sum(
+                max(0.0, env.unwrapped.reward_manager.get_term_cfg(n).weight)
+                for n in env.unwrapped.reward_manager.active_terms
+            )
+            if abs(live_scale - config.return_reset_max_step_reward) > 1e-6:
+                raise ValueError(
+                    f"Return-reset reward scale mismatch: live={live_scale}, "
+                    f"configured={config.return_reset_max_step_reward}"
+                )
+            return_reset = NativeReturnReset(
+                env.unwrapped, config.gamma, config.return_reset_max_step_reward
+            )
         env.reset(seed=args.seed)
         # Parse exactly the asset that the environment imported, rather than a
         # convenient local URDF that could have different link/joint frames.
@@ -364,6 +388,8 @@ def main():
             task=task,
             event_scheduler=event_scheduler,
         )
+        adapter.parity_failure_path = out / "task_parity_failure.json"
+        trainer.return_reset = return_reset
         trainer.contact_filter_schema = (
             "explicit_urdf_rigid_links_v2" if config.monitor_contacts else "disabled"
         )
@@ -504,7 +530,17 @@ def main():
 
             for _ in range(max(0, config.initial_collect_steps - trainer.replay.count)):
                 trainer.collect(adapter)
-            print(json.dumps(check(trainer, out, repeats=args.diagnostic_repeats, warmups=args.diagnostic_warmups)), flush=True)
+            print(
+                json.dumps(
+                    check(
+                        trainer,
+                        out,
+                        repeats=args.diagnostic_repeats,
+                        warmups=args.diagnostic_warmups,
+                    )
+                ),
+                flush=True,
+            )
             return
         if args.mode == "wm_rollout_v30_check":
             from .wm_rollout_benchmark import check
@@ -641,7 +677,18 @@ def main():
         if args.mode == "efficiency_capacity_check":
             from .efficiency_benchmark import capacity_check
 
-            print(json.dumps(capacity_check(trainer, adapter, out, batch_override=args.capacity_batch_override, horizon_override=args.capacity_horizon_override)), flush=True)
+            print(
+                json.dumps(
+                    capacity_check(
+                        trainer,
+                        adapter,
+                        out,
+                        batch_override=args.capacity_batch_override,
+                        horizon_override=args.capacity_horizon_override,
+                    )
+                ),
+                flush=True,
+            )
             return
         if args.mode == "efficiency_benchmark":
             from .efficiency_benchmark import check
@@ -872,6 +919,11 @@ def main():
             (out / "play_summary.json").write_text(json.dumps(summary, indent=2))
             print(json.dumps(summary), flush=True)
             return
+        if args.mode == "return_reset_check":
+            from .return_reset_check import check
+
+            print(json.dumps(check(trainer, adapter, out)), flush=True)
+            return
         if args.mode == "preflight":
             old = config.collect_steps
             config.collect_steps = args.preflight_steps
@@ -923,12 +975,19 @@ def main():
 
         joint_budget = JointBudget(args.joint_max_seconds)
         phase_record = {
+            "total_budget_seconds": args.max_seconds,
             "joint_budget_seconds": args.joint_max_seconds,
             "wm_only_rounds": config.wm_only_rounds,
-            "joint_clock_starts_after_first_actor_update": True,
+            "joint_clock_starts_after_first_actor_update": args.joint_max_seconds
+            is not None,
             "state": "wm_warmup",
         }
-        if args.joint_max_seconds is not None:
+        phase_record["initial_wm_rounds"] = trainer.wm_rounds_completed
+        phase_record["initial_actor_updates"] = trainer.actor_updates
+        if trainer.joint_phase_active():
+            phase_record["state"] = "joint_ready"
+            phase_record["wm_warmup_completed_before_loop"] = True
+        if args.joint_max_seconds is not None or args.max_seconds is not None:
             (out / "training_phases.json").write_text(
                 json.dumps(phase_record, indent=2)
             )
@@ -957,6 +1016,12 @@ def main():
                     )
                 metrics["time/collect_seconds"] = timestamp(args.device) - collect_start
                 metrics["schedule/update_due"] = float(trainer.updates_due())
+                metrics["schedule/updates_per_env_step"] = (
+                    config.joint_updates_per_env_step
+                    if config.joint_updates_per_env_step is not None
+                    and trainer.joint_phase_active()
+                    else config.updates_per_env_step
+                )
                 try:
                     if not trainer.updates_due():
                         raise ValueError("Not a scheduled update step")
@@ -968,16 +1033,29 @@ def main():
                     metrics["schedule/update_due"] = float(trainer.updates_due())
                 else:
                     metrics["schedule/model_lr"] = trainer.schedule_lr()
+                    graph_replays_before = graph_monitor.count if graph_monitor else 0
                     metrics.update(trainer.fit_model())
+                    if graph_monitor:
+                        metrics["execution/wm_cuda_graph_replays"] = (
+                            graph_monitor.count - graph_replays_before
+                        )
                     if (
-                        args.joint_max_seconds is not None
+                        (
+                            args.joint_max_seconds is not None
+                            or args.max_seconds is not None
+                        )
                         and trainer.wm_rounds_completed == config.wm_only_rounds
                         and "warmup_completed_wall_seconds" not in phase_record
                     ):
                         phase_record["warmup_completed_wall_seconds"] = (
                             time.monotonic() - start
                         )
-                        trainer.save(out / "checkpoint_wm_warmup.pt")
+                        phase_record["state"] = "joint_ready"
+                        (out / "training_phases.json").write_text(
+                            json.dumps(phase_record, indent=2)
+                        )
+                        if not args.benchmark_no_checkpoint:
+                            trainer.save(out / "checkpoint_wm_warmup.pt")
                     validation_start = timestamp(args.device)
                     if trainer.validation_due():
                         metrics.update(trainer.validate())
@@ -1032,7 +1110,20 @@ def main():
                                 metrics["coverage/actor_start_snapshots"] = len(
                                     trainer.replay.start_indices()
                                 )
+                            if "first_actor_started_wall_seconds" not in phase_record:
+                                phase_record["first_actor_started_wall_seconds"] = (
+                                    time.monotonic() - start
+                                )
                             metrics.update(trainer.update_actor())
+                            if (
+                                args.max_seconds is not None
+                                and args.joint_max_seconds is None
+                                and phase_record["state"] != "joint_training"
+                            ):
+                                phase_record["state"] = "joint_training"
+                                (out / "training_phases.json").write_text(
+                                    json.dumps(phase_record, indent=2)
+                                )
                             if (
                                 joint_budget.actor_completed(time.monotonic())
                                 and args.joint_max_seconds is not None
@@ -1089,10 +1180,25 @@ def main():
                     f.write(json.dumps(record) + "\n")
                 if trainer.iteration % config.console_log_every == 0:
                     print(json.dumps(record), flush=True)
-            if args.joint_max_seconds is not None:
+            if args.joint_max_seconds is not None or args.max_seconds is not None:
                 phase_record.update(
                     state="completed",
-                    joint_wall_seconds=joint_budget.elapsed(time.monotonic()),
+                    joint_wall_seconds=(
+                        joint_budget.elapsed(time.monotonic())
+                        if args.joint_max_seconds is not None
+                        else max(
+                            0.0,
+                            time.monotonic()
+                            - start
+                            - phase_record.get(
+                                "first_actor_started_wall_seconds",
+                                time.monotonic() - start,
+                            ),
+                        )
+                    ),
+                    total_wall_seconds=time.monotonic() - start,
+                    real_transitions=trainer.real_transitions,
+                    wm_gradient_updates=trainer.model_updates,
                     actor_updates=trainer.actor_updates,
                     wm_rounds=trainer.wm_rounds_completed,
                 )
@@ -1125,6 +1231,8 @@ def main():
                 json.dumps(manifest, indent=2, ensure_ascii=False)
             )
         env.close()
+        if graph_monitor:
+            graph_monitor.close()
 
 
 failed = False

@@ -1,3 +1,13 @@
+## Return reset、WM Graph与显存/校验修复（2026-11-09）
+
+- 不变量：Actor179/Critic305、WM3×2048/H8、ActorH16、原奖励及原生事件、软存活不变。用户将混采明确为真实reset的50/40/10 Return-based采样，Replay新鲜度混采撤回。
+- UTD预热500轮0.4、其后0.1，保存切换锚点；总30分钟包含预热。旧配置默认不启用Return reset。
+- WM H8 Graph配对有实际加速，实际梯度/Adam和连续三轮更新通过，critic_obs/style逐元素严格比较仍失败，保留numeric_passed=false，只用于明确隔离试训，不推广默认配置。
+- 出错症状：3840近显存极限，Critic全轨迹估值及Actor反向OOM；低显存执行已CPU/GPU核验但仍无足够余量，3584待旧机满Replay容量验证。不能声称长期稳定。
+- 校验：保留FK几何原容差，另用同样原生几何验证原公式，compact硬门控奖励差异另记录；诊断信息不能进学习图。400步4096环境GPU回归通过，无真实奖励/阈值/重置改动。
+- 回滚：使用旧配置、critic_value_chunk=0/checkpoint_actor_critic=false；不加载新stable编码权重到legacy。切回原reset配置需单独实验，禁止静默改变已恢复模型契约。
+- 验证入口：tests/test_return_reset.py、test_phase_utd.py、test_critic_values_memory.py、test_native_geometry_parity.py、test_wm_graph_training_integration.py；GPU原始JSON及未完成项见world_model/RETURN_RESET_UTD_EXPERIMENT_ZH.md。
+
 ## V36 完整Actor收益与数值影响研究（2026-11-08）
 
 - 保留0.077秒候选，严格数值失败不改成通过；新增物理量/梯度/实际Adam delta/奖励/事件/软存活风险报告，不增加接受容差。

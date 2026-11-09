@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "shape": [
+    17,
+    3840,
+    305
+  ],
+  "scope": "actual checkpoint Critic, frozen forward/input gradient and Adam; full PhysX capacity still required",
+  "variants": {
+    "full": {
+      "seconds": 0.2084577331542969,
+      "peak_allocated_bytes": 580625920,
+      "gradient_norm": 0.004386339336633682
+    },
+    "chunk_checkpoint": {
+      "seconds": 0.02797875213623047,
+      "peak_allocated_bytes": 337306112,
+      "gradient_norm": 0.004386339336633682
+    }
+  }
+}

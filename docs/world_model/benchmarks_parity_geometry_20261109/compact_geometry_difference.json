@@ -1,0 +1,405 @@
+{
+  "native_box_torso_distance": [
+    0.600007951259613
+  ],
+  "compact_box_torso_distance": [
+    0.5999994874000549
+  ],
+  "native_box_in_torso": [
+    [
+      0.5973849892616272,
+      0.04475190117955208,
+      -0.03373367711901665
+    ]
+  ],
+  "compact_box_in_torso": [
+    [
+      0.5973760485649109,
+      0.044756967574357986,
+      -0.03373505547642708
+    ]
+  ],
+  "env_ids": [
+    139
+  ],
+  "reward_names": [
+    "motion_global_anchor_pos",
+    "motion_global_anchor_ori",
+    "motion_body_pos",
+    "motion_body_ori",
+    "motion_body_lin_vel",
+    "motion_body_ang_vel",
+    "action_rate_l2",
+    "joint_limit",
+    "undesired_contacts",
+    "catch_eef_to_balloon",
+    "catch_success_bonus",
+    "chest_pocket",
+    "wrist_proximity",
+    "wrist_flank",
+    "head_shoulder_support_penalty",
+    "strict_hold_sustained",
+    "catch_success_strict_bonus",
+    "lean_during_intake",
+    "bilateral_enclosure",
+    "ball_lateral_offset",
+    "low_hold",
+    "torso_uprightness_penalty",
+    "hands_under_box",
+    "forearm_cradle",
+    "elbow_spread",
+    "hold_still",
+    "box_on_bed",
+    "face_box",
+    "cradle_pose",
+    "tuck_in",
+    "compliant_intake",
+    "palm_up",
+    "upright_hold",
+    "arm_idle_still",
+    "cradle_ready_dev",
+    "box_hold_spin",
+    "cradle_ready",
+    "chest_delivery",
+    "chest_contact",
+    "hold_feet_gather",
+    "wrist_steady",
+    "leg_split",
+    "torso_asym",
+    "threepoint_bonus",
+    "hold_foot_step",
+    "low_trust_stillness",
+    "soft_fall_shaping",
+    "cmd_limit_excess",
+    "fall_terminated",
+    "v38_hang_prelaunch",
+    "v38_cradle_anchor"
+  ],
+  "body_names": [
+    "pelvis",
+    "left_hip_roll_link",
+    "left_knee_link",
+    "left_ankle_roll_link",
+    "right_hip_roll_link",
+    "right_knee_link",
+    "right_ankle_roll_link",
+    "torso_link",
+    "left_shoulder_roll_link",
+    "left_elbow_link",
+    "left_wrist_yaw_link",
+    "right_shoulder_roll_link",
+    "right_elbow_link",
+    "right_wrist_yaw_link"
+  ],
+  "termination_names": [
+    "time_out",
+    "anchor_pos",
+    "anchor_ori",
+    "ee_body_pos"
+  ],
+  "analytic_term_flags": {
+    "time_out": [
+      false
+    ],
+    "anchor_pos": [
+      false
+    ],
+    "anchor_ori": [
+      false
+    ],
+    "ee_body_pos": [
+      false
+    ]
+  },
+  "native_termination_features": [
+    [
+      0.43897247314453125,
+      0.07076263427734375,
+      0.1465471386909485,
+      -0.07530668377876282,
+      0.12827803194522858,
+      -0.010439515113830566,
+      0.0007476806640625,
+      0.002506256103515625,
+      0.14054632186889648,
+      -0.18216705322265625,
+      0.015167236328125,
+      0.0955352783203125,
+      -0.45816802978515625,
+      -0.075103759765625,
+      -0.011279284954071045,
+      -0.5162506103515625,
+      -0.09664154052734375,
+      0.0010024607181549072,
+      0.05876922607421875,
+      0.00522613525390625,
+      0.15070196986198425,
+      -0.11389923095703125,
+      0.043125152587890625,
+      0.02914491295814514,
+      -0.26248931884765625,
+      0.002689361572265625,
+      -0.03839574754238129,
+      0.01946258544921875,
+      0.001644134521484375,
+      0.1465471386909485,
+      -0.02439117431640625,
+      0.019214630126953125,
+      0.12930971384048462,
+      -0.150177001953125,
+      -0.054157257080078125,
+      0.08393943309783936,
+      -0.27507781982421875,
+      -0.09487533569335938,
+      -0.02414470911026001,
+      -0.0161895751953125,
+      0.018802642822265625,
+      0.16459035873413086,
+      -0.11081695556640625,
+      -0.05142974853515625,
+      0.1183510422706604,
+      -0.228118896484375,
+      -0.131256103515625,
+      -0.0063169002532958984
+    ]
+  ],
+  "analytic_termination_features": [
+    [
+      0.4389631152153015,
+      0.07076461613178253,
+      0.1465471386909485,
+      -0.07530675828456879,
+      0.12827779352664948,
+      -0.010439515113830566,
+      0.0007476806640625,
+      0.002506256103515625,
+      0.14054632186889648,
+      -0.18217292428016663,
+      0.01516801118850708,
+      0.09553521871566772,
+      -0.4581773579120636,
+      -0.07510249316692352,
+      -0.01127973198890686,
+      -0.5162661075592041,
+      -0.09663975238800049,
+      0.001001652330160141,
+      0.058764517307281494,
+      0.005226790904998779,
+      0.15070196986198425,
+      -0.11389747262001038,
+      0.043124109506607056,
+      0.0291445255279541,
+      -0.26248443126678467,
+      0.0026887208223342896,
+      -0.038396336138248444,
+      0.019452273845672607,
+      0.0016454607248306274,
+      0.1465471386909485,
+      -0.02440166473388672,
+      0.019215352833271027,
+      0.12930965423583984,
+      -0.15018707513809204,
+      -0.05415990948677063,
+      0.08393919467926025,
+      -0.2750898003578186,
+      -0.0948750227689743,
+      -0.024145007133483887,
+      -0.016197949647903442,
+      0.01880420744419098,
+      0.16459017992019653,
+      -0.11083191633224487,
+      -0.051427096128463745,
+      0.11835086345672607,
+      -0.22813762724399567,
+      -0.13125458359718323,
+      -0.006317079067230225
+    ]
+  ],
+  "native_term_flags": [
+    [
+      false,
+      false,
+      false,
+      false
+    ]
+  ],
+  "native_rewards": [
+    [
+      0.0008756830357015133,
+      0.000931106333155185,
+      0.009414616972208023,
+      1.6246643781414605e-06,
+      0.006085698958486319,
+      0.014886127784848213,
+      -0.0007128598517738283,
+      -0.08034345507621765,
+      0.0,
+      0.027984175831079483,
+      0.0,
+      0.004042508080601692,
+      0.00088199955644086,
+      0.0,
+      -0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      0.0,
+      0.0,
+      0.005154380574822426,
+      0.0,
+      0.0,
+      0.0,
+      0.013201037421822548,
+      0.007078586611896753,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.0,
+      0.059882912784814835,
+      3.047733398986452e-09,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      0.0,
+      -0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "analytic_rewards": [
+    [
+      0.0008757605100981891,
+      0.0009311044705100358,
+      0.009414288215339184,
+      1.62466290021257e-06,
+      0.006085721775889397,
+      0.014886128716170788,
+      -0.0007128598517738283,
+      -0.08034345507621765,
+      0.0,
+      0.02798507548868656,
+      0.0,
+      0.004042923450469971,
+      0.0008821372757665813,
+      0.0,
+      -0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      0.024000000208616257,
+      0.0,
+      0.005154367536306381,
+      0.0,
+      0.0,
+      0.0,
+      0.013201144523918629,
+      0.007078586611896753,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.0,
+      0.059882912784814835,
+      3.0477582679822035e-09,
+      0.0,
+      0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      0.0,
+      -0.0,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "terminations": [
+    {
+      "name": "time_out",
+      "function": "isaaclab.envs.mdp.terminations.time_out",
+      "params": {},
+      "weight": 1.0,
+      "timeout": true,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "anchor_pos",
+      "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_anchor_pos_z_only",
+      "params": {
+        "command_name": "motion",
+        "threshold": 0.25
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "anchor_ori",
+      "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_anchor_ori",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "robot",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "command_name": "motion",
+        "threshold": 0.8
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "ee_body_pos",
+      "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_motion_body_pos_z_only",
+      "params": {
+        "command_name": "motion",
+        "threshold": 0.25,
+        "body_names": [
+          "left_ankle_roll_link",
+          "right_ankle_roll_link"
+        ]
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    }
+  ]
+}

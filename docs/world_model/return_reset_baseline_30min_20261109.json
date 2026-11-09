@@ -1,0 +1,26 @@
+{
+  "source_run": "reflex_scratch_h16_b4096_joint30_20261108_r1",
+  "comparison": "historical run truncated at training-loop wall1800; full run had separate30min joint budget",
+  "at1800": {
+    "progress/wall_seconds": 1798.5262692794204,
+    "progress/real_transitions": 10285056,
+    "progress/actor_updates": 488,
+    "progress/wm_rounds_completed": 988,
+    "progress/wm_gradient_updates": 9880,
+    "experience/episode_length": 43.25716993518039,
+    "experience/completed_episodes": 230023,
+    "experience/clean2_interception_per_completed_throw": 0.1311541565778854,
+    "experience/strict_hold_per_completed_throw": 0.0006053268765133172
+  },
+  "full_historical": {
+    "progress/wall_seconds": 2519.920806605369,
+    "progress/real_transitions": 13529088,
+    "progress/actor_updates": 805,
+    "progress/wm_rounds_completed": 1305,
+    "progress/wm_gradient_updates": 13050,
+    "experience/episode_length": 49.34107833436486,
+    "experience/completed_episodes": 253669,
+    "experience/clean2_interception_per_completed_throw": 0.084221294007331,
+    "experience/strict_hold_per_completed_throw": 0.0030687920893359474
+  }
+}

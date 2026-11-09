@@ -1,0 +1,5020 @@
+{
+  "contract": {
+    "state_layout": "g1-71_world_angvel+box13_wxyz_v1",
+    "joint_names": [
+      "left_hip_pitch_joint",
+      "right_hip_pitch_joint",
+      "waist_yaw_joint",
+      "left_hip_roll_joint",
+      "right_hip_roll_joint",
+      "waist_roll_joint",
+      "left_hip_yaw_joint",
+      "right_hip_yaw_joint",
+      "waist_pitch_joint",
+      "left_knee_joint",
+      "right_knee_joint",
+      "left_shoulder_pitch_joint",
+      "right_shoulder_pitch_joint",
+      "left_ankle_pitch_joint",
+      "right_ankle_pitch_joint",
+      "left_shoulder_roll_joint",
+      "right_shoulder_roll_joint",
+      "left_ankle_roll_joint",
+      "right_ankle_roll_joint",
+      "left_shoulder_yaw_joint",
+      "right_shoulder_yaw_joint",
+      "left_elbow_joint",
+      "right_elbow_joint",
+      "left_wrist_roll_joint",
+      "right_wrist_roll_joint",
+      "left_wrist_pitch_joint",
+      "right_wrist_pitch_joint",
+      "left_wrist_yaw_joint",
+      "right_wrist_yaw_joint"
+    ],
+    "observation_terms": [
+      "command",
+      "motion_anchor_pos_b",
+      "motion_anchor_ori_b",
+      "base_lin_vel",
+      "base_ang_vel",
+      "joint_pos",
+      "joint_vel",
+      "actions",
+      "balloon_pos_b",
+      "balloon_lin_vel_b",
+      "box_ori",
+      "box_ang",
+      "box_dimensions",
+      "box_mass"
+    ],
+    "context_schema": [
+      [
+        "box.dimensions",
+        3
+      ],
+      [
+        "box.masses",
+        1
+      ],
+      [
+        "box.inertias",
+        9
+      ],
+      [
+        "box.coms",
+        7
+      ],
+      [
+        "box.material_properties",
+        3
+      ],
+      [
+        "robot.masses",
+        30
+      ],
+      [
+        "robot.inertias",
+        270
+      ],
+      [
+        "robot.coms",
+        210
+      ],
+      [
+        "robot.material_properties",
+        87
+      ],
+      [
+        "robot.joint_stiffness",
+        29
+      ],
+      [
+        "robot.joint_damping",
+        29
+      ],
+      [
+        "robot.joint_armature",
+        29
+      ],
+      [
+        "robot.joint_friction_coeff",
+        29
+      ],
+      [
+        "robot.joint_effort_limits",
+        29
+      ]
+    ],
+    "memory": [
+      "_bed_hold_steps",
+      "_tp_count",
+      "_box_regrace",
+      "_v38_cradle_ticks",
+      "episode_seconds",
+      "since_launch_seconds"
+    ],
+    "context_dim": 765,
+    "com_indices": [
+      323,
+      13
+    ],
+    "dt": 0.02,
+    "decimation": 4,
+    "urdf_sha256": "dbc8471004e9b0b85c27a4ebc1f0d90a727c1cf7ca9ef507b805596f2004d64b",
+    "motion_sha256": "10aeef1894b46d4f01d8a3ad1d1e077b8c463a2ce3652ec93bda8bf745014655",
+    "flags": {
+      "AMP_W_STYLE": "1.0",
+      "AMP_W_TASK": "1.0",
+      "BOX_3POINT": "1",
+      "BOX_3POINT_BONUS": "10",
+      "BOX_3POINT_CHEST": "gap",
+      "BOX_3POINT_SEC": "3.0",
+      "BOX_AIM_MAX_DEG": "5",
+      "BOX_AIM_STD_DEG": "2.5",
+      "BOX_AMP_SLIM": "1",
+      "BOX_ARM_INIT_CRADLE": "1",
+      "BOX_ARM_SCALE": "0.02",
+      "BOX_ARM_SNAP": "0",
+      "BOX_ARM_STIFF": "40",
+      "BOX_ASYM_PEN": "0",
+      "BOX_BEARING_DEG": "10",
+      "BOX_BED_STRICT": "1",
+      "BOX_CHEST_CONTACT_W": "2.0",
+      "BOX_CHEST_DELIVERY_W": "2.5",
+      "BOX_CHEST_W": "2.2",
+      "BOX_CRADLE_RAMP": "1",
+      "BOX_DIST_HI": "5.0",
+      "BOX_DIST_LO": "2.5",
+      "BOX_DP_ANG_DEG": "35",
+      "BOX_DP_ANG_FLAT": "0",
+      "BOX_DP_ANG_OFF": "0",
+      "BOX_DP_ANG_ON": "0",
+      "BOX_DP_COAST_KEEP": "0.0",
+      "BOX_DP_COAST_MAX": "0",
+      "BOX_DP_COVERAGE": "0.409",
+      "BOX_DP_DEAD_COV": "0.02",
+      "BOX_DP_DEAD_FRAC": "0",
+      "BOX_DP_DEPTH_FLAT_D": "4.81",
+      "BOX_DP_DEPTH_FLAT_R": "0",
+      "BOX_DP_DEPTH_FLAT_S": "0.04",
+      "BOX_DP_DIRTY_P": "0",
+      "BOX_DP_DIRTY_SIG": "0.35",
+      "BOX_DP_EST": "0",
+      "BOX_DP_FAR_COV": "0",
+      "BOX_DP_MIX_CLEAN": "0.25",
+      "BOX_DP_NEAR_COV": "0",
+      "BOX_DP_RAD_BIAS": "0.072",
+      "BOX_DP_RAD_BIAS_JITTER": "0.0",
+      "BOX_DP_RAD_BIAS_PCT": "0",
+      "BOX_DP_RAD_SIGMA": "0.060",
+      "BOX_DP_RAD_SIG_A": "0",
+      "BOX_DP_RAD_SIG_B": "1.12",
+      "BOX_DP_TANG_BIAS_SCALE": "0.48",
+      "BOX_DP_TANG_SCATTER_PX": "13.4",
+      "BOX_DP_VZERO_P": "0.0",
+      "BOX_DR": "1",
+      "BOX_ELBOW_SCALE": "0.35",
+      "BOX_ELBOW_SCOOP": "0.65",
+      "BOX_EXP_TAG": "v95b_bedwarm_cont",
+      "BOX_FEET_GATHER_BED_TH": "0.3",
+      "BOX_FEET_GATHER_RAMP": "1",
+      "BOX_FEET_GATHER_SETTLE": "20",
+      "BOX_FEET_GATHER_W": "2.0",
+      "BOX_FOOT_FRICTION": "0",
+      "BOX_FOOT_STEP_W": "0.2",
+      "BOX_GATE_ALL": "1",
+      "BOX_GATE_ALL_FLOOR": "0.1",
+      "BOX_GATE_END": "-0.15",
+      "BOX_GATE_FLOOR": "0.1",
+      "BOX_GATE_START": "-0.3",
+      "BOX_GATE_TORSO": "1",
+      "BOX_GIMBAL": "1",
+      "BOX_HOLD_ELBOW": "0.95",
+      "BOX_HOLD_INIT_FRAC": "0.25",
+      "BOX_HOLD_INIT_RSI": "0.05",
+      "BOX_HOLD_INIT_X": "0.28",
+      "BOX_HOLD_POSE_CURL": "1",
+      "BOX_HOLD_SPIN_W": "0.04",
+      "BOX_HOVER_HI": "6.0",
+      "BOX_HOVER_LO": "1.0",
+      "BOX_IDLE_STILL_W": "0.035",
+      "BOX_LEG_EFFORT_SCALE": "0",
+      "BOX_LEG_KP_SCALE": "0",
+      "BOX_LIMIT_CLAMP": "1",
+      "BOX_MODEL": "small",
+      "BOX_PALM_ALLPHASE": "1",
+      "BOX_PALM_MIN": "1",
+      "BOX_POSE_SYM": "1",
+      "BOX_POSTURE": "1",
+      "BOX_READY_ALLPHASE": "1",
+      "BOX_READY_DEV_ALLPHASE": "1",
+      "BOX_READY_DEV_W": "1.0",
+      "BOX_READY_W": "4.0",
+      "BOX_RELEASE_H_HI": "2.4",
+      "BOX_ROBOT_MASS_DR": "1",
+      "BOX_SLIM_KEEP": "upright_hold,arm_idle_still,cradle_ready_dev,torso_asym,palm_up,cradle_ready,cradle_pose,chest_delivery,chest_contact,hold_feet_gather",
+      "BOX_THROW_REALIGN": "1",
+      "BOX_TUCK_W": "1.0",
+      "BOX_UPRIGHT_GATE": "1",
+      "BOX_UPRIGHT_W": "1.5",
+      "BOX_V19": "1",
+      "BOX_V19C": "1",
+      "BOX_V31_MIX_FREEZE": "0.10",
+      "BOX_V31_MIX_GARBAGE": "0.05",
+      "BOX_V31_MIX_JUMP": "0.10",
+      "BOX_V31_MIX_NOISE": "0.15",
+      "BOX_V31_VIOLENCE_W": "0",
+      "BOX_V36_CMDLIM_W": "2.0",
+      "BOX_V36_DELAY_HI": "5",
+      "BOX_V36_DELAY_LO": "2",
+      "BOX_V36_FALLTERM_W": "50.0",
+      "BOX_V36_MIX_DELAY": "0.20",
+      "BOX_V36_SOFTFALL_W": "2.0",
+      "BOX_V36_STILL_W": "1.5",
+      "BOX_V36_TRUSTGATE": "1",
+      "BOX_V36_WALK_THROWER": "1",
+      "BOX_V38_AB_X": "0",
+      "BOX_V38_AB_Y": "0",
+      "BOX_V38_AB_Z": "0",
+      "BOX_V38_ANCHOR_FACE": "0",
+      "BOX_V38_ANCHOR_POS_STD": "",
+      "BOX_V38_ANCHOR_W": "0.3",
+      "BOX_V38_ARMS_REACTIVE": "1",
+      "BOX_V38_ARM_EARLY_W": "0",
+      "BOX_V38_ARM_TWOSTAGE": "1",
+      "BOX_V38_BEARING_DEG": "0",
+      "BOX_V38_CLAMP_W": "0",
+      "BOX_V38_EEF_SIG": "",
+      "BOX_V38_FACE_DEAD": "15",
+      "BOX_V38_FACE_SIG": "35",
+      "BOX_V38_FACE_W": "0",
+      "BOX_V38_FOREAFT": "0",
+      "BOX_V38_GATE_AIR_H": "0.45",
+      "BOX_V38_HANG_W": "1.0",
+      "BOX_V38_HARDBAND": "0",
+      "BOX_V38_LANDOBS_H": "1.0",
+      "BOX_V38_LAND_ALLFLIGHT": "0",
+      "BOX_V38_LAND_H": "1.0",
+      "BOX_V38_LAND_OBS": "0",
+      "BOX_V38_LAND_SIG": "0.6",
+      "BOX_V38_LAND_W": "0",
+      "BOX_V38_LINVEL_STD": "",
+      "BOX_V38_MASS_DR": "0",
+      "BOX_V38_MASS_HI": "0.70",
+      "BOX_V38_MASS_HI_FINAL": "0.55",
+      "BOX_V38_MASS_LO": "0.10",
+      "BOX_V38_MASS_RAMP": "0",
+      "BOX_V38_ORBIT_DPS": "0",
+      "BOX_V38_ORBIT_SPAN": "120",
+      "BOX_V38_ORI_FACE": "0",
+      "BOX_V38_ORI_FACE_H": "1.15",
+      "BOX_V38_ORI_YAW_STD_HOVER": "0",
+      "BOX_V38_PERTURB": "1",
+      "BOX_V38_PERTURB_P": "0.15",
+      "BOX_V38_P_ABANDON": "0.08",
+      "BOX_V38_P_OFFSET": "0.40",
+      "BOX_V38_RECENTRE": "0",
+      "BOX_V38_REF_ARMS": "1",
+      "BOX_V38_REF_DOWN_HI": "5.0",
+      "BOX_V38_REF_DOWN_LO": "0.0",
+      "BOX_V38_SWEEP_DEG": "0",
+      "BOX_V38_SWEEP_T": "6.0",
+      "BOX_V38_TGT_CLIP": "0",
+      "BOX_V38_TS_BASE_BLEND": "1",
+      "BOX_V38_TS_CLOSE": "1.0",
+      "BOX_V38_TS_DELTA_GATE": "1",
+      "BOX_V38_TS_DELTA_MIN": "0.15",
+      "BOX_V38_TS_DOWN": "",
+      "BOX_V38_TS_D_TRIG": "2.5",
+      "BOX_V38_TS_FALL": "40",
+      "BOX_V38_TS_FROM_PERC": "0",
+      "BOX_V38_TS_LATCH": "75",
+      "BOX_V38_TS_MISS_MAX": "6",
+      "BOX_V38_TS_RAMP": "8",
+      "BOX_V38_TS_SPEED_SUSTAIN": "8",
+      "BOX_V38_TS_USE_SPEED": "1",
+      "BOX_V38_TS_V_HI": "3.0",
+      "BOX_V38_TS_V_LO": "2.5",
+      "BOX_WRISTLOCK": "1",
+      "BOX_WRIST_LIP": "0.40",
+      "M5_TORSO_W": "0.0"
+    },
+    "task_schema_version": 2,
+    "task_history_fields": [
+      "_bed_hold_steps",
+      "_tp_count",
+      "_box_regrace",
+      "_v38_cradle_ticks",
+      "_chest_v5_persist"
+    ],
+    "body_names": [
+      "pelvis",
+      "left_hip_pitch_link",
+      "right_hip_pitch_link",
+      "waist_yaw_link",
+      "left_hip_roll_link",
+      "right_hip_roll_link",
+      "waist_roll_link",
+      "left_hip_yaw_link",
+      "right_hip_yaw_link",
+      "torso_link",
+      "left_knee_link",
+      "right_knee_link",
+      "left_shoulder_pitch_link",
+      "right_shoulder_pitch_link",
+      "left_ankle_pitch_link",
+      "right_ankle_pitch_link",
+      "left_shoulder_roll_link",
+      "right_shoulder_roll_link",
+      "left_ankle_roll_link",
+      "right_ankle_roll_link",
+      "left_shoulder_yaw_link",
+      "right_shoulder_yaw_link",
+      "left_elbow_link",
+      "right_elbow_link",
+      "left_wrist_roll_link",
+      "right_wrist_roll_link",
+      "left_wrist_pitch_link",
+      "right_wrist_pitch_link",
+      "left_wrist_yaw_link",
+      "right_wrist_yaw_link"
+    ],
+    "tracked_names": [
+      "pelvis",
+      "left_hip_roll_link",
+      "left_knee_link",
+      "left_ankle_roll_link",
+      "right_hip_roll_link",
+      "right_knee_link",
+      "right_ankle_roll_link",
+      "torso_link",
+      "left_shoulder_roll_link",
+      "left_elbow_link",
+      "left_wrist_yaw_link",
+      "right_shoulder_roll_link",
+      "right_elbow_link",
+      "right_wrist_yaw_link"
+    ],
+    "max_episode_steps": 650,
+    "termination_names": [
+      "time_out",
+      "anchor_pos",
+      "anchor_ori",
+      "ee_body_pos"
+    ],
+    "wm_context_audit": {
+      "profile": "stage1_dr_v1",
+      "events": [
+        {
+          "name": "physics_material",
+          "mode": "startup",
+          "function": "randomize_rigid_body_material",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "robot",
+                "body_names": [
+                  ".*"
+                ],
+                "body_ids": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24,
+                  25,
+                  26,
+                  27,
+                  28,
+                  29
+                ],
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "static_friction_range": [
+              0.3,
+              1.6
+            ],
+            "dynamic_friction_range": [
+              0.3,
+              1.2
+            ],
+            "restitution_range": [
+              0.0,
+              0.5
+            ],
+            "num_buckets": 64
+          },
+          "conditioning": "wm_context"
+        },
+        {
+          "name": "add_joint_default_pos",
+          "mode": "startup",
+          "function": "randomize_joint_default_pos",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "robot",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": [
+                  ".*"
+                ],
+                "joint_ids": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24,
+                  25,
+                  26,
+                  27,
+                  28
+                ],
+                "preserve_order": false
+              }
+            },
+            "pos_distribution_params": [
+              -0.01,
+              0.01
+            ],
+            "operation": "add"
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "base_com",
+          "mode": "startup",
+          "function": "randomize_rigid_body_com",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "robot",
+                "body_names": [
+                  "torso_link"
+                ],
+                "body_ids": [
+                  9
+                ],
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "com_range": {
+              "x": [
+                -0.025,
+                0.025
+              ],
+              "y": [
+                -0.05,
+                0.05
+              ],
+              "z": [
+                -0.05,
+                0.05
+              ]
+            }
+          },
+          "conditioning": "wm_context"
+        },
+        {
+          "name": "randomize_robot_mass",
+          "mode": "startup",
+          "function": "randomize_rigid_body_mass",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "robot",
+                "body_names": [
+                  ".*"
+                ],
+                "body_ids": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24,
+                  25,
+                  26,
+                  27,
+                  28,
+                  29
+                ],
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "mass_distribution_params": [
+              0.9,
+              1.1
+            ],
+            "operation": "scale",
+            "distribution": "uniform",
+            "recompute_inertia": true
+          },
+          "conditioning": "wm_context"
+        },
+        {
+          "name": "randomize_box_mass",
+          "mode": "startup",
+          "function": "randomize_rigid_body_mass",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "balloon",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "mass_distribution_params": [
+              0.8,
+              1.2
+            ],
+            "operation": "scale",
+            "distribution": "uniform",
+            "recompute_inertia": true
+          },
+          "conditioning": "wm_context"
+        },
+        {
+          "name": "push_robot",
+          "mode": "interval",
+          "function": "push_by_setting_velocity",
+          "parameters": {
+            "velocity_range": {
+              "x": [
+                -0.5,
+                0.5
+              ],
+              "y": [
+                -0.5,
+                0.5
+              ],
+              "z": [
+                -0.2,
+                0.2
+              ],
+              "roll": [
+                -0.52,
+                0.52
+              ],
+              "pitch": [
+                -0.52,
+                0.52
+              ],
+              "yaw": [
+                -0.78,
+                0.78
+              ]
+            }
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "box_hover_launch",
+          "mode": "interval",
+          "function": "v38_walking_hover_and_launch",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "balloon",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            }
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "hold_init_apply",
+          "mode": "interval",
+          "function": "hold_init_apply",
+          "parameters": {
+            "x_off": 0.28,
+            "z_off": 0.35
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "first_throw_realign",
+          "mode": "interval",
+          "function": "first_throw_realign",
+          "parameters": {},
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "v38_cradle_perturb",
+          "mode": "interval",
+          "function": "v38_cradle_perturb",
+          "parameters": {},
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "randomize_motion_yaw",
+          "mode": "reset",
+          "function": "randomize_motion_yaw",
+          "parameters": {
+            "yaw_range": [
+              -3.14159,
+              3.14159
+            ]
+          },
+          "conditioning": "reset_state_or_reference"
+        },
+        {
+          "name": "reset_balloon",
+          "mode": "reset",
+          "function": "reset_box_throw",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "balloon",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "motion_direction": [
+              0.0,
+              -1.0
+            ]
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "randomize_init_state",
+          "mode": "reset",
+          "function": "randomize_init_state",
+          "parameters": {
+            "joint_pose_std": 0.3,
+            "root_vel_xy_max": 1.0
+          },
+          "conditioning": "reset_state_or_reference"
+        },
+        {
+          "name": "randomize_cmd_time_steps",
+          "mode": "reset",
+          "function": "randomize_cmd_time_steps_mixture",
+          "parameters": {
+            "motion_total_frames": 1500,
+            "p_normal": 0.5,
+            "p_catch_window": 0.3,
+            "p_global": 0.2,
+            "catch_window": [
+              250,
+              800
+            ]
+          },
+          "conditioning": "reset_state_or_reference"
+        },
+        {
+          "name": "reset_chest_v5_persist",
+          "mode": "reset",
+          "function": "reset_chest_v5_persist",
+          "parameters": {},
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "randomize_box_material",
+          "mode": "reset",
+          "function": "randomize_rigid_body_material",
+          "parameters": {
+            "asset_cfg": {
+              "entity": {
+                "name": "balloon",
+                "body_names": null,
+                "body_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "joint_names": null,
+                "joint_ids": {
+                  "slice": [
+                    null,
+                    null,
+                    null
+                  ]
+                },
+                "preserve_order": false
+              }
+            },
+            "static_friction_range": [
+              0.3,
+              0.7
+            ],
+            "dynamic_friction_range": [
+              0.25,
+              0.6
+            ],
+            "restitution_range": [
+              0.05,
+              0.2
+            ],
+            "num_buckets": 64
+          },
+          "conditioning": "wm_context"
+        },
+        {
+          "name": "hold_init_mark",
+          "mode": "reset",
+          "function": "hold_init_mark",
+          "parameters": {
+            "frac": 0.25
+          },
+          "conditioning": "state_target_or_native_event"
+        },
+        {
+          "name": "v38_aim_offsets",
+          "mode": "reset",
+          "function": "sample_v38_aim_offsets",
+          "parameters": {},
+          "conditioning": "state_target_or_native_event"
+        }
+      ],
+      "inertia": "mass randomization can recompute inertia; observed full tensors remain lossless in bank",
+      "controller": "effective target already includes randomized default pose; gains not independently randomized",
+      "context": {
+        "version": 1,
+        "profile": "stage1_dr_v1",
+        "schema": [
+          [
+            "box.dimensions",
+            3
+          ],
+          [
+            "box.masses",
+            1
+          ],
+          [
+            "box.inertias",
+            9
+          ],
+          [
+            "box.coms",
+            7
+          ],
+          [
+            "box.material_properties",
+            3
+          ],
+          [
+            "robot.masses",
+            30
+          ],
+          [
+            "robot.inertias",
+            270
+          ],
+          [
+            "robot.coms",
+            210
+          ],
+          [
+            "robot.material_properties",
+            87
+          ],
+          [
+            "robot.joint_stiffness",
+            29
+          ],
+          [
+            "robot.joint_damping",
+            29
+          ],
+          [
+            "robot.joint_armature",
+            29
+          ],
+          [
+            "robot.joint_friction_coeff",
+            29
+          ],
+          [
+            "robot.joint_effort_limits",
+            29
+          ]
+        ],
+        "body_names": [
+          "pelvis",
+          "left_hip_pitch_link",
+          "right_hip_pitch_link",
+          "waist_yaw_link",
+          "left_hip_roll_link",
+          "right_hip_roll_link",
+          "waist_roll_link",
+          "left_hip_yaw_link",
+          "right_hip_yaw_link",
+          "torso_link",
+          "left_knee_link",
+          "right_knee_link",
+          "left_shoulder_pitch_link",
+          "right_shoulder_pitch_link",
+          "left_ankle_pitch_link",
+          "right_ankle_pitch_link",
+          "left_shoulder_roll_link",
+          "right_shoulder_roll_link",
+          "left_ankle_roll_link",
+          "right_ankle_roll_link",
+          "left_shoulder_yaw_link",
+          "right_shoulder_yaw_link",
+          "left_elbow_link",
+          "right_elbow_link",
+          "left_wrist_roll_link",
+          "right_wrist_roll_link",
+          "left_wrist_pitch_link",
+          "right_wrist_pitch_link",
+          "left_wrist_yaw_link",
+          "right_wrist_yaw_link"
+        ],
+        "torso": "torso_link",
+        "full_dim": 765,
+        "wm_dim": 127,
+        "wm_groups": [
+          [
+            "box.dimensions",
+            3
+          ],
+          [
+            "box.masses",
+            1
+          ],
+          [
+            "box.material_properties",
+            3
+          ],
+          [
+            "robot.masses",
+            30
+          ],
+          [
+            "robot.torso_com_xyz",
+            3
+          ],
+          [
+            "robot.material_properties",
+            87
+          ]
+        ],
+        "wm_columns": [
+          0,
+          1,
+          2,
+          3,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          386,
+          387,
+          388,
+          533,
+          534,
+          535,
+          536,
+          537,
+          538,
+          539,
+          540,
+          541,
+          542,
+          543,
+          544,
+          545,
+          546,
+          547,
+          548,
+          549,
+          550,
+          551,
+          552,
+          553,
+          554,
+          555,
+          556,
+          557,
+          558,
+          559,
+          560,
+          561,
+          562,
+          563,
+          564,
+          565,
+          566,
+          567,
+          568,
+          569,
+          570,
+          571,
+          572,
+          573,
+          574,
+          575,
+          576,
+          577,
+          578,
+          579,
+          580,
+          581,
+          582,
+          583,
+          584,
+          585,
+          586,
+          587,
+          588,
+          589,
+          590,
+          591,
+          592,
+          593,
+          594,
+          595,
+          596,
+          597,
+          598,
+          599,
+          600,
+          601,
+          602,
+          603,
+          604,
+          605,
+          606,
+          607,
+          608,
+          609,
+          610,
+          611,
+          612,
+          613,
+          614,
+          615,
+          616,
+          617,
+          618,
+          619
+        ],
+        "omitted_columns": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          84,
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94,
+          95,
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          108,
+          109,
+          110,
+          111,
+          112,
+          113,
+          114,
+          115,
+          116,
+          117,
+          118,
+          119,
+          120,
+          121,
+          122,
+          123,
+          124,
+          125,
+          126,
+          127,
+          128,
+          129,
+          130,
+          131,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191,
+          192,
+          193,
+          194,
+          195,
+          196,
+          197,
+          198,
+          199,
+          200,
+          201,
+          202,
+          203,
+          204,
+          205,
+          206,
+          207,
+          208,
+          209,
+          210,
+          211,
+          212,
+          213,
+          214,
+          215,
+          216,
+          217,
+          218,
+          219,
+          220,
+          221,
+          222,
+          223,
+          224,
+          225,
+          226,
+          227,
+          228,
+          229,
+          230,
+          231,
+          232,
+          233,
+          234,
+          235,
+          236,
+          237,
+          238,
+          239,
+          240,
+          241,
+          242,
+          243,
+          244,
+          245,
+          246,
+          247,
+          248,
+          249,
+          250,
+          251,
+          252,
+          253,
+          254,
+          255,
+          256,
+          257,
+          258,
+          259,
+          260,
+          261,
+          262,
+          263,
+          264,
+          265,
+          266,
+          267,
+          268,
+          269,
+          270,
+          271,
+          272,
+          273,
+          274,
+          275,
+          276,
+          277,
+          278,
+          279,
+          280,
+          281,
+          282,
+          283,
+          284,
+          285,
+          286,
+          287,
+          288,
+          289,
+          290,
+          291,
+          292,
+          293,
+          294,
+          295,
+          296,
+          297,
+          298,
+          299,
+          300,
+          301,
+          302,
+          303,
+          304,
+          305,
+          306,
+          307,
+          308,
+          309,
+          310,
+          311,
+          312,
+          313,
+          314,
+          315,
+          316,
+          317,
+          318,
+          319,
+          320,
+          321,
+          322,
+          323,
+          324,
+          325,
+          326,
+          327,
+          328,
+          329,
+          330,
+          331,
+          332,
+          333,
+          334,
+          335,
+          336,
+          337,
+          338,
+          339,
+          340,
+          341,
+          342,
+          343,
+          344,
+          345,
+          346,
+          347,
+          348,
+          349,
+          350,
+          351,
+          352,
+          353,
+          354,
+          355,
+          356,
+          357,
+          358,
+          359,
+          360,
+          361,
+          362,
+          363,
+          364,
+          365,
+          366,
+          367,
+          368,
+          369,
+          370,
+          371,
+          372,
+          373,
+          374,
+          375,
+          376,
+          377,
+          378,
+          379,
+          380,
+          381,
+          382,
+          383,
+          384,
+          385,
+          389,
+          390,
+          391,
+          392,
+          393,
+          394,
+          395,
+          396,
+          397,
+          398,
+          399,
+          400,
+          401,
+          402,
+          403,
+          404,
+          405,
+          406,
+          407,
+          408,
+          409,
+          410,
+          411,
+          412,
+          413,
+          414,
+          415,
+          416,
+          417,
+          418,
+          419,
+          420,
+          421,
+          422,
+          423,
+          424,
+          425,
+          426,
+          427,
+          428,
+          429,
+          430,
+          431,
+          432,
+          433,
+          434,
+          435,
+          436,
+          437,
+          438,
+          439,
+          440,
+          441,
+          442,
+          443,
+          444,
+          445,
+          446,
+          447,
+          448,
+          449,
+          450,
+          451,
+          452,
+          453,
+          454,
+          455,
+          456,
+          457,
+          458,
+          459,
+          460,
+          461,
+          462,
+          463,
+          464,
+          465,
+          466,
+          467,
+          468,
+          469,
+          470,
+          471,
+          472,
+          473,
+          474,
+          475,
+          476,
+          477,
+          478,
+          479,
+          480,
+          481,
+          482,
+          483,
+          484,
+          485,
+          486,
+          487,
+          488,
+          489,
+          490,
+          491,
+          492,
+          493,
+          494,
+          495,
+          496,
+          497,
+          498,
+          499,
+          500,
+          501,
+          502,
+          503,
+          504,
+          505,
+          506,
+          507,
+          508,
+          509,
+          510,
+          511,
+          512,
+          513,
+          514,
+          515,
+          516,
+          517,
+          518,
+          519,
+          520,
+          521,
+          522,
+          523,
+          524,
+          525,
+          526,
+          527,
+          528,
+          529,
+          530,
+          531,
+          532,
+          620,
+          621,
+          622,
+          623,
+          624,
+          625,
+          626,
+          627,
+          628,
+          629,
+          630,
+          631,
+          632,
+          633,
+          634,
+          635,
+          636,
+          637,
+          638,
+          639,
+          640,
+          641,
+          642,
+          643,
+          644,
+          645,
+          646,
+          647,
+          648,
+          649,
+          650,
+          651,
+          652,
+          653,
+          654,
+          655,
+          656,
+          657,
+          658,
+          659,
+          660,
+          661,
+          662,
+          663,
+          664,
+          665,
+          666,
+          667,
+          668,
+          669,
+          670,
+          671,
+          672,
+          673,
+          674,
+          675,
+          676,
+          677,
+          678,
+          679,
+          680,
+          681,
+          682,
+          683,
+          684,
+          685,
+          686,
+          687,
+          688,
+          689,
+          690,
+          691,
+          692,
+          693,
+          694,
+          695,
+          696,
+          697,
+          698,
+          699,
+          700,
+          701,
+          702,
+          703,
+          704,
+          705,
+          706,
+          707,
+          708,
+          709,
+          710,
+          711,
+          712,
+          713,
+          714,
+          715,
+          716,
+          717,
+          718,
+          719,
+          720,
+          721,
+          722,
+          723,
+          724,
+          725,
+          726,
+          727,
+          728,
+          729,
+          730,
+          731,
+          732,
+          733,
+          734,
+          735,
+          736,
+          737,
+          738,
+          739,
+          740,
+          741,
+          742,
+          743,
+          744,
+          745,
+          746,
+          747,
+          748,
+          749,
+          750,
+          751,
+          752,
+          753,
+          754,
+          755,
+          756,
+          757,
+          758,
+          759,
+          760,
+          761,
+          762,
+          763,
+          764
+        ]
+      }
+    }
+  },
+  "rewards": [
+    {
+      "name": "motion_global_anchor_pos",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_anchor_position_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 0.3
+      },
+      "weight": 0.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "motion_global_anchor_ori",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_anchor_orientation_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 0.4
+      },
+      "weight": 0.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "motion_body_pos",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_relative_body_position_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 0.3
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "motion_body_ori",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_relative_body_orientation_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 0.4
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "motion_body_lin_vel",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_body_linear_velocity_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 1.0
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "motion_body_ang_vel",
+      "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_body_angular_velocity_error_exp",
+      "params": {
+        "command_name": "motion",
+        "std": 3.14
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "action_rate_l2",
+      "function": "isaaclab.envs.mdp.rewards.action_rate_l2",
+      "params": {},
+      "weight": -0.1,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "joint_limit",
+      "function": "isaaclab.envs.mdp.rewards.joint_pos_limits",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "robot",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": [
+              ".*"
+            ],
+            "joint_ids": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28
+            ],
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -10.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "undesired_contacts",
+      "function": "isaaclab.envs.mdp.rewards.undesired_contacts",
+      "params": {
+        "sensor_cfg": {
+          "entity": {
+            "name": "contact_forces",
+            "body_names": [
+              "^(?!left_ankle_roll_link$)(?!right_ankle_roll_link$)(?!left_wrist_yaw_link$)(?!right_wrist_yaw_link$).+$"
+            ],
+            "body_ids": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              9,
+              10,
+              11,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28
+            ],
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "threshold": 1.0
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "catch_eef_to_balloon",
+      "function": "whole_body_tracking.tasks.tracking.mdp.catch_extras.catch_eef_to_balloon",
+      "params": {
+        "sigma": 0.5
+      },
+      "weight": 2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "catch_success_bonus",
+      "function": "whole_body_tracking.tasks.tracking.mdp.catch_extras.catch_success_bonus",
+      "params": {
+        "trap_radius": 0.25,
+        "speed_thresh": 0.5
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "chest_pocket",
+      "function": "reflex.envs.throw.ugated_chest_pocket",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 2.2,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "wrist_proximity",
+      "function": "reflex.envs.base.chest_v5_terms.wrist_proximity_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "wrist_flank",
+      "function": "reflex.envs.base.chest_v5_terms.wrist_flank_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "head_shoulder_support_penalty",
+      "function": "reflex.envs.base.chest_v5_terms.head_shoulder_support_penalty",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -3.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "strict_hold_sustained",
+      "function": "reflex.envs.robust_terms.trust_gated_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "inner": "sustained"
+      },
+      "weight": 4.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "catch_success_strict_bonus",
+      "function": "reflex.envs.robust_terms.trust_gated_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "inner": "strict"
+      },
+      "weight": 10.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "lean_during_intake",
+      "function": "reflex.envs.base.catch_terms_v2.lean_during_intake_reward",
+      "params": {},
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "bilateral_enclosure",
+      "function": "reflex.envs.base.chest_v5g_terms.bilateral_enclosure_reward",
+      "params": {
+        "sigma": 0.18
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "ball_lateral_offset",
+      "function": "reflex.envs.base.chest_v5g_terms.ball_lateral_offset_penalty",
+      "params": {
+        "deadzone": 0.08,
+        "near_max": 0.6
+      },
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "low_hold",
+      "function": "reflex.envs.throw.ugated_low_hold",
+      "params": {
+        "z_low": 0.1,
+        "z_high": 0.3,
+        "near_max": 0.6
+      },
+      "weight": 1.2,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "torso_uprightness_penalty",
+      "function": "reflex.envs.base.chest_v5h_terms.torso_uprightness_penalty",
+      "params": {
+        "max_angle_rad": 0.349
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "hands_under_box",
+      "function": "reflex.envs.throw.ugated_hands_under_box",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "forearm_cradle",
+      "function": "reflex.envs.throw.forearm_cradle_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "elbow_spread",
+      "function": "reflex.envs.throw.elbow_spread_penalty",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "hold_still",
+      "function": "reflex.envs.throw.ugated_hold_still",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "box_on_bed",
+      "function": "reflex.envs.robust_terms.trust_gated_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "inner": "on_bed"
+      },
+      "weight": 4.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "face_box",
+      "function": "reflex.envs.throw.face_box_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "cradle_pose",
+      "function": "reflex.envs.teacher_terms.cradle_pose_reward_reactive",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 3.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "tuck_in",
+      "function": "reflex.envs.throw.tuck_in_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "compliant_intake",
+      "function": "reflex.envs.throw.compliant_intake_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "palm_up",
+      "function": "reflex.envs.teacher_terms.palm_up_reward_reactive",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "upright_hold",
+      "function": "reflex.envs.throw.upright_hold_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "arm_idle_still",
+      "function": "reflex.envs.teacher_terms.arm_idle_still_penalty_reactive",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -0.035,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "cradle_ready_dev",
+      "function": "reflex.envs.teacher_terms.cradle_ready_dev_penalty_reactive",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "box_hold_spin",
+      "function": "reflex.envs.throw.box_hold_spin_penalty",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -0.04,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "cradle_ready",
+      "function": "reflex.envs.teacher_terms.cradle_ready_reward_reactive",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 4.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "chest_delivery",
+      "function": "reflex.envs.throw.chest_delivery_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 2.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "chest_contact",
+      "function": "reflex.envs.throw.chest_contact_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "hold_feet_gather",
+      "function": "reflex.envs.throw.hold_feet_gather_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": 2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "wrist_steady",
+      "function": "reflex.envs.throw.wrist_steady_penalty",
+      "params": {},
+      "weight": 0.0,
+      "timeout": false,
+      "kind": "configured_zero"
+    },
+    {
+      "name": "leg_split",
+      "function": "reflex.envs.throw.leg_split_penalty",
+      "params": {
+        "max_split": 0.8
+      },
+      "weight": -0.2,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "torso_asym",
+      "function": "reflex.envs.throw.torso_asym_penalty",
+      "params": {
+        "back_max": 0.31
+      },
+      "weight": -0.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "threepoint_bonus",
+      "function": "reflex.envs.robust_terms.trust_gated_reward",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        },
+        "hold_sec": 3.0,
+        "inner": "threept"
+      },
+      "weight": 10.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "hold_foot_step",
+      "function": "reflex.envs.throw.hold_foot_step_penalty",
+      "params": {
+        "asset_cfg": {
+          "entity": {
+            "name": "balloon",
+            "body_names": null,
+            "body_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "joint_names": null,
+            "joint_ids": {
+              "slice": [
+                null,
+                null,
+                null
+              ]
+            },
+            "preserve_order": false
+          }
+        }
+      },
+      "weight": -0.2,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "low_trust_stillness",
+      "function": "reflex.envs.robust_terms.low_trust_stillness",
+      "params": {},
+      "weight": 1.5,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "soft_fall_shaping",
+      "function": "reflex.envs.robust_terms.soft_fall_shaping",
+      "params": {},
+      "weight": -2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "cmd_limit_excess",
+      "function": "reflex.envs.robust_terms.cmd_limit_excess",
+      "params": {},
+      "weight": -2.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "fall_terminated",
+      "function": "reflex.envs.robust_terms.fall_terminated",
+      "params": {},
+      "weight": -50.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "v38_hang_prelaunch",
+      "function": "reflex.envs.teacher_terms.v38_hang_prelaunch_reward",
+      "params": {},
+      "weight": 1.0,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    },
+    {
+      "name": "v38_cradle_anchor",
+      "function": "reflex.envs.teacher_terms.v38_cradle_anchor",
+      "params": {},
+      "weight": 0.3,
+      "timeout": false,
+      "kind": "original_torch_formula"
+    }
+  ],
+  "unavailable_rewards": [],
+  "analytic_rewards": [],
+  "warning": "Original Torch formulas; configured force-only proxy is explicitly labeled. Neural WM learns state only.",
+  "task": {
+    "schema": 2,
+    "history": [
+      "_bed_hold_steps",
+      "_tp_count",
+      "_box_regrace",
+      "_v38_cradle_ticks",
+      "_chest_v5_persist"
+    ],
+    "dt": 0.02,
+    "body_names": [
+      "pelvis",
+      "left_hip_pitch_link",
+      "right_hip_pitch_link",
+      "waist_yaw_link",
+      "left_hip_roll_link",
+      "right_hip_roll_link",
+      "waist_roll_link",
+      "left_hip_yaw_link",
+      "right_hip_yaw_link",
+      "torso_link",
+      "left_knee_link",
+      "right_knee_link",
+      "left_shoulder_pitch_link",
+      "right_shoulder_pitch_link",
+      "left_ankle_pitch_link",
+      "right_ankle_pitch_link",
+      "left_shoulder_roll_link",
+      "right_shoulder_roll_link",
+      "left_ankle_roll_link",
+      "right_ankle_roll_link",
+      "left_shoulder_yaw_link",
+      "right_shoulder_yaw_link",
+      "left_elbow_link",
+      "right_elbow_link",
+      "left_wrist_roll_link",
+      "right_wrist_roll_link",
+      "left_wrist_pitch_link",
+      "right_wrist_pitch_link",
+      "left_wrist_yaw_link",
+      "right_wrist_yaw_link"
+    ],
+    "tracked_names": [
+      "pelvis",
+      "left_hip_roll_link",
+      "left_knee_link",
+      "left_ankle_roll_link",
+      "right_hip_roll_link",
+      "right_knee_link",
+      "right_ankle_roll_link",
+      "torso_link",
+      "left_shoulder_roll_link",
+      "left_elbow_link",
+      "left_wrist_yaw_link",
+      "right_shoulder_roll_link",
+      "right_elbow_link",
+      "right_wrist_yaw_link"
+    ],
+    "rewards": [
+      {
+        "name": "motion_global_anchor_pos",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_anchor_position_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 0.3
+        },
+        "weight": 0.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "motion_global_anchor_ori",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_anchor_orientation_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 0.4
+        },
+        "weight": 0.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "motion_body_pos",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_relative_body_position_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 0.3
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "motion_body_ori",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_relative_body_orientation_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 0.4
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "motion_body_lin_vel",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_body_linear_velocity_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 1.0
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "motion_body_ang_vel",
+        "function": "whole_body_tracking.tasks.tracking.mdp.rewards.motion_global_body_angular_velocity_error_exp",
+        "params": {
+          "command_name": "motion",
+          "std": 3.14
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "action_rate_l2",
+        "function": "isaaclab.envs.mdp.rewards.action_rate_l2",
+        "params": {},
+        "weight": -0.1,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "joint_limit",
+        "function": "isaaclab.envs.mdp.rewards.joint_pos_limits",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "robot",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": [
+                ".*"
+              ],
+              "joint_ids": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28
+              ],
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -10.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "undesired_contacts",
+        "function": "isaaclab.envs.mdp.rewards.undesired_contacts",
+        "params": {
+          "sensor_cfg": {
+            "entity": {
+              "name": "contact_forces",
+              "body_names": [
+                "^(?!left_ankle_roll_link$)(?!right_ankle_roll_link$)(?!left_wrist_yaw_link$)(?!right_wrist_yaw_link$).+$"
+              ],
+              "body_ids": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                7,
+                8,
+                9,
+                10,
+                11,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28
+              ],
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "threshold": 1.0
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "catch_eef_to_balloon",
+        "function": "whole_body_tracking.tasks.tracking.mdp.catch_extras.catch_eef_to_balloon",
+        "params": {
+          "sigma": 0.5
+        },
+        "weight": 2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "catch_success_bonus",
+        "function": "whole_body_tracking.tasks.tracking.mdp.catch_extras.catch_success_bonus",
+        "params": {
+          "trap_radius": 0.25,
+          "speed_thresh": 0.5
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "chest_pocket",
+        "function": "reflex.envs.throw.ugated_chest_pocket",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 2.2,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "wrist_proximity",
+        "function": "reflex.envs.base.chest_v5_terms.wrist_proximity_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "wrist_flank",
+        "function": "reflex.envs.base.chest_v5_terms.wrist_flank_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "head_shoulder_support_penalty",
+        "function": "reflex.envs.base.chest_v5_terms.head_shoulder_support_penalty",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -3.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "strict_hold_sustained",
+        "function": "reflex.envs.robust_terms.trust_gated_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "inner": "sustained"
+        },
+        "weight": 4.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "catch_success_strict_bonus",
+        "function": "reflex.envs.robust_terms.trust_gated_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "inner": "strict"
+        },
+        "weight": 10.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "lean_during_intake",
+        "function": "reflex.envs.base.catch_terms_v2.lean_during_intake_reward",
+        "params": {},
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "bilateral_enclosure",
+        "function": "reflex.envs.base.chest_v5g_terms.bilateral_enclosure_reward",
+        "params": {
+          "sigma": 0.18
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "ball_lateral_offset",
+        "function": "reflex.envs.base.chest_v5g_terms.ball_lateral_offset_penalty",
+        "params": {
+          "deadzone": 0.08,
+          "near_max": 0.6
+        },
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "low_hold",
+        "function": "reflex.envs.throw.ugated_low_hold",
+        "params": {
+          "z_low": 0.1,
+          "z_high": 0.3,
+          "near_max": 0.6
+        },
+        "weight": 1.2,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "torso_uprightness_penalty",
+        "function": "reflex.envs.base.chest_v5h_terms.torso_uprightness_penalty",
+        "params": {
+          "max_angle_rad": 0.349
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "hands_under_box",
+        "function": "reflex.envs.throw.ugated_hands_under_box",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "forearm_cradle",
+        "function": "reflex.envs.throw.forearm_cradle_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "elbow_spread",
+        "function": "reflex.envs.throw.elbow_spread_penalty",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "hold_still",
+        "function": "reflex.envs.throw.ugated_hold_still",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "box_on_bed",
+        "function": "reflex.envs.robust_terms.trust_gated_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "inner": "on_bed"
+        },
+        "weight": 4.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "face_box",
+        "function": "reflex.envs.throw.face_box_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "cradle_pose",
+        "function": "reflex.envs.teacher_terms.cradle_pose_reward_reactive",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 3.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "tuck_in",
+        "function": "reflex.envs.throw.tuck_in_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "compliant_intake",
+        "function": "reflex.envs.throw.compliant_intake_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "palm_up",
+        "function": "reflex.envs.teacher_terms.palm_up_reward_reactive",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "upright_hold",
+        "function": "reflex.envs.throw.upright_hold_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "arm_idle_still",
+        "function": "reflex.envs.teacher_terms.arm_idle_still_penalty_reactive",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -0.035,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "cradle_ready_dev",
+        "function": "reflex.envs.teacher_terms.cradle_ready_dev_penalty_reactive",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "box_hold_spin",
+        "function": "reflex.envs.throw.box_hold_spin_penalty",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -0.04,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "cradle_ready",
+        "function": "reflex.envs.teacher_terms.cradle_ready_reward_reactive",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 4.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "chest_delivery",
+        "function": "reflex.envs.throw.chest_delivery_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 2.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "chest_contact",
+        "function": "reflex.envs.throw.chest_contact_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "hold_feet_gather",
+        "function": "reflex.envs.throw.hold_feet_gather_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": 2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "wrist_steady",
+        "function": "reflex.envs.throw.wrist_steady_penalty",
+        "params": {},
+        "weight": 0.0,
+        "timeout": false,
+        "kind": "configured_zero"
+      },
+      {
+        "name": "leg_split",
+        "function": "reflex.envs.throw.leg_split_penalty",
+        "params": {
+          "max_split": 0.8
+        },
+        "weight": -0.2,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "torso_asym",
+        "function": "reflex.envs.throw.torso_asym_penalty",
+        "params": {
+          "back_max": 0.31
+        },
+        "weight": -0.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "threepoint_bonus",
+        "function": "reflex.envs.robust_terms.trust_gated_reward",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "hold_sec": 3.0,
+          "inner": "threept"
+        },
+        "weight": 10.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "hold_foot_step",
+        "function": "reflex.envs.throw.hold_foot_step_penalty",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "weight": -0.2,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "low_trust_stillness",
+        "function": "reflex.envs.robust_terms.low_trust_stillness",
+        "params": {},
+        "weight": 1.5,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "soft_fall_shaping",
+        "function": "reflex.envs.robust_terms.soft_fall_shaping",
+        "params": {},
+        "weight": -2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "cmd_limit_excess",
+        "function": "reflex.envs.robust_terms.cmd_limit_excess",
+        "params": {},
+        "weight": -2.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "fall_terminated",
+        "function": "reflex.envs.robust_terms.fall_terminated",
+        "params": {},
+        "weight": -50.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "v38_hang_prelaunch",
+        "function": "reflex.envs.teacher_terms.v38_hang_prelaunch_reward",
+        "params": {},
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "v38_cradle_anchor",
+        "function": "reflex.envs.teacher_terms.v38_cradle_anchor",
+        "params": {},
+        "weight": 0.3,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      }
+    ],
+    "terminations": [
+      {
+        "name": "time_out",
+        "function": "isaaclab.envs.mdp.terminations.time_out",
+        "params": {},
+        "weight": 1.0,
+        "timeout": true,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "anchor_pos",
+        "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_anchor_pos_z_only",
+        "params": {
+          "command_name": "motion",
+          "threshold": 0.25
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "anchor_ori",
+        "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_anchor_ori",
+        "params": {
+          "asset_cfg": {
+            "entity": {
+              "name": "robot",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          },
+          "command_name": "motion",
+          "threshold": 0.8
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      },
+      {
+        "name": "ee_body_pos",
+        "function": "whole_body_tracking.tasks.tracking.mdp.terminations.bad_motion_body_pos_z_only",
+        "params": {
+          "command_name": "motion",
+          "threshold": 0.25,
+          "body_names": [
+            "left_ankle_roll_link",
+            "right_ankle_roll_link"
+          ]
+        },
+        "weight": 1.0,
+        "timeout": false,
+        "kind": "original_torch_formula"
+      }
+    ],
+    "event_handling": "truncate at known scheduled event, rethrow, possible cradle kick or reference end",
+    "bootstrap": "timeouts/model truncations bootstrap last pre-event state; external jump is not simulated"
+  },
+  "task_parity_checked_transitions": 1638400,
+  "compact_fk_reward_difference_max": {
+    "motion_global_anchor_pos": 5.760230123996735e-07,
+    "motion_global_anchor_ori": 3.119930624961853e-08,
+    "motion_body_pos": 5.21540641784668e-07,
+    "motion_body_ori": 3.818422555923462e-08,
+    "motion_body_lin_vel": 4.78699803352356e-07,
+    "motion_body_ang_vel": 1.4901161193847656e-08,
+    "action_rate_l2": 4.656612873077393e-10,
+    "joint_limit": 7.450580596923828e-09,
+    "undesired_contacts": 0.0,
+    "catch_eef_to_balloon": 1.55717134475708e-06,
+    "catch_success_bonus": 0.0,
+    "chest_pocket": 2.7567148208618164e-06,
+    "wrist_proximity": 1.4668330550193787e-06,
+    "wrist_flank": 0.0,
+    "head_shoulder_support_penalty": 0.0,
+    "strict_hold_sustained": 2.4959444999694824e-07,
+    "catch_success_strict_bonus": 1.4901161193847656e-08,
+    "lean_during_intake": 0.0,
+    "bilateral_enclosure": 0.0,
+    "ball_lateral_offset": 5.168840289115906e-07,
+    "low_hold": 0.024000000208616257,
+    "torso_uprightness_penalty": 0.0,
+    "hands_under_box": 2.0675361156463623e-07,
+    "forearm_cradle": 0.0,
+    "elbow_spread": 0.0,
+    "hold_still": 1.387670636177063e-07,
+    "box_on_bed": 1.9855797290802e-06,
+    "face_box": 1.203734427690506e-07,
+    "cradle_pose": 7.450580596923828e-09,
+    "tuck_in": 0.0,
+    "compliant_intake": 0.0,
+    "palm_up": 6.437767297029495e-08,
+    "upright_hold": 4.6566128730773926e-08,
+    "arm_idle_still": 2.3283064365386963e-10,
+    "cradle_ready_dev": 2.3283064365386963e-10,
+    "box_hold_spin": 9.313225746154785e-10,
+    "cradle_ready": 7.450580596923828e-09,
+    "chest_delivery": 9.723007678985596e-07,
+    "chest_contact": 9.08970832824707e-07,
+    "hold_feet_gather": 1.1436641216278076e-06,
+    "wrist_steady": 0.0,
+    "leg_split": 6.38956407783553e-08,
+    "torso_asym": 5.960464477539063e-08,
+    "threepoint_bonus": 0.0,
+    "hold_foot_step": 2.8405338525772095e-07,
+    "low_trust_stillness": 0.0,
+    "soft_fall_shaping": 2.3283064365386963e-10,
+    "cmd_limit_excess": 4.656612873077393e-10,
+    "fall_terminated": 0.0,
+    "v38_hang_prelaunch": 1.862645149230957e-09,
+    "v38_cradle_anchor": 1.3387762010097504e-07
+  },
+  "fk_position_max_error": 3.552436828613281e-05,
+  "compact_fk_termination_disagreements": 0,
+  "parity_scope": "original formulas on identical native geometry; compact FK continuous features checked independently",
+  "task_parity_max": {
+    "motion_global_anchor_pos": 9.313225746154785e-10,
+    "motion_global_anchor_ori": 5.587935447692871e-09,
+    "motion_body_pos": 1.862645149230957e-09,
+    "motion_body_ori": 1.862645149230957e-09,
+    "motion_body_lin_vel": 1.862645149230957e-09,
+    "motion_body_ang_vel": 1.862645149230957e-09,
+    "action_rate_l2": 4.656612873077393e-10,
+    "joint_limit": 7.450580596923828e-09,
+    "undesired_contacts": 0.0,
+    "catch_eef_to_balloon": 3.725290298461914e-09,
+    "catch_success_bonus": 0.0,
+    "chest_pocket": 3.725290298461914e-09,
+    "wrist_proximity": 1.862645149230957e-09,
+    "wrist_flank": 0.0,
+    "head_shoulder_support_penalty": 0.0,
+    "strict_hold_sustained": 1.909211277961731e-08,
+    "catch_success_strict_bonus": 1.4901161193847656e-08,
+    "lean_during_intake": 0.0,
+    "bilateral_enclosure": 0.0,
+    "ball_lateral_offset": 9.313225746154785e-10,
+    "low_hold": 1.862645149230957e-09,
+    "torso_uprightness_penalty": 0.0,
+    "hands_under_box": 1.862645149230957e-09,
+    "forearm_cradle": 0.0,
+    "elbow_spread": 0.0,
+    "hold_still": 3.725290298461914e-09,
+    "box_on_bed": 7.450580596923828e-08,
+    "face_box": 1.862645149230957e-09,
+    "cradle_pose": 7.450580596923828e-09,
+    "tuck_in": 0.0,
+    "compliant_intake": 0.0,
+    "palm_up": 1.862645149230957e-09,
+    "upright_hold": 1.862645149230957e-09,
+    "arm_idle_still": 2.3283064365386963e-10,
+    "cradle_ready_dev": 2.3283064365386963e-10,
+    "box_hold_spin": 9.313225746154785e-10,
+    "cradle_ready": 7.450580596923828e-09,
+    "chest_delivery": 3.91155481338501e-08,
+    "chest_contact": 4.0978193283081055e-08,
+    "hold_feet_gather": 3.725290298461914e-09,
+    "wrist_steady": 0.0,
+    "leg_split": 1.4551915228366852e-11,
+    "torso_asym": 1.862645149230957e-09,
+    "threepoint_bonus": 0.0,
+    "hold_foot_step": 9.313225746154785e-10,
+    "low_trust_stillness": 0.0,
+    "soft_fall_shaping": 2.3283064365386963e-10,
+    "cmd_limit_excess": 4.656612873077393e-10,
+    "fall_terminated": 0.0,
+    "v38_hang_prelaunch": 1.862645149230957e-09,
+    "v38_cradle_anchor": 4.656612873077393e-10
+  },
+  "actor_initialization": {
+    "kind": "scratch",
+    "replay_reinitialization": {
+      "source": "/root/gpufree-data/reflex_return_reset_graph_h16_b3840_lowmem_resume_20261109_r1/checkpoint_00200.pt",
+      "source_iteration": 200,
+      "source_world_envs": 4096,
+      "target_world_envs": 4096,
+      "optimizers_preserved": true,
+      "fresh_collection_warmup": true
+    }
+  },
+  "actor_execution_v30": {
+    "reuse_post_event_fk": true,
+    "compact_event_pool_updates": true,
+    "collapse_full_event_subsets": true,
+    "compile_event_tensors": false,
+    "batch_imagination_amp_features": true,
+    "sparse_actor_bootstrap": false,
+    "fuse_actor_core": false,
+    "actor_core_include_fk": true,
+    "compile_wm_rollout": true,
+    "actor_core_compile_mode": "default",
+    "execution_sha256": "05582473db9273b5df73fcbae75d3f320f4a7e47323269e1a0a696f52c8e5bc0"
+  },
+  "imagination_start_policy": "all_valid_states_uniform_with_replacement_v2",
+  "learn_external_events": true,
+  "event_scheduler": {
+    "source_sha256": {
+      "isaaclab.envs.mdp.events": "07e4f7dace061bf3bca12c0628b8508a97694121a50966ea9c88ead1ad00728c",
+      "reflex.envs.teacher_terms": "423ce37f9ad790e7b758679232272a38ae400997273f069ceeff5ccd94b8f044",
+      "reflex.envs.throw": "c56fe0619f76f4f9ff09b69294f65f4ba9fcaa6b4c8d22b2c366cf06c64aea71",
+      "runtime.py": "17ab6bfe6f6a1136cbb6590a33c8afb763c5652743fcb3c8670d8fc760a48dda",
+      "state.py": "ded821b85cab10ce165b621ac31dcc96e56b4271042451401083b17b77e407ad",
+      "writes.py": "6e558d6504b53ca73369e9db003ce7157381c2204c37c0cfeff77cdc320a800d",
+      "event_math.py": "907c3e3b78a92dfe35528910036f1d97b7ed0526e73bebd27403bd0c397d5ea8"
+    },
+    "constants": {
+      "isaaclab.envs.mdp.events": {
+        "TYPE_CHECKING": false
+      },
+      "reflex.envs.teacher_terms": {
+        "BOX_LIN_DAMPING": 0.85,
+        "GRAVITY": 9.81,
+        "LAUNCH_SPEED_RANGE": [
+          5.0,
+          7.6
+        ],
+        "LOFTY_SPEED_BONUS": 2.0,
+        "RETHROW_GRACE_STEPS": 30,
+        "RETHROW_ENABLED": true,
+        "V36_WALK_R": 1.5,
+        "V36_WALK_TURN_P": 0.02,
+        "V36_WALK_V_HI": 0.9,
+        "V36_WALK_V_LO": 0.3,
+        "V38_P_OFFSET": 0.4,
+        "V38_P_ABANDON": 0.08,
+        "V38_ABANDON_LO": 1.0,
+        "V38_ABANDON_HI": 2.0,
+        "V38_PERTURB_P": 0.15,
+        "V38_PERTURB_V": 0.5,
+        "V38_PERTURB_W": 3.0,
+        "V38_ANCHOR_SIG": 0.18,
+        "V38_FACE_DEAD": 15.0,
+        "V38_FACE_SIG": 35.0,
+        "V38_ANCHOR_FACE": 0.0,
+        "V38_CHEST_LOCAL": [
+          0.25,
+          0.0,
+          0.35
+        ],
+        "V38_MASS_LO": 0.1,
+        "V38_MASS_HI": 0.7,
+        "V38_MASS_RAMP": 0.0,
+        "V38_MASS_HI_FINAL": 0.55,
+        "V38_BEARING_DEG": 0.0,
+        "V38_DBG_PRINTS": 8,
+        "BOX_LAND_W": 0.0,
+        "BOX_LAND_SIG": 0.6,
+        "BOX_LAND_H": 1.0,
+        "BOX_LAND_ALLFLIGHT": false,
+        "ORI_FACE_H": 1.15,
+        "ORI_YAW_STD_HOVER": 0.0,
+        "V38_ORBIT_DPS": 0.0,
+        "V38_ORBIT_SPAN": 120.0,
+        "LAND_OBS_H": 1.0,
+        "LAND_OBS_TMAX": 2.0,
+        "V38_ARMS_REACTIVE": true,
+        "GATE_AIRBORNE_H": 0.45,
+        "V38_REF_ARMS_REACTIVE": true,
+        "V38_REF_DOWN_LO": 0.0,
+        "V38_REF_DOWN_HI": 5.0,
+        "V38_ARM_EARLY_W": 0.0,
+        "V38_ARM_TWO_STAGE": true,
+        "V38_TS_RAMP": 8,
+        "V38_TS_D_TRIG": 2.5,
+        "V38_TS_LATCH": 75,
+        "V38_TS_CLOSE": 1.0,
+        "V38_TS_DOWN": "",
+        "V38_TS_UP": "",
+        "V38_FLIGHT_RGATE": false,
+        "V38_FLIGHT_RGATE_FAC": 0.2,
+        "V38_FLIGHT_RGATE_TERMS": "motion_body_pos,motion_body_lin_vel,motion_body_ang_vel,low_trust_stillness,hold_still",
+        "V38_TS_DELTA_GATE": true,
+        "V38_TS_DELTA_MIN": 0.15,
+        "V38_TS_BASE_BLEND": true,
+        "V38_TS_USE_SPEED": true,
+        "V38_TS_MISS_MAX": 6,
+        "V38_TS_FROM_PERC": false,
+        "V38_TS_V_LO": 2.5,
+        "V38_TS_SPEED_SUSTAIN": 8,
+        "V38_HANG_W": 1.0,
+        "V38_HANG_SIG": 0.35,
+        "V38_TS_V_HI": 3.0,
+        "V38_TS_FALL": 40,
+        "V38_AB": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "V38_AZ_RATE": 0.0,
+        "V38_AZ_LO": 0.0,
+        "V38_AZ_HI": 0.0,
+        "V38_TGT_CLIP": false,
+        "V38_LEG_EFFORT": 0.0
+      },
+      "reflex.envs.throw": {
+        "TYPE_CHECKING": false,
+        "BOX_MODELS": [
+          {
+            "name": "small",
+            "size": [
+              0.34,
+              0.26,
+              0.22
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.14
+          },
+          {
+            "name": "mini",
+            "size": [
+              0.25,
+              0.19,
+              0.13
+            ],
+            "mass": 0.1,
+            "eff_radius": 0.1
+          },
+          {
+            "name": "large",
+            "size": [
+              0.54,
+              0.42,
+              0.33
+            ],
+            "mass": 0.35,
+            "eff_radius": 0.22
+          },
+          {
+            "name": "largeold",
+            "size": [
+              0.42,
+              0.32,
+              0.27
+            ],
+            "mass": 0.26,
+            "eff_radius": 0.175
+          },
+          {
+            "name": "real_small",
+            "size": [
+              0.22,
+              0.21,
+              0.15
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.095
+          },
+          {
+            "name": "real_regular",
+            "size": [
+              0.31,
+              0.26,
+              0.21
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.128
+          },
+          {
+            "name": "real_large",
+            "size": [
+              0.46,
+              0.41,
+              0.32
+            ],
+            "mass": 0.18,
+            "eff_radius": 0.196
+          }
+        ],
+        "MIX_SETS": {
+          "mix3": [
+            "mini",
+            "small",
+            "largeold"
+          ]
+        },
+        "BOX_SIZE": [
+          0.34,
+          0.26,
+          0.22
+        ],
+        "BOX_MASS": 0.18,
+        "BOX_EFFECTIVE_RADIUS": 0.14,
+        "GRAVITY": 9.81,
+        "BOX_LIN_DAMPING": 0.85,
+        "LAUNCH_SPEED_RANGE": [
+          5.0,
+          7.6
+        ],
+        "DIST_RANGE": [
+          2.5,
+          5.0
+        ],
+        "BEARING_RANGE_DEG": 10.0,
+        "T_MULT_RANGE": [
+          0.75,
+          1.35
+        ],
+        "T_MULT_TRY_RANGES": [
+          [
+            1.15,
+            1.45
+          ],
+          [
+            0.95,
+            1.2
+          ],
+          [
+            0.8,
+            1.0
+          ]
+        ],
+        "LOFTY_SPEED_BONUS": 2.0,
+        "AIM_ERR_STD_DEG": 2.5,
+        "AIM_ERR_MAX_DEG": 5.0,
+        "SPEED_JITTER": 0.08,
+        "THROW_LIB": "",
+        "THROW_LIB_KEY": "all",
+        "THROW_LIB_FRAC": 1.0,
+        "THROW_LIB_MIRROR": true,
+        "THROW_LIB_JITTER": 0.0,
+        "THROW_LIB_ALIGN": "",
+        "THROW_LIB_ALIGN_X": 0.35,
+        "THROW_LIB_REACH_LO": 0.0,
+        "THROW_LIB_REACH_HI": 0.8,
+        "THROW_LIB_BACKTRACK": 0.0,
+        "RELEASE_H_RANGE": [
+          1.1,
+          2.4
+        ],
+        "CATCH_H_RANGE": [
+          0.6,
+          1.4
+        ],
+        "SPIN_MAX_RAD_S": 9.42477796076938,
+        "RELEASE_LEVEL": false,
+        "HOVER_RANGE_S": [
+          1.0,
+          6.0
+        ],
+        "RETHROW_GRACE_STEPS": 30,
+        "RETHROW_ENABLED": true,
+        "INTAKE_GATE_DIST": 0.9,
+        "INTAKE_GATE_SPEED": 1.0,
+        "YIELD_V_CAP": 0.5,
+        "CRADLE_POSE": {
+          "left_shoulder_pitch_joint": -0.85,
+          "right_shoulder_pitch_joint": -0.85,
+          "left_shoulder_roll_joint": 0.179,
+          "right_shoulder_roll_joint": -0.179,
+          "left_shoulder_yaw_joint": -0.25,
+          "right_shoulder_yaw_joint": 0.25,
+          "left_elbow_joint": 0.65,
+          "right_elbow_joint": 0.65
+        }
+      }
+    },
+    "schema": 1,
+    "state": {
+      "version": 1,
+      "fields": [
+        [
+          "_box_p0",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_q0",
+          [
+            4
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_v0",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_omega",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_launch_step",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_box_launched",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_box_aim_err",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_catch_h",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_tmult",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_jitter",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_lib_mask",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_balloon_radius_per_env",
+          [],
+          "torch.float32"
+        ],
+        [
+          "_box_half_extents",
+          [
+            3
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v36_walk_v",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v36_walk_anchor",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_v38_aim_off",
+          [
+            2
+          ],
+          "torch.float32"
+        ],
+        [
+          "_box_regrace",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_v38_cradle_ticks",
+          [],
+          "torch.int64"
+        ],
+        [
+          "_hold_init_pending",
+          [],
+          "torch.bool"
+        ],
+        [
+          "_hold_init_active",
+          [],
+          "torch.bool"
+        ]
+      ],
+      "timer_count": 5
+    },
+    "source_world_envs": 4096,
+    "terms": [
+      {
+        "name": "push_robot",
+        "function": "isaaclab.envs.mdp.events.push_by_setting_velocity",
+        "parameters": {
+          "velocity_range": {
+            "x": [
+              -0.5,
+              0.5
+            ],
+            "y": [
+              -0.5,
+              0.5
+            ],
+            "z": [
+              -0.2,
+              0.2
+            ],
+            "roll": [
+              -0.52,
+              0.52
+            ],
+            "pitch": [
+              -0.52,
+              0.52
+            ],
+            "yaw": [
+              -0.78,
+              0.78
+            ]
+          }
+        },
+        "interval": [
+          1.0,
+          3.0
+        ],
+        "global_time": false,
+        "ignores_ids": false
+      },
+      {
+        "name": "box_hover_launch",
+        "function": "reflex.envs.teacher_terms.v38_walking_hover_and_launch",
+        "parameters": {
+          "asset_cfg": {
+            "entity": {
+              "name": "balloon",
+              "body_names": null,
+              "body_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "joint_names": null,
+              "joint_ids": {
+                "slice": [
+                  null,
+                  null,
+                  null
+                ]
+              },
+              "preserve_order": false
+            }
+          }
+        },
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "hold_init_apply",
+        "function": "reflex.envs.throw.hold_init_apply",
+        "parameters": {
+          "x_off": 0.28,
+          "z_off": 0.35
+        },
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "first_throw_realign",
+        "function": "reflex.envs.throw.first_throw_realign",
+        "parameters": {},
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      },
+      {
+        "name": "v38_cradle_perturb",
+        "function": "reflex.envs.teacher_terms.v38_cradle_perturb",
+        "parameters": {},
+        "interval": [
+          0.5,
+          1.0
+        ],
+        "global_time": false,
+        "ignores_ids": true
+      }
+    ]
+  },
+  "event_view_execution": {
+    "kind": "minimal_root_joint",
+    "source_sha256": "5e5648adb4a09bbd70ad2dbbfac98f177948ff90f6ad48501ac8fcc5b8a1da4c"
+  },
+  "contact_monitoring_enabled": false,
+  "contact_filter_schema": "disabled",
+  "contact_filter_migration": null,
+  "config": {
+    "monitor_contacts": false,
+    "learn_external_events": true,
+    "condition_external_events": true,
+    "deterministic_event_apply": true,
+    "minimal_event_view": true,
+    "compile_v24_step": true,
+    "v24_fusion_scope": "packed_heads",
+    "event_supervision_protocol": "recorded_commands",
+    "privileged_critic": true,
+    "actor_zero_output": false,
+    "learned_termination": false,
+    "analytic_soft_termination": true,
+    "critic_include_all_actor": true,
+    "joint_predicted_termination": false,
+    "variable_model_windows": true,
+    "state_loss_reduction": "sum",
+    "term_loss_weight": 1.0,
+    "termination_lr": 0.0002,
+    "diagnostic_every": 0,
+    "diagnostic_batch": 16,
+    "compile_dynamics": true,
+    "compile_fk": true,
+    "compile_step": false,
+    "compile_backend": "inductor",
+    "tf32": false,
+    "schedule": "joint_reproduction",
+    "reward_profile": "original",
+    "save_replay": false,
+    "native_collection_inputs": true,
+    "compact_event_inputs": true,
+    "real_parity_every": 1,
+    "cache_physical_context": true,
+    "pure_soft_survival": true,
+    "hard_imagination_boundaries": false,
+    "initial_collect_steps": 40,
+    "updates_per_env_step": 0.4,
+    "joint_updates_per_env_step": 0.1,
+    "return_reset_max_step_reward": 1.314,
+    "actor_batch": 3840,
+    "actor_microbatch": 3840,
+    "batch_imagination_amp": true,
+    "batch_imagination_amp_features": true,
+    "batch_imagination_critic": true,
+    "critic_value_chunk": 4096,
+    "checkpoint_actor_critic": true,
+    "compact_actor_event_inputs": true,
+    "packed_pose_carry": true,
+    "contiguous_event_writes": false,
+    "block_event_writes": false,
+    "fused_actor_carry": false,
+    "reuse_post_event_fk": true,
+    "compact_event_pool_updates": true,
+    "collapse_full_event_subsets": true,
+    "compile_event_tensors": false,
+    "sparse_actor_bootstrap": false,
+    "fuse_actor_core": false,
+    "actor_core_include_fk": true,
+    "actor_core_compile_mode": "default",
+    "actor_beta2": 0.95,
+    "actor_grad_clip_value": 0.1,
+    "actor_horizon_scale": true,
+    "critic_epochs": 5,
+    "critic_minibatches": 4,
+    "critic_hidden_dims": [
+      512,
+      256,
+      128
+    ],
+    "validation_every": 10,
+    "lr_total_steps": 320000,
+    "lr_final_ratio": 0.03,
+    "lr_decay_steps": 250000,
+    "capacity_steps": 512,
+    "collect_steps": 1,
+    "model_steps": 10,
+    "model_window": 8,
+    "batch": 3840,
+    "horizon": 16,
+    "actor_steps": 1,
+    "synchronize_replay_timing": false,
+    "replay_index_cache": true,
+    "wm_context_mode": "stage1_dr_v1",
+    "wm_encoding": "stable_heading_v1",
+    "wm_training_compile_mode": "reduce-overhead",
+    "compile_wm_rollout": true,
+    "compile_wm_training_step": true,
+    "minimal_termination_fk": true,
+    "wm_mlp_precision": "fp32",
+    "wm_only_rounds": 500,
+    "wm_compile_mode": "default",
+    "tensorboard_flush_seconds": 30,
+    "console_log_every": 10,
+    "warmup_iterations": 0,
+    "gamma": 0.99,
+    "lam": 0.95,
+    "lr": 0.0002,
+    "model_lr": 0.0002,
+    "model_grad_clip": 1.0,
+    "exploration": 0.1,
+    "hidden": 256,
+    "wm_kind": "state",
+    "wm_hidden_dims": [
+      2048,
+      2048,
+      2048
+    ],
+    "gradient_audit_every": 0,
+    "normalizer_samples": 2048,
+    "actor_hidden_dims": [
+      512,
+      256,
+      128
+    ],
+    "stage_balanced": false,
+    "max_state_rmse": 1.0,
+    "max_reward_rmse": 1.0
+  },
+  "args": {
+    "mode": "preflight",
+    "num_envs": 4096,
+    "max_iterations": 100,
+    "max_seconds": null,
+    "joint_max_seconds": null,
+    "profile_joint": false,
+    "efficiency_deterministic": false,
+    "efficiency_include_cudagraph": false,
+    "efficiency_graph_only": false,
+    "wm_stable_heading_trial": false,
+    "wm_graph_trial": false,
+    "actor_amp_features_trial": false,
+    "actor_full_subset_trial": false,
+    "actor_event_tensor_trial": false,
+    "actor_graph_trial": false,
+    "actor_graph_all_static": false,
+    "actor_graph_only": false,
+    "actor_core_no_fk": false,
+    "context_rounds": 500,
+    "context_collect_steps": 256,
+    "context_validation_every": 25,
+    "seed": 42,
+    "config": "configs/world_model/return_reset_parity_diagnostic.json",
+    "checkpoint": "/root/gpufree-data/reflex_return_reset_graph_h16_b3840_lowmem_resume_20261109_r1/checkpoint_00200.pt",
+    "migrate_standing_profile": false,
+    "migrate_analytic_soft_termination": false,
+    "migrate_critic_box_observation": false,
+    "migrate_event_execution": true,
+    "migrate_update_rate": false,
+    "migrate_soft_survival": false,
+    "aggregate_gradient_audit": false,
+    "migrate_imagination_boundaries": false,
+    "reinitialize_replay": true,
+    "warm_start_macro": null,
+    "migrate_termination_training": false,
+    "warm_start_actor": null,
+    "output": "/root/gpufree-data/reflex_return_reset_term_parity_diagnostic_20261109_r2",
+    "enable_actor": false,
+    "save_every": 25,
+    "preflight_steps": 400,
+    "benchmark_steps": 24,
+    "capacity_batch_override": 0,
+    "capacity_horizon_override": 0,
+    "diagnostic_repeats": 20,
+    "diagnostic_warmups": 2,
+    "benchmark_no_checkpoint": false,
+    "play_steps": 1500,
+    "video": false,
+    "no_debug_vis": true,
+    "enable_cameras": false,
+    "xr": false,
+    "device": "cuda:0",
+    "cpu": false,
+    "verbose": false,
+    "info": false,
+    "rendering_mode": null,
+    "kit_args": "",
+    "anim_recording_enabled": false,
+    "anim_recording_start_time": 0,
+    "anim_recording_stop_time": 10,
+    "headless": true,
+    "hide_ui": true,
+    "create_new_stage": false,
+    "physics_gpu": 0,
+    "active_gpu": 0
+  },
+  "git_sha": "b957101bb57896945d644b36e57c54964fd872ec",
+  "amp_sha256": "4db94680833df13d0cc7f6ed0983cc7387f5bc0ca75bc6caa1c6c50def4c61b9",
+  "simulator_state_restored_on_resume": false
+}

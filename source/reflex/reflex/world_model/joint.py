@@ -79,14 +79,22 @@ def _update_actor(t):
                 values = imagined.get("actor_values")
                 if values is None and c.batch_imagination_critic:
                     observation = imagined.get("critic_obs", imagined["obs"])
-                    values = t.critic(observation.flatten(0, 1)).reshape(
-                        observation.shape[:2]
+                    from .critic_values import evaluate
+
+                    values = evaluate(
+                        t.critic,
+                        observation,
+                        c.critic_value_chunk,
+                        c.checkpoint_actor_critic,
                     )
                 loss = -returns(imagined, t.critic, c.gamma, values).mean()
                 if c.actor_horizon_scale:
                     loss = loss / c.horizon
                 scaled = loss * len(b["state"]) / n
-            with phase(t, "actor_backward"), torch.profiler.record_function("actor/BPTT"):
+            with (
+                phase(t, "actor_backward"),
+                torch.profiler.record_function("actor/BPTT"),
+            ):
                 scaled.backward()
             loss_total += float(scaled.detach())
             target = critic_targets(
