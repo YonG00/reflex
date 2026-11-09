@@ -1,3 +1,7 @@
+## 2026-11-09 昨晚模型续训40分钟准备
+
+启用Return-based Reset，collect_steps=1、UTD0.4、双3584/H16；显式新采样器统计迁移，保留旧legacy WM编码与完整训练状态。不重复WM500预热。31428已完整恢复并运行：Actor805→828，无OOM；40分钟尚未结束。详见`world_model/RESUME_NOV08_UTD04_40MIN_ZH.md`。
+
 ## Return reset、WM Graph与显存/校验修复（2026-11-09）
 
 - 不变量：Actor179/Critic305、WM3×2048/H8、ActorH16、原奖励及原生事件、软存活不变。用户将混采明确为真实reset的50/40/10 Return-based采样，Replay新鲜度混采撤回。

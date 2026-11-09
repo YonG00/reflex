@@ -107,6 +107,7 @@ parser.add_argument(
     default=os.path.join(paths.REPO_ROOT, "configs/world_model/default.json"),
 )
 parser.add_argument("--checkpoint")
+parser.add_argument("--initialize_return_reset", action="store_true", help="Explicitly add fresh return-reset statistics to an old full resume")
 parser.add_argument("--migrate_standing_profile", action="store_true")
 parser.add_argument("--migrate_analytic_soft_termination", action="store_true")
 parser.add_argument("--migrate_critic_box_observation", action="store_true")
@@ -175,6 +176,8 @@ if (
     > 1
 ):
     parser.error("Choose exactly one resume/warm-start source")
+if args.initialize_return_reset and (not args.checkpoint or not args.reinitialize_replay):
+    parser.error("initialize_return_reset requires checkpoint and reinitialize_replay")
 if args.checkpoint and args.warm_start_actor:
     parser.error("--checkpoint and --warm_start_actor are mutually exclusive")
 if args.wm_stable_heading_trial and args.mode not in (
@@ -407,6 +410,7 @@ def main():
                 migrate_standing_profile=args.migrate_standing_profile,
                 migrate_analytic_soft_termination=args.migrate_analytic_soft_termination,
                 migrate_critic_box_observation=args.migrate_critic_box_observation,
+                initialize_return_reset=args.initialize_return_reset,
             )
         elif args.warm_start_macro:
             trainer.warm_start_macro(args.warm_start_macro)

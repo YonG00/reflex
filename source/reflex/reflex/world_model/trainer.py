@@ -2675,6 +2675,7 @@ class Trainer:
         migrate_standing_profile=False,
         migrate_analytic_soft_termination=False,
         migrate_critic_box_observation=False,
+        initialize_return_reset=False,
     ):
         state = torch.load(path, map_location=self.device, weights_only=False)
         if migrate_analytic_soft_termination or migrate_critic_box_observation:
@@ -2744,6 +2745,17 @@ class Trainer:
         ):
             loaded_config.pop(key, None)
             requested_config.pop(key, None)
+        return_reset_migration = None
+        if initialize_return_reset:
+            from .return_reset_migration import validate_return_reset_migration
+
+            return_reset_migration = validate_return_reset_migration(
+                state, self.cfg, reinitialize_replay
+            )
+            if self.return_reset is None:
+                raise ValueError("Native return-reset hook must be initialized")
+            loaded_config.pop("return_reset_max_step_reward", None)
+            requested_config.pop("return_reset_max_step_reward", None)
         standing_migration = None
         if migrate_standing_profile:
             if not reinitialize_replay:
@@ -2957,6 +2969,10 @@ class Trainer:
             self.initialization["training_migration"] = migration
         if standing_migration:
             self.initialization["standing_profile_migration"] = standing_migration
+        if return_reset_migration:
+            self.initialization["return_reset_migration"] = {
+                **return_reset_migration, "source": str(path)
+            }
         if update_rate_migration:
             self.initialization["update_rate_migration"] = update_rate_migration
         if event_migration:
@@ -2992,7 +3008,7 @@ class Trainer:
         self.actor_updates = state["actor_updates"]
         self.model_updates = state.get("model_updates", 0)
         reset_state = state.get("return_reset")
-        if self.cfg.return_reset_max_step_reward is not None:
+        if self.cfg.return_reset_max_step_reward is not None and not initialize_return_reset:
             if self.return_reset is None or reset_state is None:
                 raise ValueError("Return reset sampler state required for resume")
             self.return_reset.load_state_dict(reset_state)
