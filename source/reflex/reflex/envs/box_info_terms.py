@@ -26,10 +26,16 @@ def box_angular_velocity_b(env) -> torch.Tensor:
 
 def box_dimensions(env) -> torch.Tensor:
     """Full x/y/z edge lengths from the existing per-environment model cache."""
-    # reset_box_throw initialises this from the spawned model, before observations.
-    # Fail explicitly if that lifecycle changes; guessing a default size would
-    # silently corrupt this ablation for heterogeneous box models.
-    return 2.0 * env._box_half_extents
+    if hasattr(env, "_box_half_extents"):
+        return 2.0 * env._box_half_extents
+    # ObservationManager probes shapes before the first reset.
+    # Read geometry without touching throw buffers or using randomised mass.
+    if not hasattr(env, "_box_info_dimensions"):
+        from reflex.envs.throw import BOX_MODELS, infer_models_from_geometry
+        box = env.scene["balloon"]
+        _, half_extents, _ = infer_models_from_geometry(box, BOX_MODELS, box.device)
+        env._box_info_dimensions = 2.0 * half_extents
+    return env._box_info_dimensions
 
 
 def box_mass(env) -> torch.Tensor:

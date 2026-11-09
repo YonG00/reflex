@@ -91,6 +91,21 @@ class BoxInfoTest(unittest.TestCase):
             self.terms.box_angular_velocity_b, self.terms.box_dimensions, self.terms.box_mass)]
         self.assertEqual(torch.cat(tensors, -1).shape, (2, 13))
 
+    def test_size_probe_before_first_reset(self):
+        del self.env._box_half_extents
+        self.env.scene["balloon"].device = "cpu"
+        calls = []
+        def geometry(box, models, device):
+            calls.append(True)
+            return None, torch.tensor([[.1, .2, .3], [.4, .5, .6]]), None
+        fake = types.SimpleNamespace(BOX_MODELS=(), infer_models_from_geometry=geometry)
+        with patch.dict(sys.modules, {"reflex.envs.throw": fake}):
+            first = self.terms.box_dimensions(self.env)
+            assert_close(first, torch.tensor([[.2, .4, .6], [.8, 1., 1.2]]))
+            assert_close(self.terms.box_dimensions(self.env), first)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(hasattr(self.env, "_box_half_extents"))
+
     def test_config_appends_to_both_groups(self):
         class Base:
             def __post_init__(self):
