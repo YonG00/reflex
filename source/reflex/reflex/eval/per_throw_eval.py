@@ -72,6 +72,7 @@ parser.add_argument("--persist_frames", type=int, default=30)
 parser.add_argument("--ball_radius", type=float, default=None,
                     help="Pin ball radius; if None, env randomization runs.")
 parser.add_argument("--out", required=True)
+parser.add_argument("--video_dir", default=None, help="Record a rendered evaluation MP4 in this directory")
 # Visual encoder in the loop: frames from a torso-mounted TiledCamera -> visual encoder ("detector") -> z -> latent decoder
 parser.add_argument("--detector", default=None, help="Stage 3 visual encoder checkpoint (reflex.vision.train_seqdet); replaces the privileged encoder E_phi with the image-based encoder")
 parser.add_argument("--det_width", type=int, default=192)
@@ -93,7 +94,7 @@ parser.add_argument("--spawn_radius", type=float, default=None,
                          "honest multi-size physics tests.")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = bool(args.detector)   # cameras only for the visual-encoder (detector-in-loop) path
+args.enable_cameras = bool(args.detector or args.video_dir)   # cameras only for the visual-encoder (detector-in-loop) path
 if args.detector:
     import faulthandler, sys as _fh_sys
     faulthandler.dump_traceback_later(240, repeat=True, file=_fh_sys.stderr)   # debug aid: periodic stack dump if the camera path stalls
@@ -295,12 +296,21 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
     if int(args.push_robot) == 0 and hasattr(env_cfg.events, "push_robot"):
         env_cfg.events.push_robot = None
         print("[protocol] push_robot event REMOVED (no random base kicks during eval)", flush=True)
-    return gym.make(env_id, cfg=env_cfg), env_cfg
+    if args.video_dir:
+        env_cfg.viewer.eye = (4.0, 4.0, 2.5)
+        env_cfg.viewer.lookat = (0.5, 0.0, 1.0)
+        env_cfg.viewer.resolution = (1280, 720)
+    return gym.make(env_id, cfg=env_cfg,
+                    render_mode="rgb_array" if args.video_dir else None), env_cfg
 
 
 def main():
     env, env_cfg = make_env(args.env_id, args.motion_file, args.num_envs,
                              args.ball_radius, args.seed, args.spawn_radius)
+    if args.video_dir:
+        env = gym.wrappers.RecordVideo(env, video_folder=args.video_dir,
+            step_trigger=lambda step: step == 0, video_length=args.episode_steps,
+            name_prefix=f"box_info_s{args.seed}", disable_logger=True)
     if args.motion_phase:
         _lo, _hi = [int(x) for x in args.motion_phase.split(",")]
         _mterm = env.unwrapped.command_manager.get_term("motion")
