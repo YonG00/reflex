@@ -23,3 +23,22 @@ if TASK_ID not in gym.registry:
         disable_env_checker=True,
         kwargs={"env_cfg_entry_point": _entry, "rsl_rl_cfg_entry_point": RSL_RL_CFG},
     )
+
+
+# Separate task: official teacher / Stage 2 / Stage 3 keep their original inputs.
+BOX_INFO_TASK_ID = "Reflex-Teacher-BoxInfo-G1-v0"
+
+
+def _box_info_entry():
+    from reflex.envs.box_info_env_cfg import G1BoxCatchFullBoxInfoEnvCfg
+
+    return G1BoxCatchFullBoxInfoEnvCfg
+
+
+if BOX_INFO_TASK_ID not in gym.registry:
+    gym.register(
+        id=BOX_INFO_TASK_ID,
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={"env_cfg_entry_point": _box_info_entry, "rsl_rl_cfg_entry_point": RSL_RL_CFG},
+    )
