@@ -35,3 +35,11 @@ Return Reset采样/统计、显式恢复迁移、旧模型无授权拒绝迁移�
 ## 已启动实例
 
 输出：`/root/gpufree-data/reflex_resume_nov08_h16_b3584_utd04_return40_20261109_r1`。监督状态为同名`.job.json`，日志`run.log`、TensorBoard在`tensorboard/`。初始WM1305轮/Actor805，`wm_warmup_completed_before_loop=true`，无500轮重复预热；训练循环208.19秒时Actor828、WM梯度13280，GPU显存20622MiB。此为启动验证，不能作为40分钟完成或效果通过。
+
+## 最终结束与独立视频评测
+
+训练循环2400.260秒正常完成，最终Actor1722（新增917），WM梯度22220（新增9170），真实转移23080960（新增9551872）。没有重复500轮预热。末300行稳态中位WM10=0.6712秒、Actor=0.9779秒、Critic=0.0431秒、向量采集步=0.1530秒；legacy编码未启用新H8 Graph，不能套用stable WM的速度数字。
+
+最终checkpoint独立PhysX单环境seed42评测完成：15秒751控制步，物理终止0次；完成1回合650步（13秒），以time_out结束。发射4次，完成观测投掷3次，CLEAN2/严格保持均0。本短录像显示存活改善，但不能据单种子确认普遍站稳；当前评测继承训练Return Reset起点分布，与昨晚均匀/原生起点不是严格对照。
+
+视频750帧、1280×720、50fps、15秒，全帧解码通过，坐标轴已隐藏。视频SHA256：`e9beeb3b021deba1619210f243a2dc40682e719054bb8fa5a65160bf9a4a583b`。本地视频及原始评测JSON：`/Users/mac/Documents/skills/资料/2026-11-09_195045_Reflex续训40分钟最终评测`。远端视频在训练目录同名加`_play15s/model_video.mp4`。

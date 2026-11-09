@@ -1,0 +1,17 @@
+{
+  "total_budget_seconds": 2400.0,
+  "joint_budget_seconds": null,
+  "wm_only_rounds": 500,
+  "joint_clock_starts_after_first_actor_update": false,
+  "state": "completed",
+  "initial_wm_rounds": 1305,
+  "initial_actor_updates": 805,
+  "wm_warmup_completed_before_loop": true,
+  "first_actor_started_wall_seconds": 53.134845446795225,
+  "joint_wall_seconds": 2347.1252718102187,
+  "total_wall_seconds": 2400.2601195368916,
+  "real_transitions": 23080960,
+  "wm_gradient_updates": 22220,
+  "actor_updates": 1722,
+  "wm_rounds": 2222
+}
