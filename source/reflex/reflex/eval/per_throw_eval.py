@@ -228,6 +228,9 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
     if env_id == "Reflex-Teacher-G1-v0":
         import reflex.envs.register  # noqa: F401  (gym id)
         from reflex.envs.teacher_env_cfg import G1BoxCatchStepCatchEnvCfg as Cfg
+    elif env_id == "Reflex-Teacher-BoxInfo-G1-v0":
+        import reflex.envs.register  # noqa: F401
+        from reflex.envs.box_info_env_cfg import G1BoxCatchFullBoxInfoEnvCfg as Cfg
     elif env_id == "Reflex-Latent-G1-v0":
         import reflex.latent.register  # noqa: F401  (gym id)
         from reflex.latent.latent_env_cfg import G1BoxCatchLatentEnvCfg as Cfg

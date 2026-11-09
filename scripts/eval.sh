@@ -40,6 +40,8 @@ case $MODE in
            EXTRA+=(--detector "${DET_ARG:-$DATA/checkpoints/visual_encoder_stage3.pt}") ;;
   true_z)  CFG=clean2_latent.env;  TASK=Reflex-Latent-G1-v0;  CKPT=$DATA/checkpoints/latent_stage2.pt ;;
   teacher) CFG=clean2_teacher.env; TASK=Reflex-Teacher-G1-v0; CKPT=$DATA/checkpoints/teacher_stage1.pt ;;
+  teacher_box_info) CFG=clean2_teacher.env; TASK=Reflex-Teacher-BoxInfo-G1-v0; CKPT=""
+           [ -n "$CKPT_ARG" ] || { echo "teacher_box_info requires --ckpt"; exit 1; } ;;
   *) awk 'NR>1 && /^#/ {print; next} NR>1 {exit}' "$0"; exit 1 ;;
 esac
 
