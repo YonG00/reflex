@@ -33,6 +33,11 @@ class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
             self.scene.robot.spawn.asset_path = _urdf
             print(f"[teacher] G1 URDF override active: {_urdf}", flush=True)
 
+        # Optional observation-independent PPO impact ablation, disabled by default.
+        if os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
+            from reflex.envs.impact_buffer_config import configure_impact_buffer
+            configure_impact_buffer(self)
+
         # ---- aim-offset curriculum --------------------------------------
         self.events.box_hover_launch.func = v38x.v38_walking_hover_and_launch
         self.events.v38_aim_offsets = EventTerm(
