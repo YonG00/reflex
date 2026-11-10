@@ -33,10 +33,13 @@ class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
             self.scene.robot.spawn.asset_path = _urdf
             print(f"[teacher] G1 URDF override active: {_urdf}", flush=True)
 
-        # Optional observation-independent PPO impact ablation, disabled by default.
-        if os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
-            from reflex.envs.impact_buffer_config import configure_impact_buffer
-            configure_impact_buffer(self)
+        # Escape failure replaces the retired continuous impact ablation.
+        if os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1":
+            from reflex.envs.escape_penalty_config import configure_escape_penalty
+            configure_escape_penalty(self)
+        elif os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
+            print("[teacher] legacy impact_buffer penalty is retired/disabled; "
+                  "use BOX_ESCAPE_PENALTY=1 for the new escape-only mode", flush=True)
 
         # ---- aim-offset curriculum --------------------------------------
         self.events.box_hover_launch.func = v38x.v38_walking_hover_and_launch

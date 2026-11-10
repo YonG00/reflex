@@ -1,3 +1,5 @@
+> 历史第一版：当前PPO teacher入口已退役该连续惩罚。新模式见 [ESCAPE_PENALTY_ZH.md](ESCAPE_PENALTY_ZH.md)，不要将两者叠加。
+
 # PPO 接箱碰撞缓冲惩罚：第一版
 
 ## 范围与当前状态

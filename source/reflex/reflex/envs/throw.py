@@ -649,7 +649,8 @@ def reset_box_throw(
     box.write_root_pose_to_sim(torch.cat([s["p0"], s["q0"]], dim=-1), env_ids=env_ids)
     box.write_root_velocity_to_sim(torch.zeros((n, 6), device=device), env_ids=env_ids)
     # Impact bookkeeping only; every existing event and physics write still runs.
-    if os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
+    if (os.environ.get("BOX_IMPACT_BUFFER", "0") == "1"
+            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"):
         from reflex.envs.impact_buffer import impact_throw_reset
         impact_throw_reset(env, env_ids)
 
@@ -1835,7 +1836,8 @@ def hold_init_apply(env, env_ids,
     box.write_root_pose_to_sim(torch.cat([pos, quat], dim=-1), env_ids=ids)
     box.write_root_velocity_to_sim(
         torch.zeros((len(ids), 6), device=device), env_ids=ids)
-    if os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
+    if (os.environ.get("BOX_IMPACT_BUFFER", "0") == "1"
+            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"):
         from reflex.envs.impact_buffer import impact_throw_reset
         impact_throw_reset(env, ids, hold_init=True)
     env._box_launched[ids] = True     # cancel this episode's throw

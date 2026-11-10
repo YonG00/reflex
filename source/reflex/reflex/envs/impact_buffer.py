@@ -12,6 +12,10 @@ ARM_BODIES = tuple(f'{side}_{part}_link' for side in ('left', 'right')
 
 def impact_throw_reset(env, ids, *, hold_init=False):
     """Bookkeeping called IN existing events; never schedules/skips an event."""
+    if os.environ.get('BOX_ESCAPE_PENALTY', '0') == '1':
+        from reflex.envs.escape_penalty import escape_throw_reset
+        escape_throw_reset(env, ids, hold_init=hold_init)
+        return
     if os.environ.get('BOX_IMPACT_BUFFER', '0') != '1':
         return
     if not hasattr(env, '_impact_hold_init'):
