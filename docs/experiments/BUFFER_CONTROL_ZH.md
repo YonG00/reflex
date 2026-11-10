@@ -2,7 +2,7 @@
 
 ## 范围和当前验证状态
 
-当前 `ppo/box-info-19d` 分支，原actor183/critic305不变，不修改PPO/AMP主流程。以正向缓冲设计取代旧impact及-100 escape项。完成本地代码、72项联合CPU测试、人工轨迹短测；**真实GPU短时仿真回归尚未执行**：2026-11-10原SSH地址183.147.142.40:31428连续两次登录前关闭连接，已向用户询问连接状态。没有启动长训练。
+当前 `ppo/box-info-19d` 分支，原actor183/critic305不变，不修改PPO/AMP主流程。以正向缓冲设计取代旧impact及-100 escape项。完成本地代码、73项联合CPU测试和三阶段真实GPU短回归，另完成地面碰撞过滤审计。此前SSH连接中断，用户重新开卡后已恢复执行；未将人工轨迹当物理验证。随后用户要求正式开始训练，目前只启动阶段1的200轮正式对照，阶段2/3尚未启动长训。
 
 用户引用的42%接触率、0.31%成功率来自训练累计日志，不是CLEAN2最终持续接住率13.3%；本版本继续区分训练诊断与独立评测，不混用分母和成功判据。
 
@@ -75,18 +75,50 @@ upright_hold在该过渡期暂时不评价站姿，直立/后仰一视同仁；�
 
 ## 测试与待执行回归
 
-72项联合CPU测试通过（新项20+此前52）；Python编译、shell语法与Git空白检查通过。测试包括真实原奖励公式的方向投影、正常后仰不罚/前倾侧倾仍罚、稳定后恢复、不能靠抖动逃避恢复、接近预算、接触新鲜度、短暂脱手、高速但可控状态、地面与倒地、最大2s时窗、部分reset/HOLD_INIT、分阶段权重及旧负项不注册。Isaac接口在本地测试中使用替身，不是物理仿真。
+73项联合CPU测试通过（新项21+此前52）；Python编译、shell语法与Git空白检查通过。测试包括真实原奖励公式的方向投影、正常后仰不罚/前倾侧倾仍罚、稳定后恢复、不能靠抖动逃避恢复、接近预算、接触新鲜度、短暂脱手、高速但可控状态、地面与倒地、最大2s时窗、部分reset/HOLD_INIT、分阶段权重及旧负项不注册。Isaac接口在本地测试中使用替身，不是物理仿真。
 
 人工轨迹短测：`python scripts/check_buffer_control.py --out outputs/buffer_cpu_short_20261110`，生成三阶段JSONL和summary.json。闲蹲、落地、倒地、失控均无新增正奖励，移动控制和短暂脱手可获有限过渡奖励。这些统计是夹具结果，不能证明策略不会reward hacking。
 
-真实仿真回归入口（有界，各阶段128环境×12轮，同seed和同一起点，共3组，无长训）：
+真实仿真回归入口（各阶段128环境×12轮，同seed和同一起点，共3组）：
 
 ```bash
 bash scripts/regress_stage1_buffer.sh /实际路径/model_599.pt /新的输出目录
 ```
 
-服务器连接恢复后依次执行，必须检查：RewardManager没有escape/impact项，阶段1的intake=0且无retain，阶段2的intake确实非零，阶段3的retain确实非零，日志有限，箱子落地/倒地后不继续付费，全部原事件照常执行，输入维度仍183/305。短回归中尚未见到的触发场景不能标成验证通过。
+本次已依次执行并检查：RewardManager没有escape/impact项，阶段1的intake=0且无retain，阶段2的intake确实非零，阶段3的retain确实非零，日志有限，箱子落地/倒地后不继续付费，全部原事件照常执行，输入维度仍183/305。短回归中尚未见到的触发场景不能标成验证通过。
 
 ## 修改文件
 
 buffer_control_core.py：纯状态机；buffer_control.py：运动学、原reward复用、阶段门控与日志；buffer_control_config.py：三阶段配置；escape_penalty_sensor.py：接触过滤复用/地面独立列；teacher_env_cfg.py：在AMP_SLIM之后应用及退役负项；throw.py：两个已有upright门及生命周期开关；impact_buffer.py：复用记账路由。两个train/regress脚本、CPU短测脚本与测试/本文档提供复查入口。
+
+
+## 2026-11-10 GPU回归实测
+
+服务器RTX4090；同一昨晚model_599.pt warm start、seed42；每组128环境×12更新=36,864步，全部完成，模型/日志无NaN或Inf。主回归代码e1a8ffc，审计日志9763693，实际地面碰撞叶节点过滤修复db094aa。
+
+| 指标 | 阶段1 | 阶段2 | 阶段3 |
+|---|---:|---:|---:|
+| intake权重 | 0 | 0.75 | 0.75 |
+| retain权重 | 不注册 | 不注册 | 0.5 |
+| 加权intake步均值峰值（dt前） | 0 | 0.01778 | 0.01770 |
+| 加权retain步均值峰值（dt前） | 0 | 0 | 0.02437 |
+| 有效接触/投掷 | 23/119 | 23/124 | 22/122 |
+| 平均累计控制时间/投掷（秒） | 0.0504 | 0.0482 | 0.0502 |
+| 末帧平均后仰（度） | 2.01 | 2.19 | 2.22 |
+| 末帧平均膝关节屈曲（rad） | 0.650 | 0.627 | 0.649 |
+| 末帧safe比例 | 99.2% | 97.7% | 99.2% |
+| 严格接箱事件 | 0 | 0 | 0 |
+
+以上只是12更新的触发/数值回归，不能据此判断阶段优劣或成功率提升。平均姿态是全环境均值，不是有效接球时的条件均值。
+
+实际RewardManager中三个阶段都没有escape_penalty或impact_buffer行；阶段2的compliant_intake实际权重0.75且非零，阶段3额外retain_reward实际权重0.5且非零。YAML配置与昨晚基线比较：三个阶段的events内容及键顺序、actions、terminations、observations均完全一致。输入维度保持183/305。
+
+额外审计发现最初过滤/World/ground没有命中静态碰撞。箱底几何高度保底原已阻止落地奖励；现已修复为枚举UsdPhysics.CollisionAPI叶节点，真实路径为/World/ground/terrain/GroundPlane/CollisionPlane。修复后补跑阶段3共288快照，地面接触最多45环境同时命中，grounded最多53；invalid_positive_intake和invalid_positive_retain全部为0。出现过最大后仰56.71°，这不意味着该时刻一定有奖励，仍受有效时窗/离地/安全条件检查。
+
+保留补充审计记录：第一份审计因同步未成功仍是旧日志版本，不计为审计通过；v2审计定位到地面过滤问题，ground_audit为最终修复验证。没有删除这些记录或将旧结果冒充修复后验证。
+
+服务器及本地输出：outputs/buffer_stages_short_20261110/（stage1/2/3日志与verified_summary.json），outputs/buffer_stage3_audit_v2_20261110/，outputs/buffer_stage3_ground_audit_20261110/。完整原始日志已下载到本地副本。
+
+## 后续正式训练状态
+
+用户问“怎么还没开始训练”后，按其建议的对照顺序先启动阶段1：BOX_BUFFER_STAGE=1，只放宽后仰相关奖励；从昨晚model_599.pt恢复PPO权重与优化器，4096环境、seed42，追加200更新。不使用小批量短回归的权重作为起点。输出outputs/buffer_stage1_resume200_20261110/；训练后脚本自动CLEAN2两seed各320次投掷及无坐标轴视频。阶段2/3正式训练留待阶段1结果后比较，不把三个改动直接混成一组。
