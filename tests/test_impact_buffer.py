@@ -286,3 +286,14 @@ def test_post_window_inclusive_float_boundary():
     assert r['post_gate'].all()
     r=s.update(**inputs(step=26,velocity_b=torch.ones(3,3)))
     assert not r['post_gate'].any()
+
+
+def test_pre20x_only_scales_pre_contact_term():
+    baseline=State(3,'cpu'); variant=State(3,'cpu')
+    a=baseline.update(**inputs()); b=variant.update(**inputs(cfg=Cfg(w_pre=4.0)))
+    assert torch.allclose(b['parts'][:,0],a['parts'][:,0]*20)
+    for state,cfg in ((baseline,Cfg()),(variant,Cfg(w_pre=4.0))):
+        state.update(**inputs(step=1,contact=torch.ones(3,dtype=torch.bool),cfg=cfg))
+    common=dict(step=2,velocity_b=torch.ones(3,3)*3,position_b=torch.ones(3,3))
+    a=baseline.update(**inputs(**common)); b=variant.update(**inputs(**common,cfg=Cfg(w_pre=4.0)))
+    assert torch.equal(a['parts'][:,1:],b['parts'][:,1:])
