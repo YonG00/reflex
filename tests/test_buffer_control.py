@@ -224,3 +224,23 @@ def test_floor_or_fallen_touch_does_not_inflate_effective_contact_rate():
         ground_contact=torch.tensor([True,False])))
     assert s.counts['physical_contacts']==2 and s.counts['contacts']==0
     assert not s.contacted.any() and r['retain'].sum()==0
+
+
+def test_ground_filter_resolves_collision_leaf_not_xform_root(modules,monkeypatch):
+    mod,_=modules
+    class Term:
+        def __init__(self,**kw):self.__dict__.update(kw)
+    monkeypatch.setitem(sys.modules,'isaaclab.managers',types.SimpleNamespace(RewardTermCfg=Term))
+    monkeypatch.setitem(sys.modules,'isaaclab.sensors',types.SimpleNamespace(ContactSensorCfg=Term))
+    monkeypatch.setitem(sys.modules,'isaaclab.utils',types.SimpleNamespace(configclass=lambda cls:cls))
+    monkeypatch.setitem(sys.modules,'reflex.envs',types.SimpleNamespace(buffer_control=mod))
+    monkeypatch.setitem(sys.modules,'reflex.envs.escape_penalty_sensor',types.SimpleNamespace(EscapeRobotContactSensor=object))
+    class Prim:
+        def __init__(self,path,collision):self.path,self.collision=path,collision
+        def HasAPI(self,api):return self.collision
+        def GetPath(self):return self.path
+    root=Prim('/World/ground',False);leaf=Prim('/World/ground/terrain/CollisionPlane',True)
+    monkeypatch.setitem(sys.modules,'isaaclab',types.SimpleNamespace(sim=types.SimpleNamespace(find_matching_prims=lambda path:[root])))
+    monkeypatch.setitem(sys.modules,'pxr',types.SimpleNamespace(Usd=types.SimpleNamespace(PrimRange=lambda root:[root,leaf]),UsdPhysics=types.SimpleNamespace(CollisionAPI=object)))
+    cfg=load('_buffer_ground_config_test',ENVS/'buffer_control_config.py')
+    assert cfg.ground_collision_paths('/World/ground')==['/World/ground/terrain/CollisionPlane']

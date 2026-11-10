@@ -8,9 +8,22 @@ from reflex.envs.escape_penalty_sensor import EscapeRobotContactSensor
 from reflex.envs import buffer_control as terms
 
 
+def ground_collision_paths(root_path):
+    from isaaclab import sim as sim_utils
+    from pxr import Usd, UsdPhysics
+    roots=sim_utils.find_matching_prims(root_path)
+    paths=[str(p.GetPath()) for root in roots for p in Usd.PrimRange(root)
+           if p.HasAPI(UsdPhysics.CollisionAPI)]
+    if not paths:raise RuntimeError(f'No ground collision prims below {root_path}')
+    return paths
+
+
 class BufferContactSensor(EscapeRobotContactSensor):
     def _filter_paths(self):
-        return super()._filter_paths()+[self.cfg.ground_prim_path]
+        robot=super()._filter_paths()
+        ground=ground_collision_paths(self.cfg.ground_prim_path)
+        print(f'[buffer_control] ground collision filters: {ground}',flush=True)
+        return robot+ground
 
 
 @configclass
