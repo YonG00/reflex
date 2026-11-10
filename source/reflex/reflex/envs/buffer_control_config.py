@@ -32,6 +32,8 @@ class BufferContactSensorCfg(ContactSensorCfg):
 
 
 def configure_buffer_control(cfg):
+    from reflex.stage3_experiments import experiment, weights
+    group=experiment()
     stage=int(os.environ.get('BOX_BUFFER_STAGE','0'))
     if stage not in (1,2,3):raise ValueError('BOX_BUFFER_STAGE must be 1,2,3')
     # Only retire the two newly added negative terms, never other original terms.
@@ -48,8 +50,7 @@ def configure_buffer_control(cfg):
         update_period=0.,debug_vis=False)
     cfg.rewards.torso_asym.func=terms.buffer_torso_asym
     cfg.rewards.upright_hold.func=terms.buffer_upright_hold
-    intake_weight=float(os.environ.get('BOX_BUFFER_INTAKE_WEIGHT','.75'))
-    retain_weight=float(os.environ.get('BOX_BUFFER_RETAIN_WEIGHT','.5'))
+    intake_weight,retain_weight=weights()
     if not all(math.isfinite(v) and v>=0 for v in (intake_weight,retain_weight)):
         raise ValueError('buffer weights must be finite and nonnegative')
     cfg.rewards.compliant_intake.func=terms.buffer_compliant_intake
@@ -57,6 +58,9 @@ def configure_buffer_control(cfg):
     cfg.rewards.compliant_intake.weight=intake_weight if stage>=2 else 0.
     if stage>=3:
         cfg.rewards.retain_reward=RewardTermCfg(func=terms.retain_reward,weight=retain_weight)
-    print(f'[buffer_control] stage={stage}: escape/impact absent; intake='
+    if group=='C':
+        from reflex.envs.flex_arms import configure
+        configure(cfg)
+    print(f'[buffer_control] experiment={group} stage={stage}: escape/impact absent; intake='
           f'{cfg.rewards.compliant_intake.weight}, retain={retain_weight if stage>=3 else 0}; '
-          'original AMP, tracking, terminations and action scales unchanged',flush=True)
+          'original AMP, tracking and terminations unchanged',flush=True)

@@ -21,6 +21,8 @@ from reflex.envs.robust_env_cfg import G1BoxCatchSafeRobustEnvCfg
 @configclass
 class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
     def __post_init__(self):
+        from reflex.stage3_experiments import experiment
+        experiment()  # Fail before any experiment can bypass Stage 3 validation.
         super().__post_init__()
         # Optional URDF override (G1_URDF_OVERRIDE).  The stock training URDF
         # has no collision geometry on the rubber hands (only wrist-yaw r=0.05
@@ -334,7 +336,8 @@ class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
                   f"{_old} -> {_apstd}", flush=True)
 
         # Apply AFTER all parent AMP_SLIM/reactive/gating setup so it cannot
-        # silently zero compliant_intake again. No event/actor/action changes.
+        # silently zero compliant_intake again. Experiments preserve events/actor;
+        # C alone installs the bounded shoulder action adapter.
         if int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0:
             from reflex.envs.buffer_control_config import configure_buffer_control
             configure_buffer_control(self)

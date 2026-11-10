@@ -1601,6 +1601,9 @@ def hold_still_reward(
     # retracts to press the box onto the chest).
     tucked = dist < 0.38
     freeze = torch.where(tucked, torch.exp(-arm_vel / 2.0), torch.ones_like(arm_vel))
+    if os.environ.get("BOX_FLEX_ARMS", "0") == "1":
+        from reflex.envs.flex_arms import phase_mask
+        freeze = torch.where(phase_mask(env, update=True), torch.ones_like(freeze), freeze)
     r = torch.exp(-rel_v / 0.25) * freeze
     return torch.where(held, r, torch.zeros_like(r))
 

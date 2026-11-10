@@ -16,6 +16,7 @@ class EscapeRobotContactSensor(ImpactPairContactSensor):
         names = sorted(p.GetName() for p in prims if p.HasAPI(UsdPhysics.RigidBodyAPI))
         if not names:
             raise RuntimeError('escape_penalty: no robot rigid bodies found for contact filters')
+        self.robot_filter_names = names  # Metadata only; filter order and physics are unchanged.
         self.robot_filter_count = len(names)
         print(f'[box_contact] box -> {len(names)} robot rigid-body filters: {names}', flush=True)
         return [robot_expr + '/' + name for name in names]

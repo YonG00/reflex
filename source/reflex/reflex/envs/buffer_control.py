@@ -27,6 +27,7 @@ def buffer_throw_reset(env,ids,hold_init=False):
                         caught=bool(state.caught[i]),grounded=bool(state.grounded[i]),lost=bool(state.lost[i]),
                         episode_step=int(env.episode_length_buf[i])))+'\n')
     state.reset(ids,hold_init)
+    if hasattr(env,'_dynamic_buffer_state'):env._dynamic_buffer_state.reset(ids)
     sensor=env.scene.sensors.get('buffer_box_contacts')
     if sensor is not None:sensor.clear_history(ids)
 
@@ -72,9 +73,37 @@ def context(env):
         contact=contact,ground_contact=floor,box_bottom=bottom,safe=safe,radius=radius,
         radial_speed=radial,relative_speed=vel.norm(dim=-1),incoming=incoming,
         strict=compute_strict_components(env)['strict_all'],cfg=cfg)
-    # Reuse the existing directional yielding + downward pelvis velocity formula.
-    from reflex.envs.throw import compliant_intake_reward
-    intake=torch.where(out['intake_gate'],compliant_intake_reward(env),0.)
+    from reflex.stage3_experiments import experiment, weights
+    group=experiment()
+    if group=='B':
+        from reflex.envs.dynamic_buffer import DynamicBufferState
+        from isaaclab.utils.math import quat_apply_inverse
+        if not hasattr(env,'_dynamic_buffer_state'):
+            env._dynamic_buffer_state=DynamicBufferState(env.num_envs,env.device)
+        dynamic=env._dynamic_buffer_state
+        # Unclipped time to closest approach: do not inherit the old <0.9m gate.
+        ttc=-(delta*rel).sum(-1)/rel.square().sum(-1).clamp_min(1e-6)
+        predicted=(delta+ttc[:,None]*rel).norm(dim=-1)
+        local_delta=quat_apply_inverse(q,delta)
+        front=(local_delta[:,0]>0)&(local_delta[:,0]>local_delta[:,1].abs())
+        angular=quat_apply_inverse(q,data.body_ang_vel_w[:,i])[:,1]
+        dyn=dynamic.update(step=step,dt=env.step_dt,active=env._box_launched&~state.hold_init,
+            safe=safe,grounded=state.grounded,lost=state.lost,contacted=state.contacted,
+            age=state.age,ttc=ttc,miss=predicted,closing=closing,
+            box_velocity=bv,front=front,root_velocity=rv,torso_omega_y=angular)
+        intake=dyn['raw']
+        out['relax']=torch.where(out['control']|dyn['pre_gate']|dyn['post_gate'],1.-out['restore'],0.)
+        first=dyn['first'].nonzero().flatten().tolist()
+        if first:
+            with Path(path).open('a') as f:
+                for j in first:
+                    f.write(json.dumps(dict(event='dynamic_first_contact',step=step,env_id=j,
+                        pitch=float(pitch[j]),torso_omega=data.body_ang_vel_w[j,i].tolist(),
+                        pelvis_velocity=rv[j].tolist(),knees=data.joint_pos[j,env._buffer_ids['knees']].tolist()))+'\n')
+    else:
+        # Original formula and gate are retained bit-for-bit for S3/A/C.
+        from reflex.envs.throw import compliant_intake_reward
+        intake=torch.where(out['intake_gate'],compliant_intake_reward(env),0.)
     out['intake']=intake
     every=int(os.environ.get('BOX_BUFFER_LOG_EVERY','50'))
     if every>0 and step%every==0:
@@ -84,8 +113,8 @@ def context(env):
             catch_success_rate=float(state.counts['catches']/denom),
             mean_control_seconds=float(state.counts['control_seconds']/denom),
             intake_raw_mean=float(intake.mean()),retain_raw_mean=float(out['retain'].mean()),
-            intake_reward_mean=float(intake.mean())*float(os.environ.get('BOX_BUFFER_INTAKE_WEIGHT','.75')) if stage>=2 else 0.,
-            retain_reward_mean=float(out['retain'].mean())*float(os.environ.get('BOX_BUFFER_RETAIN_WEIGHT','.5')) if stage>=3 else 0.,
+            intake_reward_mean=float(intake.mean())*weights()[0] if stage>=2 else 0.,
+            retain_reward_mean=float(out['retain'].mean())*weights()[1] if stage>=3 else 0.,
             back_lean_degrees=float((-pitch).clamp_min(0).mean()*180/torch.pi),
             knee_flexion=float(data.joint_pos[:,env._buffer_ids['knees']].abs().mean()),
             max_back_lean_degrees=float((-pitch).clamp_min(0).max()*180/torch.pi),
@@ -97,7 +126,37 @@ def context(env):
             root_ang_speed=float(getattr(data,'root_ang_vel_w',torch.zeros_like(rv)).norm(dim=-1).mean()),
             root_height=float(root_height.mean()),safe_fraction=float(safe.float().mean()),
             **{k:float(v) for k,v in state.counts.items()})
-        env.extras.setdefault('log',{}).update({f'Buffer/{k}':v for k,v in metrics.items()})
+        metrics['experiment']=group
+        if group=='B':
+            total=(dynamic.totals['pre_samples']+dynamic.totals['post_samples']).clamp_min(1)
+            metrics.update({f'dynamic_{k}':float(v) for k,v in dynamic.totals.items()})
+            metrics.update(dynamic_pre_seconds_per_throw=float(dynamic.totals['pre_seconds']/denom),
+                dynamic_post_seconds_per_throw=float(dynamic.totals['post_seconds']/denom),
+                dynamic_pre_active_fraction=float(dynamic.totals['pre_samples']/((step+1)*env.num_envs)),
+                dynamic_post_active_fraction=float(dynamic.totals['post_samples']/((step+1)*env.num_envs)))
+            for key in ('lean','yield','drop'):
+                metrics[f'dynamic_{key}_nonzero_fraction']=float(dynamic.totals[key+'_nonzero']/total)
+                metrics[f'dynamic_{key}_active_mean']=float(dynamic.totals[key+'_sum']/total)
+        if group=='C':
+            from reflex.envs.flex_arms import phase_mask
+            phase=phase_mask(env)
+            metrics['flex_active_fraction']=float(phase.float().mean())
+            metrics['flex_shoulder_scale_mean']=float(getattr(env,'_flex_scale',rp.new_full((env.num_envs,),.02)).mean())
+            metrics['flex_target_delta_max']=float(getattr(env,'_flex_target_delta_max',rp.new_zeros(())))
+            metrics['flex_target_clip_max']=float(getattr(env,'_flex_target_clip',rp.new_zeros(env.num_envs)).max())
+            for key in ('shoulder','elbow'):
+                ids=[j for j,n in enumerate(robot.joint_names) if key in n]
+                if ids:
+                    angles=data.joint_pos[:,ids]
+                    low=getattr(env,'_flex_'+key+'_low',angles.clone())
+                    high=getattr(env,'_flex_'+key+'_high',angles.clone())
+                    low=torch.minimum(low,angles);high=torch.maximum(high,angles)
+                    setattr(env,'_flex_'+key+'_low',low);setattr(env,'_flex_'+key+'_high',high)
+                    metrics['flex_'+key+'_range_mean']=float((high-low).mean())
+            for name in ('cradle_pose','cradle_ready','cradle_ready_dev','box_on_bed'):
+                term=getattr(env.cfg.rewards,name,None)
+                if term is not None:metrics['flex_'+name+'_effective_weight_mean']=float(torch.where(phase,.1,1.).mean())*term.weight
+        env.extras.setdefault('log',{}).update({f'Buffer/{k}':v for k,v in metrics.items() if isinstance(v,(int,float))})
         with Path(path).open('a') as f:f.write(json.dumps(dict(step=step,**metrics))+'\n')
         print('[buffer_control] '+json.dumps(dict(step=step,**metrics)),flush=True)
     return out

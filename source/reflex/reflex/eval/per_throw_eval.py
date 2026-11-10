@@ -72,6 +72,7 @@ parser.add_argument("--persist_frames", type=int, default=30)
 parser.add_argument("--ball_radius", type=float, default=None,
                     help="Pin ball radius; if None, env randomization runs.")
 parser.add_argument("--out", required=True)
+parser.add_argument("--physical_hold_metrics", action="store_true", help="Shared evaluation-only arm-supported hold metric")
 parser.add_argument("--video_dir", default=None, help="Record a rendered evaluation MP4 in this directory")
 # Visual encoder in the loop: frames from a torso-mounted TiledCamera -> visual encoder ("detector") -> z -> latent decoder
 parser.add_argument("--detector", default=None, help="Stage 3 visual encoder checkpoint (reflex.vision.train_seqdet); replaces the privileged encoder E_phi with the image-based encoder")
@@ -837,6 +838,10 @@ def main():
     # displacement (full cycle / flight window / start window), fall and
     # stability, box size and the contact-free arrival point.
     throw_log    = []
+    physical=None
+    if args.physical_hold_metrics:
+        from reflex.eval.physical_hold import PhysicalHoldEvaluator
+        physical=PhysicalHoldEvaluator(raw_env)
 
 
     with torch.inference_mode():
@@ -873,6 +878,8 @@ def main():
 
             if step < args.eval_start_step:
                 continue
+
+            if physical is not None:physical.update()
 
             # Use shared compute_strict_components — same geometry as training.
             comp = mdp_v5.compute_strict_components(raw_env)
@@ -978,7 +985,7 @@ def main():
                                     l_step=int(_prev_lstep[_b]), mot_ts=int(_prev_mts[_b]),
                                     rad=(None if bool(torch.isnan(throw_rad[_b]))
                                          else float(throw_rad[_b])),
-                                    caught=bool(throw_done[_b]), caught_twin=bool(throw_done_t[_b]), caught_v2=bool(throw_done2[_b]), intercepted=bool(throw_icpt[_b]), v2_fail=[int(_x) for _x in fail_cnt[_b].tolist()], v2_twin_frames=int(twin_cnt[_b]), dropped_after=bool(dropped_after[_b]), hold_s=(round((int(drop_step[_b]) - int(first_latch[_b])) / 50.0, 2) if bool(dropped_after[_b]) else None), watch_s=(round((int(step) - int(first_latch[_b])) / 50.0, 2) if int(first_latch[_b]) >= 0 else None),
+                                    caught=bool(throw_done[_b]), caught_loose=bool(throw_done_l[_b]), caught_twin=bool(throw_done_t[_b]), caught_v2=bool(throw_done2[_b]), intercepted=bool(throw_icpt[_b]), v2_fail=[int(_x) for _x in fail_cnt[_b].tolist()], v2_twin_frames=int(twin_cnt[_b]), dropped_after=bool(dropped_after[_b]), hold_s=(round((int(drop_step[_b]) - int(first_latch[_b])) / 50.0, 2) if bool(dropped_after[_b]) else None), watch_s=(round((int(step) - int(first_latch[_b])) / 50.0, 2) if int(first_latch[_b]) >= 0 else None),
                 box_long=(round(float(raw_env._box_half_extents[_b, 0]) * 2, 3) if hasattr(raw_env, "_box_half_extents") else None),
                                     disp=float(throw_disp[_b]),
                                     disp_flight=float(throw_disp_fl[_b]),
@@ -1342,7 +1349,7 @@ def main():
                 l_step=int(throw_lstep[_b]), mot_ts=int(throw_mts[_b]),
                 rad=(None if bool(torch.isnan(throw_rad[_b]))
                      else float(throw_rad[_b])),
-                caught=bool(throw_done[_b]), caught_twin=bool(throw_done_t[_b]), caught_v2=bool(throw_done2[_b]), intercepted=bool(throw_icpt[_b]), v2_fail=[int(_x) for _x in fail_cnt[_b].tolist()], v2_twin_frames=int(twin_cnt[_b]), end_b=[round(float(_x), 3) for _x in _eb[_b].tolist()], end_bot=round(float(_eb[_b, 2] - _ehv[_b]), 3), end_top=round(float(_eb[_b, 2] + _ehv[_b]), 3), end_dhead=round(float(_edh[_b]), 3), end_dw=round(float(_edw[_b]), 3), end_z=round(float(_ez[_b]), 3), end_v=round(float(_ce['speed'][_b]), 3), dropped_after=bool(dropped_after[_b]), hold_s=(round((int(drop_step[_b]) - int(first_latch[_b])) / 50.0, 2) if bool(dropped_after[_b]) else None), watch_s=(round((int(step) - int(first_latch[_b])) / 50.0, 2) if int(first_latch[_b]) >= 0 else None),
+                caught=bool(throw_done[_b]), caught_loose=bool(throw_done_l[_b]), caught_twin=bool(throw_done_t[_b]), caught_v2=bool(throw_done2[_b]), intercepted=bool(throw_icpt[_b]), v2_fail=[int(_x) for _x in fail_cnt[_b].tolist()], v2_twin_frames=int(twin_cnt[_b]), end_b=[round(float(_x), 3) for _x in _eb[_b].tolist()], end_bot=round(float(_eb[_b, 2] - _ehv[_b]), 3), end_top=round(float(_eb[_b, 2] + _ehv[_b]), 3), end_dhead=round(float(_edh[_b]), 3), end_dw=round(float(_edw[_b]), 3), end_z=round(float(_ez[_b]), 3), end_v=round(float(_ce['speed'][_b]), 3), dropped_after=bool(dropped_after[_b]), hold_s=(round((int(drop_step[_b]) - int(first_latch[_b])) / 50.0, 2) if bool(dropped_after[_b]) else None), watch_s=(round((int(step) - int(first_latch[_b])) / 50.0, 2) if int(first_latch[_b]) >= 0 else None),
                 box_long=(round(float(raw_env._box_half_extents[_b, 0]) * 2, 3) if hasattr(raw_env, "_box_half_extents") else None),
                 disp=float(throw_disp[_b]),
                 disp_flight=float(throw_disp_fl[_b]),
@@ -1374,6 +1381,7 @@ def main():
     result["idle_base_rms"] = float((idle_v2_sum.sum() / idle_n.sum()).sqrt().item()) if _in > 0 else None
     result["idle_leg_vel"] = float((idle_lv_sum.sum() / idle_n.sum()).item()) if _in > 0 else None
     result["idle_ticks"] = int(_in)
+    if physical is not None:physical.finish(throw_log)
     result["throw_log"] = throw_log
     if _tl:
         _EDGES = [0.0, 0.2, 0.4, 0.6, 0.8, 9.0]
