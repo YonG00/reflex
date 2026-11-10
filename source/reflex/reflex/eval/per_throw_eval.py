@@ -297,6 +297,9 @@ def make_env(env_id, motion_file, num_envs, ball_radius=None, seed=42, spawn_rad
         env_cfg.events.push_robot = None
         print("[protocol] push_robot event REMOVED (no random base kicks during eval)", flush=True)
     if args.video_dir:
+        from reflex.eval.video_settings import disable_debug_visualization
+        hidden = disable_debug_visualization(env_cfg)
+        print(f"[video] debug visualization disabled ({hidden} settings): no coordinate axes/contact markers", flush=True)
         env_cfg.viewer.eye = (4.0, 4.0, 2.5)
         env_cfg.viewer.lookat = (0.5, 0.0, 1.0)
         env_cfg.viewer.resolution = (1280, 720)
