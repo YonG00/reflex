@@ -650,7 +650,8 @@ def reset_box_throw(
     box.write_root_velocity_to_sim(torch.zeros((n, 6), device=device), env_ids=env_ids)
     # Impact bookkeeping only; every existing event and physics write still runs.
     if (os.environ.get("BOX_IMPACT_BUFFER", "0") == "1"
-            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"):
+            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"
+            or int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0):
         from reflex.envs.impact_buffer import impact_throw_reset
         impact_throw_reset(env, env_ids)
 
@@ -980,6 +981,9 @@ def bed_gated_hold_sustained(
         # floor is configurable: e.g. 0.1 nearly starves deep recline while
         # the accepted band stays comfortable (ramp to 1.0 by _ge).
         gate_u = _gf + (1.0 - _gf) * ((gbx - _gs) / (_ge - _gs)).clamp(0.0, 1.0)
+        if int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0:
+            from reflex.envs.buffer_control import phase_upright_gate
+            gate_u = phase_upright_gate(env, gate_u)
         gate = gate * gate_u
     if os.environ.get("BOX_3POINT", "0") == "1":
         # BOX_3POINT: a true catch = caught + stable three-point hold (two
@@ -1143,7 +1147,11 @@ def _upright_gate_factor(env) -> torch.Tensor:
     _gs = float(os.environ.get("BOX_GATE_START", "-0.9"))
     _ge = float(os.environ.get("BOX_GATE_END", "-0.31"))
     _gf = float(os.environ.get("BOX_GATE_ALL_FLOOR", "0.1"))
-    return _gf + (1.0 - _gf) * ((gbx - _gs) / (_ge - _gs)).clamp(0.0, 1.0)
+    factor = _gf + (1.0 - _gf) * ((gbx - _gs) / (_ge - _gs)).clamp(0.0, 1.0)
+    if int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0:
+        from reflex.envs.buffer_control import phase_upright_gate
+        factor = phase_upright_gate(env, factor)
+    return factor
 
 
 # NOTE explicit signatures: Isaac Lab's manager introspection treats
@@ -1837,7 +1845,8 @@ def hold_init_apply(env, env_ids,
     box.write_root_velocity_to_sim(
         torch.zeros((len(ids), 6), device=device), env_ids=ids)
     if (os.environ.get("BOX_IMPACT_BUFFER", "0") == "1"
-            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"):
+            or os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1"
+            or int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0):
         from reflex.envs.impact_buffer import impact_throw_reset
         impact_throw_reset(env, ids, hold_init=True)
     env._box_launched[ids] = True     # cancel this episode's throw

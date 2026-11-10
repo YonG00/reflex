@@ -1,3 +1,5 @@
+> 历史实验：当前teacher已退役-100项，不再注册计算；新设计见 [BUFFER_CONTROL_ZH.md](BUFFER_CONTROL_ZH.md)。
+
 # 严重弹飞失败惩罚 escape_penalty（每投掷一次）
 
 当前实现位于 `ppo/box-info-19d`，保留官方 PPO+AMP 与183/305维箱子信息扩展。旧连续 impact_buffer 项已从 teacher 入口退役，即使继承 BOX_IMPACT_BUFFER=1 也不注册旧奖励；旧文件仅留作历史复现。新模式不叠加接近速度、减速、接触力或固定姿态惩罚。

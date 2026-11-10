@@ -192,7 +192,7 @@ def test_new_config_keeps_original_rewards_events_and_disables_old(adapter,monke
     # Verify production teacher cannot register legacy terms even with old env flags.
     tree=ast.parse((ENVS/'teacher_env_cfg.py').read_text())
     calls=[n.func.id for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)]
-    assert 'configure_escape_penalty' in calls and 'configure_impact_buffer' not in calls
+    assert 'configure_escape_penalty' not in calls and 'configure_impact_buffer' not in calls
 
 
 def test_dynamic_robot_filters_exclude_floor_mesh_and_force_cancellation(monkeypatch):

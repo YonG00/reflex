@@ -33,13 +33,9 @@ class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
             self.scene.robot.spawn.asset_path = _urdf
             print(f"[teacher] G1 URDF override active: {_urdf}", flush=True)
 
-        # Escape failure replaces the retired continuous impact ablation.
-        if os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1":
-            from reflex.envs.escape_penalty_config import configure_escape_penalty
-            configure_escape_penalty(self)
-        elif os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
-            print("[teacher] legacy impact_buffer penalty is retired/disabled; "
-                  "use BOX_ESCAPE_PENALTY=1 for the new escape-only mode", flush=True)
+        # Negative impact/escape ablations are retired in this reward revision.
+        if os.environ.get("BOX_ESCAPE_PENALTY", "0") == "1" or os.environ.get("BOX_IMPACT_BUFFER", "0") == "1":
+            print("[teacher] old escape/impact penalties disabled; use BOX_BUFFER_STAGE=1/2/3", flush=True)
 
         # ---- aim-offset curriculum --------------------------------------
         self.events.box_hover_launch.func = v38x.v38_walking_hover_and_launch
@@ -336,3 +332,9 @@ class G1BoxCatchStepCatchEnvCfg(G1BoxCatchSafeRobustEnvCfg):
             self.rewards.motion_global_anchor_pos.params["std"] = float(_apstd)
             print(f"[teacher] motion_global_anchor_pos std "
                   f"{_old} -> {_apstd}", flush=True)
+
+        # Apply AFTER all parent AMP_SLIM/reactive/gating setup so it cannot
+        # silently zero compliant_intake again. No event/actor/action changes.
+        if int(os.environ.get("BOX_BUFFER_STAGE", "0")) > 0:
+            from reflex.envs.buffer_control_config import configure_buffer_control
+            configure_buffer_control(self)

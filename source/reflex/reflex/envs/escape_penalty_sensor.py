@@ -3,7 +3,7 @@ from reflex.envs.impact_buffer_sensor import ImpactPairContactSensor
 
 
 class EscapeRobotContactSensor(ImpactPairContactSensor):
-    def _initialize_impl(self):
+    def _filter_paths(self):
         from isaaclab import sim as sim_utils
         from pxr import UsdPhysics
         # Expand only the first environment, then use one filter per rigid body.
@@ -16,6 +16,10 @@ class EscapeRobotContactSensor(ImpactPairContactSensor):
         names = sorted(p.GetName() for p in prims if p.HasAPI(UsdPhysics.RigidBodyAPI))
         if not names:
             raise RuntimeError('escape_penalty: no robot rigid bodies found for contact filters')
-        self.cfg.filter_prim_paths_expr = [robot_expr + '/' + name for name in names]
-        print(f'[escape_penalty] box -> {len(names)} robot rigid-body filters: {names}', flush=True)
+        self.robot_filter_count = len(names)
+        print(f'[box_contact] box -> {len(names)} robot rigid-body filters: {names}', flush=True)
+        return [robot_expr + '/' + name for name in names]
+
+    def _initialize_impl(self):
+        self.cfg.filter_prim_paths_expr = self._filter_paths()
         super()._initialize_impl()
