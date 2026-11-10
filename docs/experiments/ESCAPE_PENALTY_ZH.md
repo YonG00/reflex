@@ -57,4 +57,28 @@ Escape/escape_penalty为实际应用前的每环境事件奖励均值（已按�
 
 核心文件：escape_penalty_core.py（状态机）、escape_penalty.py（运动学/回调/日志）、escape_penalty_sensor.py（复用子步历史并枚举机器人刚体）、escape_penalty_config.py（只注册新reward）；teacher_env_cfg.py/throw.py/impact_buffer.py为小范围模式与记账改动。tests/test_escape_penalty.py与两个scripts/check/train入口用于验证和使用。
 
-GPU验证：按用户最新授权，待在空闲RTX4090上运行128环境、20轮有界短训，从昨晚model_599.pt warm start；不自动扩成长训。结果完成后在本文件补录。
+## 2026-11-10 真实GPU短训结果
+
+已按用户授权在RTX4090上完成两组128环境×20轮短训，各61,440步，从昨晚model_599.pt warm start，seed42。-100组与amount=0对照组只有扣分金额不同，其他奖励/训练参数一致。服务器50项测试亦全部通过；真实传感器枚举30个机器人刚体，policy/critic仍为183/305，权重载入17项、无padding或skip。未启动长训。
+
+| 指标 | amount=100 | amount=0 对照 |
+|---|---:|---:|
+| 观察到真实投掷 | 142 | 136 |
+| 机器人接触投掷 | 33 | 33 |
+| 严重弹飞事件 | 6 | 5 |
+| 累计事件扣分 | -600 | 0 |
+| 同一(env_id,throw_id)最大触发次数 | 1 | 1 |
+| 尚无真实发射记录就终止的计数 | 735 | 748 |
+| 已发射但未接触就终止 | 76 | 68 |
+| 接触后确认计时未满就终止 | 3 | 4 |
+| 最后日志平均episode长度（步） | 73.38 | 72.74 |
+| 严格接住事件 | 0 | 0 |
+
+两组最终model_19.pt、独立诊断与reward数值均有限，无NaN/Inf。20轮是功能/数值短测，成功事件为0，不证明学习收益。提前终止在0金额对照中同样大量存在，目前不能将其归因于新惩罚，也不能证明长训练不会学会规避。保持原AMP、姿态和终止机制，未私自调低惩罚或改终止条件。
+
+GPU短训中6次扣分都属于不同投掷，未采到同episode连续两次严重弹飞的自然样本；同episode重投后可再次扣分由专门状态机测试验证，不冒充闭环双弹飞验证。
+
+- 新惩罚短训：`logs/rsl_rl/reflex/2026-11-10_10-03-23_escape_short128_20_s42/model_19.pt`
+- 零金额对照：`logs/rsl_rl/reflex/2026-11-10_10-05-23_escape_zero_short128_20_s42/model_19.pt`
+- 服务器根目录：`/root/gpufree-data/reflex-ppo-box-info`
+- 输出：`outputs/escape_short_20261110/`、`outputs/escape_zero_short_20261110/`，含train.log、escape.jsonl、verified_summary.json；前者另含comparison.json。已下载到对应本地副本。
