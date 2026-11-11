@@ -33,7 +33,11 @@ def body_tracking(env,command_name,std,persistent_key,body_names=None):
 
 
 def anchor_tracking(env,command_name,std,persistent_key):
-    return _ORIGINALS[persistent_key](env,command_name=command_name,std=std)*(1-mix(env))
+    original=_ORIGINALS[persistent_key](env,command_name=command_name,std=std)
+    m=mix(env)
+    # A positive tracking score must not disappear merely because a catch
+    # succeeded. Treat the waived reference error as satisfied, with no pose pull.
+    return (1-m)*original+m*torch.ones_like(original)
 
 
 def configure(cfg):

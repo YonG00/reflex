@@ -98,8 +98,8 @@ def test_tracking_removes_only_upper_reference_while_preserving_lower_gradients(
     r.sum().backward()
     assert errors.grad[0,:2].abs().sum()==0 and errors.grad[0,2]!=0
     assert errors.grad[1,:2].abs().sum()>0
-    adapter._ORIGINALS['anchor']=lambda env,command_name,std:torch.ones(2)
-    assert torch.equal(adapter.anchor_tracking(env,'motion',.3,'anchor'),torch.tensor([0.,1.]))
+    adapter._ORIGINALS['anchor']=lambda env,command_name,std:torch.ones(2)*.4
+    assert torch.equal(adapter.anchor_tracking(env,'motion',.3,'anchor'),torch.tensor([1.,.4]))
 
 
 def test_achieved_arm_base_does_not_return_to_ready_and_policy_stays_free(adapter):
