@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Explicit separate invocations: short first, full only after inspecting short results.
+# Modes: short regression; train = formal training only; full = training plus evaluation.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-MODE=${1:?usage: run_s3_ablations.sh short|full MODEL_599 OUTPUT_DIR}
+MODE=${1:?usage: run_s3_ablations.sh short|train|full MODEL_599 OUTPUT_DIR}
 CKPT=${2:?model_599.pt required};OUT=${3:?fresh output directory required}
-case "$MODE" in short) NENV=128;UPDATES=12;; full) NENV=4096;UPDATES=200;; *) exit 2;; esac
+case "$MODE" in short) NENV=128;UPDATES=12;LOG_EVERY=1;; train|full) NENV=4096;UPDATES=200;LOG_EVERY=50;; *) exit 2;; esac
 for key in BOX_RETAIN_X10 BOX_DYNAMIC_BUFFER BOX_FLEX_ARMS; do
   [ "${!key:-0}" = 0 ] || { echo "unset $key before the independent queue";exit 2; }
 done
@@ -20,7 +20,7 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "failed exit=$rc" > "$OUT/status.txt"
 for GROUP in S3 A B C; do
  RUN="s3_${GROUP}_${MODE}_$(date +%Y%m%d_%H%M%S)_$$"
  echo "$GROUP training" > "$OUT/status.txt"
- BOX_BUFFER_LOG_EVERY=1 BOX_BUFFER_LOG_PATH="$OUT/${GROUP}.jsonl" \
+ BOX_BUFFER_LOG_EVERY="$LOG_EVERY" BOX_BUFFER_LOG_PATH="$OUT/${GROUP}.jsonl" \
    bash "$ROOT/scripts/train_buffer_s3_ablation.sh" "$GROUP" "$CKPT" --num_envs "$NENV" \
    --max_iterations "$UPDATES" --seed 42 --run_name "$RUN" > "$OUT/${GROUP}.train.log" 2>&1
  ${ISAACLAB_PY:-python} "$ROOT/scripts/check_s3_run.py" "$OUT/${GROUP}.train.log" "$OUT/${GROUP}.jsonl" "$UPDATES" > "$OUT/${GROUP}.check.json"

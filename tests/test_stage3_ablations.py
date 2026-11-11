@@ -326,3 +326,19 @@ def test_shell_baseline_rejects_inherited_experiment():
         PYTHONPATH=str(ROOT/'source/reflex'),BOX_RETAIN_X10='1')
     p=subprocess.run(['bash','-c','source "$ROOT/scripts/s3_experiment_env.sh"'],env=env,capture_output=True,text=True)
     assert p.returncode!=0 and 'requested S3' in p.stderr
+
+
+def test_c_preserves_original_trust_wrapper_inner_parameters(monkeypatch):
+    import inspect
+    monkeypatch.setattr(flex,'phase_mask',lambda env,update=False:torch.tensor([True,False]))
+    for name in ('cradle_pose','cradle_ready','cradle_ready_dev','box_on_bed'):
+        seen={}
+        def original(env,inner,asset_cfg=None,sigma=None):
+            seen.update(inner=inner,asset_cfg=asset_cfg,sigma=sigma)
+            return torch.ones(2)
+        monkeypatch.setitem(flex._INNER,name,original)
+        fn=getattr(flex,name)
+        # Match real RewardManager parameter validation, with the legacy inner key.
+        inspect.signature(fn).bind(None,inner='on_bed',asset_cfg='balloon',sigma=.2)
+        assert torch.allclose(fn(None,inner='on_bed',asset_cfg='balloon',sigma=.2),torch.tensor([.1,1.]))
+        assert seen==dict(inner='on_bed',asset_cfg='balloon',sigma=.2)

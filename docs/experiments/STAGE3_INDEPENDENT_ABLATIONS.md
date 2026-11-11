@@ -92,7 +92,7 @@ strict/loose/physical_hold/contact/fall/ground/escape 都用相同首投分母�
 PYTHONPATH=source/reflex /private/tmp/reflex-escape-venv/bin/python -m pytest tests -q
 ```
 
-118项通过（原73项＋新增45项）。环境未安装NumPy，Torch发出一次初始化警告，不影响本次纯Tensor测试。
+119项通过（原73项＋新增46项）。环境未安装NumPy，Torch发出一次初始化警告，不影响本次纯Tensor测试。
 包括四组实际配置隔离、双开关拒绝、B预算/缓存/重投/HOLD_INIT/侧方方向、
 C等待动作与肘部不变/肩部ramp/限位/姿态衰减/hold_still速度保留、共享评估支持接触/落地/头肩/跌倒/重投。
 
@@ -141,3 +141,28 @@ bash scripts/run_s3_ablations.sh full /actual/model_599.pt outputs/s3_full_uniqu
 关闭三个开关回到S3；从原`ppo-box-info`也可直接复现未改基线。
 任何组合都需要新的消融，不采用尚无两seed一致收益的方案。
 本次只有本地实现/CPU验证完成；GPU短回归、长训、评测结果和行为审阅均为待执行。
+
+
+## 2026-11-11 上机补充
+
+新服务器数据盘起初为空，已恢复相同 IsaacLab2.3.1 源码、训练数据与机器人资产。
+原599 checkpoint、参考运动、AMP数据和main_hands.urdf均已与旧机器核对SHA256一致。
+原checkpoint只有策略/PPO优化器/iter/infos，没有AMP判别器状态；遵循原runner行为重新初始化判别器。
+新机LD_LIBRARY_PATH补入torch/lib，未改算法或环境事件。
+
+S3/A/B/C均完成128env×12次更新（599..610），每组288个控制步，共36864个环境步。
+有效状态审计invalid_positive均为0，B子奖励实际非零，C肩部ramp实际非零且短训裁剪量为0。
+C首次真实RewardManager装载暴露旧trust wrapper的inner参数未转发，已显式兼容完整参数签名，
+增加回归测试后本地及服务器119项通过；修复后C独立从原599重新短训成功。
+S3/A/B仍用修复前代码，但修复仅影响C的包装签名，不改变这三组行为。
+
+用户随后明确“直接训练，不用测了”：停止剩余小样本评测，正式入口新增train模式，
+串行S3/A/B/C，各从同一599运行4096env×200更新；train模式不调用评测或比较汇总。
+正式日志每50控制步记录，短测仍每步记录。没有改变原训练超参数。
+
+```bash
+source /root/gpufree-data/s3_runtime.env
+bash scripts/run_s3_ablations.sh train /root/gpufree-data/model_599.pt /新的正式输出目录
+```
+
+详细短测记录和正式训练状态见同目录2026-11-11实验记录。

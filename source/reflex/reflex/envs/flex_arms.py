@@ -34,20 +34,34 @@ class ShoulderRamp:
 def _factor(env):return torch.where(phase_mask(env,True),.1,1.)
 
 
-def cradle_pose(env,asset_cfg=None):
-    return _INNER['cradle_pose'](env,**({} if asset_cfg is None else {'asset_cfg':asset_cfg}))*_factor(env)
+def _call(name,env,params):
+    # Preserve the complete original trust/reactive wrapper parameter chain.
+    return _INNER[name](env,**{k:v for k,v in params.items() if v is not None})*_factor(env)
 
 
-def cradle_ready(env,asset_cfg=None):
-    return _INNER['cradle_ready'](env,**({} if asset_cfg is None else {'asset_cfg':asset_cfg}))*_factor(env)
+def cradle_pose(env,asset_cfg=None,inner=None,hold_sec=None,sigma=None,
+                 z_low=None,z_high=None,near_max=None,deadzone=None):
+    return _call('cradle_pose',env,dict(asset_cfg=asset_cfg,inner=inner,hold_sec=hold_sec,
+        sigma=sigma,z_low=z_low,z_high=z_high,near_max=near_max,deadzone=deadzone))
 
 
-def cradle_ready_dev(env,asset_cfg=None,deadzone=.3):
-    return _INNER['cradle_ready_dev'](env,deadzone=deadzone,**({} if asset_cfg is None else {'asset_cfg':asset_cfg}))*_factor(env)
+def cradle_ready(env,asset_cfg=None,inner=None,hold_sec=None,sigma=None,
+                 z_low=None,z_high=None,near_max=None,deadzone=None):
+    return _call('cradle_ready',env,dict(asset_cfg=asset_cfg,inner=inner,hold_sec=hold_sec,
+        sigma=sigma,z_low=z_low,z_high=z_high,near_max=near_max,deadzone=deadzone))
 
 
-def box_on_bed(env,asset_cfg=None):
-    return _INNER['box_on_bed'](env,**({} if asset_cfg is None else {'asset_cfg':asset_cfg}))*_factor(env)
+def cradle_ready_dev(env,asset_cfg=None,inner=None,hold_sec=None,sigma=None,
+                 z_low=None,z_high=None,near_max=None,deadzone=None):
+    return _call('cradle_ready_dev',env,dict(asset_cfg=asset_cfg,inner=inner,hold_sec=hold_sec,
+        sigma=sigma,z_low=z_low,z_high=z_high,near_max=near_max,deadzone=deadzone))
+
+
+def box_on_bed(env,asset_cfg=None,inner=None,hold_sec=None,sigma=None,
+                 z_low=None,z_high=None,near_max=None,deadzone=None):
+    return _call('box_on_bed',env,dict(asset_cfg=asset_cfg,inner=inner,hold_sec=hold_sec,
+        sigma=sigma,z_low=z_low,z_high=z_high,near_max=near_max,deadzone=deadzone))
+
 
 
 def configure(cfg):
