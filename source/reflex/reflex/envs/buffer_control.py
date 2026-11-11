@@ -26,6 +26,15 @@ def buffer_throw_reset(env,ids,hold_init=False):
                         controlled_seconds=float(state.control_time[i]),longest_control_seconds=float(state.max_control[i]),contacted=bool(state.contacted[i]),
                         caught=bool(state.caught[i]),grounded=bool(state.grounded[i]),lost=bool(state.lost[i]),
                         episode_step=int(env.episode_length_buf[i])))+'\n')
+    if hasattr(env,'_persistent_hold'):
+        hold=env._persistent_hold
+        if getattr(state,'log_path',''):
+            indices=torch.arange(env.num_envs,device=env.device)[ids]
+            with Path(state.log_path).open('a') as f:
+                for j in indices[hold.ever[indices]].tolist():
+                    f.write(json.dumps(dict(event='persistent_hold_throw_end',step=int(env.common_step_counter),env_id=j,
+                        hold_seconds=float(hold.duration[j]),longest_hold_seconds=float(hold.longest[j])))+'\n')
+        hold.reset(ids)
     state.reset(ids,hold_init)
     if hasattr(env,'_dynamic_buffer_state'):env._dynamic_buffer_state.reset(ids)
     sensor=env.scene.sensors.get('buffer_box_contacts')
@@ -104,6 +113,22 @@ def context(env):
         # Original formula and gate are retained bit-for-bit for S3/A/C.
         from reflex.envs.throw import compliant_intake_reward
         intake=torch.where(out['intake_gate'],compliant_intake_reward(env),0.)
+    if os.environ.get('BOX_PERSISTENT_HOLD','0')=='1':
+        from reflex.envs.persistent_hold import state as hold_state
+        hold=hold_state(env)
+        names=sensor.robot_filter_names
+        arms=[j for j,n in enumerate(names) if any(k in n for k in ('wrist','elbow','forearm','hand'))]
+        if not arms:raise RuntimeError('persistent hold requires explicit real arm contact filters')
+        arm_contact=(forces[...,arms]>1.).flatten(1).any(-1)
+        angular=(box.data.root_ang_vel_w-data.body_ang_vel_w[:,i]).norm(dim=-1)
+        held=hold.update(step=step,dt=env.step_dt,active=env._box_launched&~state.hold_init,
+            safe=safe,grounded=state.grounded,lost=state.lost,arm_contact=arm_contact,
+            radius=radius,relative_speed=vel.norm(dim=-1),angular_speed=angular)
+        # No catch-age deadline can restore posture while control remains valid.
+        out['relax']=torch.maximum(out['relax'],held['mix'])
+        out['restore']=out['restore']*(1-held['mix'])
+        out['retain']=torch.where(held['held'],held['reward'],out['retain'])
+        out['persistent_held']=held['held']
     out['intake']=intake
     every=int(os.environ.get('BOX_BUFFER_LOG_EVERY','50'))
     if every>0 and step%every==0:
@@ -126,6 +151,14 @@ def context(env):
             root_ang_speed=float(getattr(data,'root_ang_vel_w',torch.zeros_like(rv)).norm(dim=-1).mean()),
             root_height=float(root_height.mean()),safe_fraction=float(safe.float().mean()),
             **{k:float(v) for k,v in state.counts.items()})
+        if os.environ.get('BOX_PERSISTENT_HOLD','0')=='1':
+            metrics.update(persistent_hold_fraction=float(hold.held.float().mean()),
+                persistent_hold_mix=float(hold.mix.mean()),persistent_hold_max_mix=float(hold.mix.max()),
+                persistent_hold_raw_mean=float(held['reward'].mean()),
+                persistent_hold_max_seconds=float(hold.longest.max()),
+                persistent_reference_scale_mean=float((1-hold.mix).mean()),
+                persistent_arm_base_weight=float(getattr(env,'_hold_arm_base_weight',rp.new_zeros(env.num_envs)).mean()),
+                **{f'persistent_{k}':float(v) for k,v in hold.totals.items()})
         metrics['experiment']=group
         if group=='B':
             total=(dynamic.totals['pre_samples']+dynamic.totals['post_samples']).clamp_min(1)

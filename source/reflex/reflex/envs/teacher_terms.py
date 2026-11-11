@@ -1579,7 +1579,16 @@ def patch_arm_two_stage():
         if V38_TS_DELTA_GATE:
             # waiting: delta shrunk to TS_DELTA_MIN of itself; trigger restores it
             _g = V38_TS_DELTA_MIN + (1.0 - V38_TS_DELTA_MIN) * b
+            if os.environ.get("BOX_PERSISTENT_HOLD", "0") == "1":
+                from reflex.envs.persistent_hold import state as hold_state
+                _hold_mix = hold_state(env).mix[:, None]
+                _g = (1.0 - _hold_mix) * _g + _hold_mix
             delta = delta * _g
+        if os.environ.get("BOX_PERSISTENT_HOLD", "0") == "1":
+            if not V38_TS_BASE_BLEND:
+                raise RuntimeError("persistent hold requires the original TS_BASE_BLEND=1")
+            from reflex.envs.persistent_hold import arm_reference
+            base = arm_reference(self, base, delta, cols_t)
         self._processed_actions[:, cols_t] = (
             base + delta if V38_TS_BASE_BLEND
             else b * self._processed_actions[:, cols_t] + (1.0 - b) * down[None, :])

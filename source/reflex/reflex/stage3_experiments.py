@@ -14,6 +14,10 @@ def experiment(env=None):
     if len(chosen)>1:raise ValueError('S3 experiments are independent; enable only ONE of '+', '.join(FLAGS.values()))
     if chosen and env.get('BOX_BUFFER_STAGE','0')!='3':
         raise ValueError('S3 experiment flags require BOX_BUFFER_STAGE=3')
+    persistent=env.get('BOX_PERSISTENT_HOLD','0')
+    if persistent not in ('0','1'):raise ValueError('BOX_PERSISTENT_HOLD must be 0 or 1')
+    if persistent=='1' and chosen!=['C']:
+        raise ValueError('BOX_PERSISTENT_HOLD requires C only, BOX_FLEX_ARMS=1 and BOX_BUFFER_STAGE=3')
     return chosen[0] if chosen else 'S3'
 
 

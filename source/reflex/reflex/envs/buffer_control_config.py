@@ -61,6 +61,9 @@ def configure_buffer_control(cfg):
     if group=='C':
         from reflex.envs.flex_arms import configure
         configure(cfg)
+    if os.environ.get('BOX_PERSISTENT_HOLD','0')=='1':
+        from reflex.envs.persistent_hold import configure
+        configure(cfg)
     print(f'[buffer_control] experiment={group} stage={stage}: escape/impact absent; intake='
           f'{cfg.rewards.compliant_intake.weight}, retain={retain_weight if stage>=3 else 0}; '
           'original AMP, tracking and terminations unchanged',flush=True)
