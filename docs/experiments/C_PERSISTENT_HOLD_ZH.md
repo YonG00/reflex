@@ -71,3 +71,23 @@ bash scripts/train_C_persistent_scratch600.sh
 
 正式入口拒绝resume/warm-start。没有修改其他训练超参数，也没有新增负冲击惩罚。
 GPU验证与正式训练启动状态将在核对后补充。
+
+## 2026-11-11 GPU验证与正式启动
+
+- 服务器及本地137项测试通过。服务器最初继承持有模式环境变量运行对照用例，被配置守卫拒绝；
+  清理外部实验开关后137项全部通过，保留原失败日志便于追溯，不修改对照测试来掩盖配置问题。
+- 初始实现129f214完成128环境×12更新从零GPU回归（iteration0..11），新持有入口未触发；
+  invalid_positive_intake/retain均0，证明原RewardManager/事件链和PPO更新可运行。
+- 最终95c5749修正了正anchor奖励不能直接清零的问题，并通过同样137项CPU测试。
+- 使用旧C600权重在最终实现上做128环境×640控制步只推理诊断。
+  旧权重**仅用于诊断，不作为正式训练初始化**。
+- 真实连续控制最长10.08004秒；mix达到1，动作基准替换实际触发；
+  invalid_positive_intake=0、invalid_positive_retain=0。它是机制验证，不当作新策略训练效果。
+- GPU诊断目录：/root/gpufree-data/C_persistent_regress_20261111/。
+
+正式训练已启动：原单分支Actor183/Critic305、4096环境、seed42、从零600更新。
+训练源码95c5749；队列PID103579。
+输出：/root/gpufree-data/C_persistent_scratch600_20261111/，train.log/train.jsonl/status.txt。
+驱动脚本在启动前检查诊断实际持续控制超过2秒及审计为0；结束后验证完整0..599迭代、
+无checkpoint载入、最终输入维度及所有参数有限，并写checkpoint.txt/check.json。
+SSH断开不影响nohup任务。当前是启动记录，不能视作600更新已完成或效果已提高。
