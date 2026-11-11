@@ -62,3 +62,14 @@ C修复后证据：`/root/gpufree-data/s3_C_short_20261111_r3/`。
 - 运行方式为nohup，SSH断开不影响串行队列；异常退出即停止，不跳过失败组。
 
 这是启动记录，不能当作200更新已经完成。具体完成情况以迭代日志、check.json和status.txt为准。
+
+## C从零600更新实验
+
+用户另行授权C从零训练600更新，单独运行，不加载model_599或任何续训权重。
+服务器启动脚本：`/root/gpufree-data/run_C_scratch600_20261111.sh`；启动队列PID61207。
+结果目录：`/root/gpufree-data/C_scratch600_20261111/`。
+采用原单分支Actor183/Critic305，C奖励与肩部ramp，与双分支Actor实验分开。
+这是启动记录，尚未核验最终600更新完成。
+
+可复现入口：`bash scripts/train_C_scratch600.sh`。默认4096环境、seed42、600次更新；
+拒绝resume/warm-start参数，保留原初始化、发射、重投及全部事件。
