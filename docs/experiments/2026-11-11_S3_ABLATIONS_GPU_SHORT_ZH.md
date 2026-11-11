@@ -51,4 +51,14 @@ C修复后证据：`/root/gpufree-data/s3_C_short_20261111_r3/`。
 用户已授权直接串行正式训练，不再等待额外评测。
 计划S3/A/B/C各4096环境×200次追加更新，均从原599开始，seed42，最后目标迭代798附近。
 本轮采用`train`模式，不自动评测、不将前一组checkpoint作为后一组起点。
-当前状态：准备启动。实际启动PID与输出目录将在核对运行日志后补充。
+正式队列已启动（2026-11-11，服务器本地日志约09:13）：
+
+- 训练源码提交：`c7d6ac9`，服务器工作区干净。
+- 队列PID：`11018`；首组训练Python PID：`11061`。
+- 输出目录：`/root/gpufree-data/s3_formal_200_20261111/`。
+- 队列日志：`/root/gpufree-data/s3_formal_200_20261111.launch.log`。
+- 查看当前组：`cat /root/gpufree-data/s3_formal_200_20261111/status.txt`。
+- 各组日志：目录内`S3/A/B/C.train.log`；最终checkpoint路径由`*.checkpoint.txt`单独记录。
+- 运行方式为nohup，SSH断开不影响串行队列；异常退出即停止，不跳过失败组。
+
+这是启动记录，不能当作200更新已经完成。具体完成情况以迭代日志、check.json和status.txt为准。
