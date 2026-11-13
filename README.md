@@ -40,4 +40,4 @@ cd reflex
 
 公开整理未改变算法或启动训练。参见 [公开范围与发布检查](docs/PUBLIC_RELEASE.md)。
 
-当前分支：`experiments/supermimic-wm` — SuperMimic 思路的世界模型尝试。
+当前分支：`main` — 公开实验导航；运行实验请切换到上表对应分支。
