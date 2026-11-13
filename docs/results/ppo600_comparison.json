@@ -1,0 +1,158 @@
+{
+  "protocol": {
+    "condition": "CLEAN2 regular",
+    "eval_seeds": [
+      8,
+      9
+    ],
+    "envs_per_seed": 320,
+    "control_steps": 640,
+    "first_throw_only": true,
+    "train_seed": 42,
+    "ppo_updates": 600,
+    "train_envs": 4096
+  },
+  "official_scratch600": {
+    "n": 640,
+    "sustained": 98,
+    "strict": 73,
+    "source": "historical scratch_regular_s8/s9.json; not the released warm-started teacher"
+  },
+  "models": {
+    "box600": {
+      "per_seed": [
+        {
+          "seed": 8,
+          "n": 320,
+          "rethrows": 0,
+          "strict": 40,
+          "loose": 65,
+          "sustained": 60,
+          "physical": 35,
+          "contact": 211,
+          "fall": 0,
+          "escape": 46,
+          "dropped_after": 19,
+          "control_seconds": 1.1131248874473385
+        },
+        {
+          "seed": 9,
+          "n": 320,
+          "rethrows": 3,
+          "strict": 39,
+          "loose": 62,
+          "sustained": 56,
+          "physical": 41,
+          "contact": 192,
+          "fall": 0,
+          "escape": 46,
+          "dropped_after": 9,
+          "control_seconds": 1.141374763112981
+        }
+      ],
+      "aggregate": {
+        "n": 640,
+        "rethrows": 3,
+        "strict": 79,
+        "loose": 127,
+        "sustained": 116,
+        "physical": 76,
+        "contact": 403,
+        "fall": 0,
+        "escape": 92,
+        "dropped_after": 28
+      },
+      "mean_control_seconds": 1.1272498252801597
+    },
+    "C600": {
+      "per_seed": [
+        {
+          "seed": 8,
+          "n": 320,
+          "rethrows": 2,
+          "strict": 59,
+          "loose": 62,
+          "sustained": 51,
+          "physical": 41,
+          "contact": 186,
+          "fall": 0,
+          "escape": 43,
+          "dropped_after": 23,
+          "control_seconds": 1.1690624422393738
+        },
+        {
+          "seed": 9,
+          "n": 320,
+          "rethrows": 3,
+          "strict": 49,
+          "loose": 54,
+          "sustained": 50,
+          "physical": 34,
+          "contact": 185,
+          "fall": 0,
+          "escape": 43,
+          "dropped_after": 15,
+          "control_seconds": 1.0938751825713553
+        }
+      ],
+      "aggregate": {
+        "n": 640,
+        "rethrows": 5,
+        "strict": 108,
+        "loose": 116,
+        "sustained": 101,
+        "physical": 75,
+        "contact": 371,
+        "fall": 0,
+        "escape": 86,
+        "dropped_after": 38
+      },
+      "mean_control_seconds": 1.1314688124053647
+    },
+    "C_persistent600": {
+      "per_seed": [
+        {
+          "seed": 8,
+          "n": 320,
+          "rethrows": 1,
+          "strict": 68,
+          "loose": 71,
+          "sustained": 58,
+          "physical": 53,
+          "contact": 201,
+          "fall": 0,
+          "escape": 52,
+          "dropped_after": 19,
+          "control_seconds": 1.5063127654138952
+        },
+        {
+          "seed": 9,
+          "n": 320,
+          "rethrows": 2,
+          "strict": 42,
+          "loose": 49,
+          "sustained": 39,
+          "physical": 37,
+          "contact": 195,
+          "fall": 0,
+          "escape": 54,
+          "dropped_after": 22,
+          "control_seconds": 1.071750615304336
+        }
+      ],
+      "aggregate": {
+        "n": 640,
+        "rethrows": 3,
+        "strict": 110,
+        "loose": 120,
+        "sustained": 97,
+        "physical": 90,
+        "contact": 396,
+        "fall": 0,
+        "escape": 106,
+        "dropped_after": 41
+      },
+      "mean_control_seconds": 1.2890316903591157
+    }
+  }
+}

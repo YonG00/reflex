@@ -13,3 +13,20 @@ __pycache__/
 /.hf-cache/
 /.env
 /.env.*
+
+# Local experiment checkouts / secrets / generated artifacts
+/ppo-*/
+/public-supermimic/
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa*
+id_ed25519*
+*.pt
+*.pth
+*.ckpt
