@@ -7,3 +7,20 @@ source/whole_body_tracking/whole_body_tracking/assets/unitree_description/
 /outputs/
 __pycache__/
 *.egg-info/
+
+# Local experiment checkouts / secrets / generated artifacts
+/ppo-*/
+/public-supermimic/
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa*
+id_ed25519*
+*.pt
+*.pth
+*.ckpt
